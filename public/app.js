@@ -373,15 +373,27 @@ const bewertungen = (n) => `${n} ${n === 1 ? 'Bewertung' : 'Bewertungen'}`;
 const NPS_CAT = (n) => (n >= 9 ? 'promoter' : n >= 7 ? 'passive' : 'detractor');
 const NPS_COMMENT = {
   promoter: 'Was hat dir besonders gefallen? (optional)',
-  passive: 'Was hätte die Fahrt noch besser gemacht? (optional)',
-  detractor: 'Was ist schiefgelaufen? (optional – für echte Probleme bitte „Problem melden“)',
+  passive: 'Möchtest du noch etwas ergänzen? (optional)',
+  detractor: 'Möchtest du noch etwas ergänzen? (optional – für echte Probleme bitte „Problem melden“)',
+};
+const ASPECT_HEADING = {
+  passive: 'Was hätte die Fahrt noch besser gemacht? (freiwillig, Mehrfachauswahl)',
+  detractor: 'Was war der Grund? (freiwillig, Mehrfachauswahl)',
 };
 
-function npsWidget(question) {
+/** NPS-Skala 0–10; ratedRole ('driver'|'rider') bestimmt die möglichen Gründe bei Bewertungen bis 8. */
+function npsWidget(question, ratedRole = 'driver') {
+  const aspects = (state.config && state.config.aspects && state.config.aspects[ratedRole]) || [];
+  const partner = ratedRole === 'driver' ? 'Der Fahrer' : 'Der Mitfahrer';
   return `<div class="nps">
     <p class="nps-q">${esc(question)}</p>
     <div class="nps-scale" role="radiogroup">${Array.from({ length: 11 }, (_, i) => `<button type="button" class="nps-btn ${NPS_CAT(i)}" data-score="${i}" role="radio" aria-checked="false">${i}</button>`).join('')}</div>
     <div class="nps-legend"><span>unwahrscheinlich</span><span>sehr wahrscheinlich</span></div>
+    <div class="nps-aspects" hidden>
+      <p class="nps-aspects-q"></p>
+      <div class="aspect-chips">${aspects.map((a) => `<button type="button" class="aspect-chip" data-aspect="${a.id}" aria-pressed="false">${a.icon} ${esc(a.label)}</button>`).join('')}</div>
+      <p class="muted small">💡 ${partner} sieht deine Hinweise nur gesammelt und anonym (frühestens ab 3 Rückmeldungen, ohne Datum) – damit er dazulernen kann.</p>
+    </div>
     <label class="nps-comment-label" hidden></label>
     <textarea class="nps-comment" maxlength="500" hidden></textarea>
   </div>`;
@@ -404,16 +416,34 @@ function bindNpsForms(root, selector, onSubmit) {
           x.classList.toggle('selected', x === b);
           x.setAttribute('aria-checked', String(x === b));
         });
+        const cat = NPS_CAT(Number(b.dataset.score));
+        const aspectsBox = form.querySelector('.nps-aspects');
+        if (aspectsBox) {
+          aspectsBox.hidden = cat === 'promoter';
+          aspectsBox.querySelector('.nps-aspects-q').textContent = ASPECT_HEADING[cat] || '';
+        }
         const label = form.querySelector('.nps-comment-label');
-        label.textContent = NPS_COMMENT[NPS_CAT(Number(b.dataset.score))];
+        label.textContent = NPS_COMMENT[cat];
         label.hidden = false;
         form.querySelector('.nps-comment').hidden = false;
         if (submit) submit.disabled = false;
       }),
     );
+    form.querySelectorAll('.aspect-chip').forEach((c) =>
+      c.addEventListener('click', () => {
+        c.classList.toggle('selected');
+        c.setAttribute('aria-pressed', String(c.classList.contains('selected')));
+      }),
+    );
     form.addEventListener('submit', (e) => {
       e.preventDefault();
-      const body = form.dataset.score !== undefined ? { nps: Number(form.dataset.score), comment: form.querySelector('.nps-comment').value } : {};
+      const body = form.dataset.score !== undefined
+        ? {
+            nps: Number(form.dataset.score),
+            comment: form.querySelector('.nps-comment').value,
+            aspects: Number(form.dataset.score) <= 8 ? [...form.querySelectorAll('.aspect-chip.selected')].map((c) => c.dataset.aspect) : [],
+          }
+        : {};
       guard(() => onSubmit(form, body), submit);
     });
   });
@@ -450,7 +480,7 @@ function confirmationCard(r) {
         <div class="btn-row"><button data-submit disabled>Bewerten & bezahlen</button><button type="button" class="secondary" data-dispute="${r.id}">Problem melden</button></div>
       </form>` : ''}
     ${open && !isRider ? `<form class="nps-form" data-confirm-form="${r.id}">
-        <details><summary class="small">Optional: ${esc(r.riderName)} bewerten</summary>${npsWidget(`Wie wahrscheinlich ist es, dass du ${r.riderName} anderen Fahrern weiterempfiehlst?`)}</details>
+        <details><summary class="small">Optional: ${esc(r.riderName)} bewerten</summary>${npsWidget(`Wie wahrscheinlich ist es, dass du ${r.riderName} anderen Fahrern weiterempfiehlst?`, 'rider')}</details>
         <div class="btn-row"><button data-submit>${measuring ? 'Mitfahrer abgesetzt' : 'Absetzen bestätigen'}</button><button type="button" class="secondary" data-dispute="${r.id}">Problem melden</button></div>
       </form>` : ''}
   </div>`;
@@ -506,11 +536,13 @@ async function renderRider(panel) {
         </div>
         <div class="shrink"><button id="r-search">Besten Fahrer finden</button></div>
       </div>
+      ${filterPanel()}
     </div>
     <div id="matches"></div>`;
   bindPlaceFields(panel);
   $('#r-seats').onchange = (e) => (state.seats = Number(e.target.value));
   $('#r-search').onclick = (e) => guard(searchMatches, e.target);
+  bindFilterPanel(panel);
   if (state.matches.length) renderMatches();
   else previewPlaces();
 }
@@ -519,13 +551,17 @@ async function searchMatches() {
   const pickup = await ensurePlace('pickup');
   const dropoff = await ensurePlace('dropoff');
   if (!pickup || !dropoff) throw new Error('Bitte Abholort und Ziel angeben.');
-  const { matches, activeDrivers, plannedRoute } = await api('/api/match', { pickup, dropoff, seats: state.seats });
+  const res = await api('/api/match', { pickup, dropoff, seats: state.seats, filters: state.filters });
+  const { matches, activeDrivers, plannedRoute } = res;
+  state.matchResult = res;
   state.matches = matches;
   state.plannedRoute = plannedRoute;
   state.selected = matches[0] || null;
   state.activeDrivers = activeDrivers;
   if (!matches.length) {
-    $('#matches').innerHTML = `<div class="card"><h3>Gerade kein passender Fahrer</h3><p class="muted">${activeDrivers} Fahrer sind gerade unterwegs, aber keiner fährt in der Nähe deiner Strecke vorbei. Versuche es in ein paar Minuten erneut.</p></div>`;
+    $('#matches').innerHTML = res.hiddenByFilters
+      ? `<div class="card"><h3>Kein Fahrer erfüllt alle deine Wünsche</h3>${filterSummary(res)}<p class="muted small">Lockere einzelne Wünsche, um mehr Fahrer zu sehen.</p></div>`
+      : `<div class="card"><h3>Gerade kein passender Fahrer</h3><p class="muted">${activeDrivers} Fahrer sind gerade unterwegs, aber keiner fährt in der Nähe deiner Strecke vorbei. Versuche es in ein paar Minuten erneut.</p></div>`;
     previewPlaces();
     return;
   }
@@ -535,12 +571,13 @@ async function searchMatches() {
 async function renderMatches() {
   const box = $('#matches');
   if (!box) return;
-  box.innerHTML = `<div class="card"><h2>${state.matches.length} passende Fahrer</h2>
+  box.innerHTML = `<div class="card"><h2>${state.matches.length} ${state.matches.length === 1 ? 'passender' : 'passende'} Fahrer</h2>
+    ${state.matchResult ? filterSummary(state.matchResult) : ''}
     ${state.matches.map((m, i) => `
       <div class="match ${state.selected && state.selected.tripId === m.tripId ? 'selected' : ''}" data-i="${i}">
         <div class="top">
           <div>${profileLink(m.driverId, m.driverName)} ${i === 0 ? '<span class="badge best">Beste Wahl</span>' : ''}<br>
-            ${npsBadge(m.driverNps)}<br><span class="muted small">${esc(m.vehicle || 'Pkw')} · ${m.seatsFree} frei</span></div>
+            ${npsBadge(m.driverNps)} ${prefIcons(m)}<br><span class="muted small">${esc(m.vehicle || 'Pkw')} · ${m.seatsFree} frei</span></div>
           <div class="price">${euro(m.price.totalCents)}</div>
         </div>
         <div class="muted small" style="margin-top:6px">
@@ -970,7 +1007,7 @@ async function renderAccount(panel) {
           <div class="muted small">${new Date(r.completedAt).toLocaleString('de-DE')} · abgerechnet ${km(r.final.km)} (${BASIS[r.final.billing] || r.final.billing}${r.final.plannedKm ? `; geplant ${km(r.final.plannedKm)}, gefahren ${r.final.trackedKm > 0.2 ? km(r.final.trackedKm) : '–'}` : ''}) · ${r.final.co2SavedKg.toLocaleString('de-DE')} kg CO₂ gespart · ${euro(r.final.donationCents)} gespendet</div>
           <div class="small">${ridePointsLine(r.myPoints)}</div>
           ${r.role === 'rider' ? riderGuestbookLine(r) : ''}
-          ${r.myRating ? `<div class="muted small">Deine Bewertung: <b>${r.myRating.score}</b>/10</div>` : `<form class="nps-form" data-rate-form="${r.id}">${npsWidget(`Wie wahrscheinlich ist es, dass du ${r.role === 'rider' ? r.driverName : r.riderName} weiterempfiehlst?`)}<div class="btn-row"><button data-submit disabled>Bewertung senden</button></div></form>`}
+          ${r.myRating ? `<div class="muted small">Deine Bewertung: <b>${r.myRating.score}</b>/10${r.myRating.aspects && r.myRating.aspects.length ? ` · Gründe: ${r.myRating.aspects.map((id) => esc(((state.config.aspects[r.role === 'rider' ? 'driver' : 'rider'] || []).find((a) => a.id === id) || { label: id }).label)).join(', ')}` : ''}</div>` : `<form class="nps-form" data-rate-form="${r.id}">${npsWidget(`Wie wahrscheinlich ist es, dass du ${r.role === 'rider' ? r.driverName : r.riderName} weiterempfiehlst?`, r.role === 'rider' ? 'driver' : 'rider')}<div class="btn-row"><button data-submit disabled>Bewertung senden</button></div></form>`}
         </div>`).join('') : '<p class="muted">Noch keine abgeschlossenen Fahrten.</p>'}
     </div>
     <div class="card">
@@ -1216,6 +1253,8 @@ async function renderProfile(panel) {
       <div class="btn-row"><button id="pv-save">Privatsphäre speichern</button><button type="button" class="secondary" data-preview="booked">Vorschau für Fahrtpartner</button></div>
     </div>
 
+    ${await feedbackCard()}
+
     ${await myGuestbookCard()}
 
     <div class="card" id="security">
@@ -1395,7 +1434,7 @@ function renderPrivacyPolicy(panel) {
         <li><b>Fahrten und Zahlungen:</b> Buchungen, gefahrene km, Preise, Provision (${cfg.commissionPercent} %), Umweltspende (${(cfg.donationCentsPerRide / 100).toFixed(2).replace('.', ',')} € pro Fahrt), Bewertungen. Zweck: Abrechnung und gesetzliche Aufbewahrung (Art. 6 Abs. 1 lit. b und c DSGVO).</li>
         <li><b>Gästebuch (freiwillig):</b> Nach Fahrten über 1 Stunde oder 100 km können Mitfahrer ein positives Erlebnis teilen. Veröffentlicht werden nur Text, Monat und Art der Fahrt – ohne Namen. Intern speichern wir, wer den Eintrag verfasst hat, damit du ihn löschen kannst und Missbrauch verhindert wird (Art. 6 Abs. 1 lit. a DSGVO, Einwilligung; jederzeit widerrufbar durch Löschen). Fahrer können Einträge ausblenden oder das Gästebuch abschalten.</li>
         <li><b>Funfacts:</b> Aus den Bewertungen erstellen wir zusammengefasste Statistiken nach Ortskürzel des Kennzeichens und Automarke (freiwillige Profilangaben; das vollständige Kennzeichen speichern wir nicht). Eine Stadt oder Marke wird erst ab mehreren Fahrern und Bewertungen angezeigt, sodass kein Rückschluss auf Einzelne möglich ist (Art. 6 Abs. 1 lit. f DSGVO).</li>
-        <li><b>Bewertungen und Punkte:</b> Bewertungen (0–10, optionaler Kommentar), daraus berechneter NPS, Punkte, Level und Abzeichen. Zweck: Vertrauen zwischen Fahrtpartnern, Qualität, Motivation zum Teilen von Fahrten (Art. 6 Abs. 1 lit. b und f DSGVO). Einzelbewertungen sieht nur, wer sie abgegeben hat; andere sehen nur Zusammenfassungen. In der <b>Bestenliste</b> erscheinst du nur mit deiner Einwilligung (Art. 6 Abs. 1 lit. a DSGVO), die du jederzeit widerrufen kannst.</li>
+        <li><b>Bewertungen und Punkte:</b> Bewertungen (0–10, optionale Gründe wie Sauberkeit oder Fahrweise und optionaler Kommentar). Gründe und Kommentare sieht der Bewertete nur gesammelt und anonym ab mindestens drei Rückmeldungen, ohne Datum oder Zuordnung zu einer Fahrt – sie dienen dazu, dass Fahrer und Mitfahrer dazulernen können. Daraus berechnen wir NPS, Punkte, Level und Abzeichen. Zweck: Vertrauen zwischen Fahrtpartnern, Qualität, Motivation zum Teilen von Fahrten (Art. 6 Abs. 1 lit. b und f DSGVO). Einzelbewertungen sieht nur, wer sie abgegeben hat; andere sehen nur Zusammenfassungen. In der <b>Bestenliste</b> erscheinst du nur mit deiner Einwilligung (Art. 6 Abs. 1 lit. a DSGVO), die du jederzeit widerrufen kannst.</li>
         <li><b>Sicherheit:</b> Angemeldete Geräte (Browser-Kennung, Zeitpunkt), Daten der Zwei-Faktor-Anmeldung (Schlüssel verschlüsselt, Backup-Codes nur als Hash), Schutz vor Passwort-Ausprobieren. Zweck: Schutz deines Kontos (Art. 6 Abs. 1 lit. f, Art. 32 DSGVO).</li>
       </ul>
 
@@ -1658,6 +1697,125 @@ async function renderFunfacts(panel) {
       ${state.me ? '<p class="small">Deine Stadt fehlt? Trag im <a href="#/profil">Profil</a> Automarke und Ortskürzel deines Kennzeichens ein. 🚗</p>' : ''}
       <p class="muted small">Alles nur zum Spaß – ohne Gewähr und ohne Einfluss auf die Vermittlung. 😉</p>
     </div>`;
+}
+
+// ---------- Filter des Mitfahrers: Kriterien, die der Fahrer erfüllen muss ----------
+const FILTER_STORE = 'jmr-filters';
+const LANGS_ALL = ['Deutsch', 'Englisch', 'Französisch', 'Spanisch', 'Italienisch', 'Türkisch', 'Polnisch', 'Russisch', 'Arabisch', 'Ukrainisch'];
+
+function loadFilters() {
+  try { return JSON.parse(localStorage.getItem(FILTER_STORE)) || {}; } catch { return {}; }
+}
+function saveFilters(f) {
+  try { localStorage.setItem(FILTER_STORE, JSON.stringify(f)); } catch {}
+}
+state.filters = loadFilters();
+
+function activeFilterCount(f) {
+  return ['minNps', 'nonSmoker', 'pets', 'chat', 'music', 'language', 'mfa', 'safeDriving', 'maxEtaMin'].filter((k) => f[k] !== undefined && f[k] !== '' && f[k] !== false).length + (f.includeNew === false ? 1 : 0);
+}
+
+function filterPanel() {
+  const f = state.filters;
+  const opt = (v, label, cur) => `<option value="${v}" ${String(cur ?? '') === String(v) ? 'selected' : ''}>${label}</option>`;
+  const n = activeFilterCount(f);
+  return `<details class="filters" ${n ? 'open' : ''}>
+    <summary>⚙️ Wünsche an den Fahrer ${n ? `<span class="badge ok">${n} aktiv</span>` : '<span class="muted small">(optional)</span>'}</summary>
+    <div class="row">
+      <div><label for="flt-nps">Mindest-NPS des Fahrers</label><select id="flt-nps">${opt('', 'egal', f.minNps)}${opt(0, '≥ 0', f.minNps)}${opt(30, '≥ +30', f.minNps)}${opt(50, '≥ +50', f.minNps)}${opt(70, '≥ +70', f.minNps)}</select></div>
+      <div><label for="flt-eta">Max. Wartezeit</label><select id="flt-eta">${opt('', 'egal', f.maxEtaMin)}${opt(5, '5 min', f.maxEtaMin)}${opt(10, '10 min', f.maxEtaMin)}${opt(15, '15 min', f.maxEtaMin)}${opt(30, '30 min', f.maxEtaMin)}</select></div>
+    </div>
+    <label class="check"><input type="checkbox" id="flt-new" ${f.includeNew === false ? '' : 'checked'}><span>Neue Fahrer ohne Bewertung einbeziehen</span></label>
+    <div class="checks">
+      <label class="check"><input type="checkbox" id="flt-smoke" ${f.nonSmoker ? 'checked' : ''}><span>🚭 Nichtraucher</span></label>
+      <label class="check"><input type="checkbox" id="flt-pets" ${f.pets ? 'checked' : ''}><span>🐾 Tiere erlaubt</span></label>
+      <label class="check"><input type="checkbox" id="flt-mfa" ${f.mfa ? 'checked' : ''}><span>🔐 Konto mit 2FA gesichert</span></label>
+      <label class="check" title="Höchstens 10 % der Bewertungen kritisieren die Fahrweise"><input type="checkbox" id="flt-safe" ${f.safeDriving ? 'checked' : ''}><span>🛣️ Sichere Fahrweise (laut Bewertungen)</span></label>
+    </div>
+    <div class="row">
+      <div><label for="flt-chat">Unterhaltung</label><select id="flt-chat">${opt('', 'egal', f.chat)}${opt('quiet', 'lieber ruhig', f.chat)}${opt('talkative', 'gerne gesprächig', f.chat)}</select></div>
+      <div><label for="flt-music">Musik</label><select id="flt-music">${opt('', 'egal', f.music)}${opt('quiet', 'lieber leise', f.music)}</select></div>
+    </div>
+    <label for="flt-lang">Fahrer spricht</label><select id="flt-lang">${opt('', 'egal', f.language)}${LANGS_ALL.map((l) => opt(l, l, f.language)).join('')}</select>
+    <div class="btn-row"><button type="button" class="secondary" id="flt-reset">Wünsche zurücksetzen</button></div>
+  </details>`;
+}
+
+function bindFilterPanel(root) {
+  const read = () => {
+    const v = (id) => $(id).value;
+    const f = {};
+    if (v('#flt-nps') !== '') f.minNps = Number(v('#flt-nps'));
+    if (v('#flt-eta') !== '') f.maxEtaMin = Number(v('#flt-eta'));
+    if (!$('#flt-new').checked) f.includeNew = false;
+    if ($('#flt-smoke').checked) f.nonSmoker = true;
+    if ($('#flt-pets').checked) f.pets = true;
+    if ($('#flt-mfa').checked) f.mfa = true;
+    if ($('#flt-safe').checked) f.safeDriving = true;
+    if (v('#flt-chat')) f.chat = v('#flt-chat');
+    if (v('#flt-music')) f.music = v('#flt-music');
+    if (v('#flt-lang')) f.language = v('#flt-lang');
+    state.filters = f;
+    saveFilters(f);
+    const n = activeFilterCount(f);
+    root.querySelector('.filters summary').innerHTML = `⚙️ Wünsche an den Fahrer ${n ? `<span class="badge ok">${n} aktiv</span>` : '<span class="muted small">(optional)</span>'}`;
+  };
+  root.querySelectorAll('.filters select, .filters input').forEach((el) => el.addEventListener('change', read));
+  $('#flt-reset').onclick = () => {
+    state.filters = {};
+    saveFilters({});
+    root.querySelector('.filters').outerHTML = filterPanel();
+    bindFilterPanel(root);
+  };
+}
+
+function filterSummary(res) {
+  if (!res.hiddenByFilters) return '';
+  const labels = (state.config && state.config.filterLabels) || {};
+  const reasons = Object.entries(res.filteredOut).map(([k, n]) => `${esc(labels[k] || k)} (${n})`).join(', ');
+  return `<p class="muted small">🔎 ${res.hiddenByFilters} ${res.hiddenByFilters === 1 ? 'Fahrer passt' : 'Fahrer passen'} nicht zu deinen Wünschen: ${reasons}.</p>`;
+}
+
+function prefIcons(m) {
+  const p = m.driverPrefs || {};
+  const icons = [];
+  if (p.smoking === 'nein') icons.push('<span title="Nichtraucher">🚭</span>');
+  if (p.pets && p.pets !== 'nein') icons.push(`<span title="Tiere: ${esc(p.pets)}">🐾</span>`);
+  if (p.chat === 'lieber ruhig') icons.push('<span title="Lieber ruhige Fahrt">🤫</span>');
+  if (p.chat === 'gerne') icons.push('<span title="Unterhält sich gerne">💬</span>');
+  if (p.music === 'gerne') icons.push('<span title="Musik gerne">🎵</span>');
+  if (m.driverMfa) icons.push('<span title="Konto mit 2FA gesichert">🔐</span>');
+  if (p.languages && p.languages.length > 1) icons.push(`<span title="Spricht ${esc(p.languages.join(', '))}">🗣️</span>`);
+  return icons.length ? `<span class="pref-icons">${icons.join('')}</span>` : '';
+}
+
+// ---------- Feedback zum Lernen (gesammelt & anonym) ----------
+function feedbackSection(title, f) {
+  if (!f.entries && !f.ratingsTotal) return '';
+  if (!f.ready) {
+    return `<h3>${title}</h3><p class="muted small">${f.entries ? `${f.entries} von ${f.minEntries} Rückmeldungen mit Hinweisen gesammelt.` : 'Noch keine Hinweise – weiter so! 😊'} Hinweise werden erst ab ${f.minEntries} Rückmeldungen gesammelt angezeigt, damit niemand einzeln erkennbar ist.</p>`;
+  }
+  const max = Math.max(...f.aspects.map((a) => a.count), 1);
+  return `<h3>${title}</h3>
+    <p class="muted small">Aus ${f.entries} Rückmeldungen mit Hinweisen (von ${bewertungen(f.ratingsTotal)} insgesamt):</p>
+    ${f.aspects.length ? f.aspects.map((a) => `
+      <div class="fb-aspect">
+        <div class="fb-row"><span>${a.icon} ${esc(a.label)}</span><b>${a.count}×</b></div>
+        <div class="fb-bar"><div style="width:${Math.round((a.count / max) * 100)}%"></div></div>
+        <p class="small fb-tip">💡 ${esc(a.tip)}</p>
+      </div>`).join('') : ''}
+    ${f.comments.length ? `<details><summary class="small">Anonyme Kommentare (${f.comments.length})</summary>${f.comments.map((c) => `<blockquote class="gb-entry"><p>„${esc(c)}“</p></blockquote>`).join('')}</details>` : ''}`;
+}
+
+async function feedbackCard() {
+  const fb = await api('/api/me/feedback');
+  const driver = feedbackSection('🚗 Als Fahrer', fb.asDriver);
+  const rider = feedbackSection('🧍 Als Mitfahrer', fb.asRider);
+  return `<div class="card" id="my-feedback">
+    <h2>💡 Feedback zum Lernen</h2>
+    <p class="muted small">Bei Bewertungen bis 8 können deine Fahrtpartner freiwillig Gründe nennen. Du siehst sie hier gesammelt und anonym – ohne Namen, Datum oder Fahrt – mit Tipps, was du verbessern kannst.</p>
+    ${driver || rider ? driver + rider : '<p class="muted">Noch keine Bewertungen.</p>'}
+  </div>`;
 }
 
 // ---------- Start ----------

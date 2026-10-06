@@ -215,3 +215,21 @@ details summary { cursor: pointer; color: var(--brand); margin-top: 8px; }
 .plate { display: inline-flex; align-items: stretch; border: 2px solid #111; border-radius: 4px; background: #fff; color: #111; font-family: 'Arial Narrow', Arial, sans-serif; font-weight: 700; font-size: .85rem; line-height: 1.4; overflow: hidden; vertical-align: middle; }
 .plate .eu { background: #1d4ed8; color: #fde047; font-size: .6rem; padding: 0 3px; display: flex; align-items: flex-end; }
 .plate { padding-right: 5px; gap: 4px; }
+
+/* ---------- Gründe bei Bewertungen & Lern-Feedback ---------- */
+.nps-aspects { margin-top: 10px; }
+.nps-aspects-q { font-weight: 600; font-size: .9rem; margin: 0 0 6px; }
+.aspect-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.aspect-chip { background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 999px; padding: 6px 10px; font-size: .82rem; font-weight: 500; }
+.aspect-chip:hover { background: var(--line); }
+.aspect-chip.selected { background: #f59e0b; border-color: #d97706; color: #fff; }
+.fb-aspect { margin: 8px 0 12px; }
+.fb-row { display: flex; justify-content: space-between; font-size: .92rem; }
+.fb-bar { height: 6px; background: var(--line); border-radius: 999px; margin: 4px 0; overflow: hidden; }
+.fb-bar div { height: 100%; background: #f59e0b; border-radius: 999px; }
+.fb-tip { margin: 2px 0 0; color: var(--muted); }
+
+/* ---------- Filter ---------- */
+.filters { margin-top: 12px; border-top: 1px solid var(--line); padding-top: 4px; }
+.filters summary { cursor: pointer; font-weight: 600; color: var(--text); margin: 8px 0; }
+.pref-icons { margin-left: 4px; letter-spacing: 2px; }

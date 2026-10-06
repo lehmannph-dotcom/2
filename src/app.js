@@ -13,6 +13,8 @@ const nps = require('./nps');
 const game = require('./gamification');
 const guestbook = require('./guestbook');
 const funfacts = require('./funfacts');
+const feedback = require('./feedback');
+const filters = require('./filters');
 const { BRANDS } = require('./profile');
 const { REGIONS } = require('./plates');
 const { displayName, publicProfile, privacyOf, profileOf, sanitizeProfile, sanitizePrivacy } = require('./profile');
@@ -188,6 +190,8 @@ function createApp({ store, config, routing }) {
     points: config.points,
     brands: BRANDS,
     plateRegions: REGIONS,
+    aspects: { driver: feedback.DRIVER_ASPECTS, rider: feedback.RIDER_ASPECTS, maxScore: feedback.MAX_ASPECT_SCORE },
+    filterLabels: filters.LABELS,
   }), { public: true });
 
   // ---------- Funfacts (öffentlich, nur zusammengefasste Daten) ----------
@@ -544,7 +548,16 @@ function createApp({ store, config, routing }) {
       trips: Object.values(db.trips).filter((t) => t.driverId === user.id),
       rides: Object.values(db.rides)
         .filter((r) => r.riderId === user.id || r.driverId === user.id)
-        .map((r) => ({ ...r, partner: displayName(db.users[r.riderId === user.id ? r.driverId : r.riderId], user) })),
+        .map((r) => {
+          // Einzelbewertungen des Partners bleiben anonym (Schutz Dritter, Art. 15 Abs. 4 DSGVO) –
+          // enthalten ist nur die eigene abgegebene Bewertung; erhaltenes Feedback gibt es gesammelt.
+          const { npsByRider, npsByDriver, ...rest } = r;
+          return { ...rest, myRating: r.riderId === user.id ? npsByRider || null : npsByDriver || null, partner: displayName(db.users[r.riderId === user.id ? r.driverId : r.riderId], user) };
+        }),
+      feedbackReceived: {
+        asDriver: feedback.summarize(receivedRatings(user.id, 'driver'), 'driver', { seed: user.id }),
+        asRider: feedback.summarize(receivedRatings(user.id, 'rider'), 'rider', { seed: user.id }),
+      },
       transactions: db.ledger.filter((t) => t.account === `user:${user.id}`),
       guestbookWritten: db.guestbook.filter((g) => g.riderId === user.id).map((g) => ({ ...guestbook.publicEntry(g), rideId: g.rideId })),
       guestbookReceived: db.guestbook.filter((g) => g.driverId === user.id).map((g) => ({ ...guestbook.publicEntry(g), hidden: g.hidden })),
@@ -737,19 +750,36 @@ function createApp({ store, config, routing }) {
     const seats = Math.max(1, Math.min(8, Math.round(Number(body.seats) || 1)));
     const trips = Object.values(db.trips).filter((t) => t.status === 'active' && canDrive(db.users[t.driverId]));
     trips.forEach(tripCum);
-    const matches = findMatches({
+    const all = findMatches({
       trips,
       request: { pickup, dropoff, seats, riderId: user.id },
       pricing: config.pricing,
       maxDetourKm: config.matching.maxDetourKm,
-      maxResults: config.matching.maxResults,
+      maxResults: Infinity,
       users: db.users,
     });
+    // Filter des Mitfahrers: Kriterien, die der Fahrer erfüllen muss
+    const wanted = filters.sanitizeFilters(body.filters || {});
+    const filteredOut = {};
+    let hidden = 0;
+    const matches = all
+      .filter((m) => {
+        const failed = filters.failedCriteria(wanted, { driver: db.users[m.driverId], match: m, receivedRatings: receivedRatings(m.driverId, 'driver') });
+        failed.forEach((k) => (filteredOut[k] = (filteredOut[k] || 0) + 1));
+        if (failed.length) hidden++;
+        return !failed.length;
+      })
+      .slice(0, config.matching.maxResults);
     const plannedRoute = matches.length ? await plannedRouteFor(pickup, dropoff) : null;
     return {
       plannedRoute,
       activeDrivers: trips.length,
+      filters: wanted,
+      hiddenByFilters: hidden,
+      filteredOut,
       matches: matches.map((m) => ({
+        driverPrefs: (({ preferences, languages }) => ({ ...preferences, languages }))(profileOf(db.users[m.driverId])),
+        driverMfa: Boolean(db.users[m.driverId].mfa && db.users[m.driverId].mfa.enabled),
         ...m,
         plannedKm: plannedRoute.distanceKm,
         plannedDurationMin: plannedRoute.durationMin,
@@ -902,11 +932,24 @@ function createApp({ store, config, routing }) {
     ride.completedAt = now();
   };
 
-  const ratingFrom = (body) => {
+  // ratedRole: wer bewertet wird ('driver' oder 'rider') – bestimmt die möglichen Gründe (Aspekte).
+  const ratingFrom = (body, ratedRole) => {
     const score = nps.parseScore(body.nps);
     if (score === null) return null;
-    return { score, category: nps.category(score), comment: String(body.comment || '').trim().slice(0, 500), at: now() };
+    return {
+      score,
+      category: nps.category(score),
+      aspects: feedback.sanitizeAspects(body.aspects, score, ratedRole),
+      comment: String(body.comment || '').trim().slice(0, 500),
+      at: now(),
+    };
   };
+
+  /** Alle Bewertungen, die ein Nutzer in einer Rolle erhalten hat. */
+  const receivedRatings = (userId, role) =>
+    Object.values(db.rides)
+      .filter((r) => (role === 'driver' ? r.driverId === userId && r.npsByRider : r.riderId === userId && r.npsByDriver))
+      .map((r) => (role === 'driver' ? r.npsByRider : r.npsByDriver));
 
   /**
    * Fahrtende: Gezahlt wird, wenn der Fahrer den Mitfahrer ABGESETZT hat UND der Mitfahrer
@@ -918,7 +961,7 @@ function createApp({ store, config, routing }) {
     inStatus(ride, 'picked_up', 'confirming');
     const role = roleOf(ride, user);
     need(!ride.confirmations[role + 'End'], 409, role === 'driver' ? 'Du hast das Absetzen bereits bestätigt.' : 'Du hast die Fahrt bereits bewertet.');
-    const rating = ratingFrom(body);
+    const rating = ratingFrom(body, role === 'rider' ? 'driver' : 'rider');
     if (role === 'rider') {
       need(rating, 400, 'Bitte bewerte die Fahrt mit 0 bis 10 – erst dann wird bezahlt.');
       ride.npsByRider = rating;
@@ -966,14 +1009,20 @@ function createApp({ store, config, routing }) {
   // Nachträgliche Bewertung (z. B. Fahrer bewertet Mitfahrer, oder nach automatischer Bestätigung).
   rideAction('rate', (ride, { user, body }) => {
     inStatus(ride, 'completed');
-    const rating = ratingFrom(body);
-    need(rating, 400, 'Bewertung von 0 bis 10.');
     const isRider = ride.riderId === user.id;
+    const rating = ratingFrom(body, isRider ? 'driver' : 'rider');
+    need(rating, 400, 'Bewertung von 0 bis 10.');
     const field = isRider ? 'npsByRider' : 'npsByDriver';
     need(!ride[field], 409, 'Bereits bewertet.');
     ride[field] = rating;
     nps.addScore(db.users[isRider ? ride.driverId : ride.riderId], rating.score);
   });
+
+  // Feedback zum Lernen – gesammelt und anonym (ab feedback.MIN_ENTRIES Rückmeldungen)
+  on('GET', '/api/me/feedback', ({ user }) => ({
+    asDriver: feedback.summarize(receivedRatings(user.id, 'driver'), 'driver', { seed: user.id }),
+    asRider: feedback.summarize(receivedRatings(user.id, 'rider'), 'rider', { seed: user.id }),
+  }));
 
   // ---------- Betreiber / Admin ----------
   const adminOnly = (user) => need(user.isAdmin, 403, 'Nur für Betreiber.');

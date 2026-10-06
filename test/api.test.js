@@ -355,3 +355,44 @@ test('Gästebuch: anonym, freiwillig, nur lange Fahrten mit positiver Bewertung'
   // Danach wieder möglich
   assert.equal((await rider('GET', '/api/rides')).rides[0].guestbook.eligible, true);
 });
+
+test('Gründe bei kritischer Bewertung, anonymes Feedback und Filter beim Suchen', async (t) => {
+  const { driver, rider, ride, store, trip } = await bookedRide(t, { kmDriven: 3 });
+  await driver('POST', `/api/rides/${ride.id}/confirm`, {});
+  const done = (await rider('POST', `/api/rides/${ride.id}/confirm`, { nps: 4, aspects: ['cleanliness', 'driving', 'unbekannt'], comment: 'Krümel auf dem Sitz.' })).ride;
+  assert.deepEqual(done.myRating.aspects, ['cleanliness', 'driving']);
+
+  // Fahrer sieht noch nichts (erst ab 3 Rückmeldungen), auch nicht über den Export
+  let fbk = await driver('GET', '/api/me/feedback');
+  assert.equal(fbk.asDriver.ready, false);
+  assert.equal(fbk.asDriver.entries, 1);
+  assert.deepEqual(fbk.asDriver.comments, []);
+  const exp = await driver('GET', '/api/me/export');
+  assert.ok(!JSON.stringify(exp).includes('Krümel'), 'Einzelfeedback nicht im Export des Fahrers');
+  assert.ok(JSON.stringify(await rider('GET', '/api/me/export')).includes('Krümel'), 'eigene Bewertung im eigenen Export');
+
+  // Zwei weitere Rückmeldungen (direkt im Speicher simuliert)
+  const r = store.data.rides[ride.id];
+  for (const [i, aspects, comment] of [[1, ['cleanliness'], ''], [2, ['smell'], 'Roch nach Rauch.']]) {
+    store.data.rides['x' + i] = { ...r, id: 'x' + i, npsByRider: { score: 5, aspects, comment, at: `2026-09-0${i}T10:00:00Z` } };
+  }
+  fbk = await driver('GET', '/api/me/feedback');
+  assert.equal(fbk.asDriver.ready, true);
+  assert.deepEqual(fbk.asDriver.aspects.map((a) => [a.id, a.count]), [['cleanliness', 2], ['driving', 1], ['smell', 1]]);
+  assert.equal(fbk.asDriver.comments.length, 2);
+
+  // Filter: Fahrer raucht nicht (Standard), aber 1 von 3 Bewertungen kritisiert die Fahrweise
+  const pickup = pointAlongRoute(trip.route.coords, 2);
+  const dropoff = pointAlongRoute(trip.route.coords, 12);
+  // Fahrer wieder online bringen
+  await driver('POST', `/api/trips/${trip.id}/end`, {});
+  const { trip: t2 } = await driver('POST', '/api/trips', { origin: 'Berlin', destination: 'Potsdam', seats: 1 });
+  let m = await rider('POST', '/api/match', { pickup, dropoff, filters: { nonSmoker: true } });
+  assert.equal(m.matches.length, 1);
+  assert.equal(m.matches[0].driverPrefs.smoking, 'nein');
+  m = await rider('POST', '/api/match', { pickup, dropoff, filters: { safeDriving: true, minNps: 50 } });
+  assert.equal(m.matches.length, 0);
+  assert.equal(m.hiddenByFilters, 1);
+  assert.deepEqual(m.filteredOut, { minNps: 1, safeDriving: 1 });
+  assert.ok(t2.id);
+});

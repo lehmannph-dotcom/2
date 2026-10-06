@@ -70,6 +70,37 @@ Grundlage ist die **schnellste Route laut Plan** vom Abholort zum Ziel (Google D
 * **Problem melden** stoppt die Abrechnung; der Betreiber entscheidet im Bereich „Betreiber“ (abrechnen nach Regel, mit weniger km oder kostenlos stornieren).
 * Hat sich die geplante Route zwischen Anzeige und Buchung geändert (> 0,5 km), muss der Mitfahrer neu bestätigen.
 
+## Wünsche an den Fahrer (Filter für Mitfahrer)
+
+Unter „⚙️ Wünsche an den Fahrer“ legt der Mitfahrer fest, welche Kriterien der Fahrer erfüllen muss (im Browser gespeichert):
+
+| Kriterium | Bedeutung |
+|---|---|
+| Mindest-NPS | ≥ 0 / +30 / +50 / +70; neue Fahrer ohne Bewertung wahlweise einbeziehen |
+| 🚭 Nichtraucher · 🐾 Tiere erlaubt | aus den Vorlieben im Fahrerprofil |
+| Unterhaltung · Musik | „lieber ruhig“ / „gerne gesprächig“, „lieber leise“ |
+| Sprache | Fahrer spricht z. B. Englisch |
+| 🔐 2FA-gesichert | Konto des Fahrers mit Zwei-Faktor-Anmeldung |
+| 🛣️ Sichere Fahrweise | höchstens 10 % der Bewertungen nennen „Fahrweise“ als Grund (ab 3 Bewertungen) |
+| Max. Wartezeit | Abholung in höchstens 5 / 10 / 15 / 30 min |
+
+Die Trefferliste zeigt, wie viele Fahrer durch welchen Wunsch ausgeblendet wurden. Die Vorlieben der Fahrer erscheinen als Symbole (🚭 🐾 🤫 💬 🎵 🔐 🗣️).
+
+## Gründe bei kritischen Bewertungen & Feedback zum Lernen
+
+Bei Bewertungen **0–6** (und optional 7–8) können **freiwillig Gründe** gewählt werden (Mehrfachauswahl) – plus optionaler Freitext:
+
+* **Fahrer bewertet durch Mitfahrer:** 🧽 Sauberkeit des Autos · 🔧 Zustand des Autos · 🛣️ Fahrweise · 🤝 Zwischenmenschliches · ⏰ Pünktlichkeit · 🗺️ Route/Umwege · 💬 Kommunikation/Treffpunkt · 👃 Gerüche/Rauchen · 🔊 Musik/Lautstärke · 🌡️ Platz/Komfort/Temperatur
+* **Mitfahrer bewertet durch Fahrer:** Pünktlichkeit · Zwischenmenschliches · Sauberkeit/Verhalten im Auto · Kommunikation/Treffpunkt · Gepäck
+
+Unter **Profil → 💡 Feedback zum Lernen** sieht der Bewertete die Gründe **gesammelt** (Häufigkeit, Balken) mit einem **konkreten Tipp** je Aspekt und die Kommentare. Damit niemand einzeln erkennbar ist und es keine Gegenbewertungen gibt:
+
+* Anzeige erst ab **3 Rückmeldungen** mit Hinweisen,
+* Kommentare **ohne Datum** und in gemischter Reihenfolge,
+* auch der Datenexport enthält die Einzelbewertungen des Partners nicht (nur das gesammelte Feedback).
+
+Die Gründe ändern weder den Preis noch die Zahlung.
+
 ## Bewertung nach NPS-Logik
 
 Statt Sternen fragt joinmyride.com: **„Wie wahrscheinlich ist es, dass du *Name* weiterempfiehlst?“** – Skala 0 bis 10.
@@ -166,6 +197,8 @@ src/gamification.js  Punkte, Level, Abzeichen, Bestenliste
 src/guestbook.js     Gästebuch: Berechtigung, Textprüfung, anonyme Anzeige
 src/funfacts.js      Funfacts: NPS nach Stadt/Kennzeichen und Automarke
 src/plates.js        Ortskürzel deutscher Kfz-Kennzeichen
+src/filters.js       Wünsche/Filter des Mitfahrers an den Fahrer
+src/feedback.js      Gründe bei Bewertungen, Tipps, anonymes Lern-Feedback
 src/routing.js       Google Maps / OSM, Google-Maps-Link-Parser
 src/geo.js           Distanzen, Polylines, Projektion auf Routen
 src/db.js            JSON-Dateispeicher (data/db.json)
