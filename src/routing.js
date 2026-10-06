@@ -12,7 +12,7 @@
 const config = require('./config');
 const { decodePolyline, haversineKm, straightLine, simplify, isLatLng } = require('./geo');
 
-const USER_AGENT = 'Mitfahrzentrale-Adhoc/0.1 (Kostenteilung)';
+const USER_AGENT = 'joinmyride.com/0.2 (Mitfahrzentrale; Kostenteilung)';
 const cache = new Map();
 
 async function fetchJson(url, opts = {}) {

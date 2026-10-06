@@ -1,6 +1,6 @@
-# 🌿 Mitfahrzentrale – Teilen statt Leerfahren
+# 🌿 joinmyride.com – Teilen statt Leerfahren
 
-Ad-hoc-Mitfahrzentrale: Wer ohnehin fährt, wird mit seiner Route (eingegeben oder als **Google-Maps-Link**) spontan zum Fahrtenanbieter. Mitfahrer geben ihr Ziel ein, die App findet den **besten Fahrer** auf dem Weg. Abgerechnet werden die **gefahrenen Kilometer** – der Großteil geht an den Fahrer, eine Provision an den Betreiber und **1 Cent pro Fahrt an den Umweltschutz**.
+**joinmyride.com** ist eine Ad-hoc-Mitfahrzentrale: Wer ohnehin fährt, wird mit seiner Route (eingegeben oder als **Google-Maps-Link**) spontan zum Fahrtenanbieter. Mitfahrer geben ihr Ziel ein, die App findet den **besten Fahrer** auf dem Weg. Abgerechnet werden die **gefahrenen Kilometer** – der Großteil geht an den Fahrer, eine Provision an den Betreiber und **1 Cent pro Fahrt an den Umweltschutz**.
 
 ## Schnellstart
 
@@ -11,6 +11,7 @@ npm test                  # Unit- und End-to-End-Tests
 ```
 
 Node.js ≥ 20, **keine npm-Abhängigkeiten**. Das erste registrierte Konto (oder `ADMIN_EMAIL`) ist der Betreiber.
+Für den Produktivbetrieb `APP_SECRET` setzen (verschlüsselt die 2FA-Schlüssel; ohne Wert wird `data/secret.key` erzeugt – diese Datei mitsichern!).
 
 ## Ablauf
 
@@ -19,6 +20,30 @@ Node.js ≥ 20, **keine npm-Abhängigkeiten**. Das erste registrierte Konto (ode
 | **Fahrer** | Registrieren → Führerschein einreichen (Nummer, Klassen, Ablaufdatum, Geburtsdatum, Fotos Vorder-/Rückseite) → Betreiber bestätigt → Route oder Google-Maps-Link eingeben → **online** → Anfragen annehmen → „Eingestiegen“ → GPS teilen → „Am Ziel abgesetzt“ |
 | **Mitfahrer** | Guthaben aufladen → Abholort + Ziel (Adresse, Standort oder Kartenklick) → Liste der besten Fahrer mit Preis, Wartezeit, Umweg und CO₂-Ersparnis → buchen → Live-Position des Fahrers verfolgen → bewerten |
 | **Betreiber** | Führerscheine prüfen (Fotos ansehen, bestätigen/ablehnen), Provisionseinnahmen, gesammelte Spenden, geteilte km und CO₂-Ersparnis einsehen |
+
+## Profile
+
+Fahrer und Mitfahrer haben ein Profil (Seite **Profil**): Foto, „Über mich“, Telefon, Sprachen, Vorlieben (Rauchen, Tiere, Musik, Unterhaltung) und Fahrzeug. Badges zeigen „Führerschein geprüft“, „2FA gesichert“ und die Bewertung. Über den Namen in der Trefferliste bzw. in einer Buchung öffnet sich das Profil des Fahrtpartners. Mit „So sehen mich andere“ prüft man die eigene Außenwirkung.
+
+## Datenschutz (Privacy by Default)
+
+* **Sichtbarkeit:** Profile sind nur für angemeldete Nutzer sichtbar – und nur von Fahrern, die gerade online sind, oder von Fahrtpartnern. Es gibt keine Mitgliedersuche. E-Mail-Adressen sind nie sichtbar.
+* **Standardmäßig sparsam:** Nachname abgekürzt („Doris F.“), Telefonnummer verborgen. Freigabe der Telefonnummer nur für bestätigte Fahrtpartner und nur während der Buchung.
+* **Wohnadressen-Schutz:** Start und Ziel eines Fahrers sehen andere nur vergröbert (Ort statt Straße, Route ohne die ersten/letzten 500 m). Die Live-Position sehen nur bestätigte Mitfahrer.
+* **Führerscheinfotos** werden direkt nach der Prüfung durch den Betreiber gelöscht.
+* **Einwilligung** bei der Registrierung (mit Zeitstempel und Version), Datenschutzerklärung unter `#/datenschutz`, Impressum unter `#/impressum` (Vorlagen – bitte ausfüllen und prüfen lassen).
+* **Betroffenenrechte zum Selbermachen:** Datenexport als JSON (Art. 15/20 DSGVO), Konto löschen (Art. 17) – persönliche Daten und Fotos werden gelöscht, Abrechnungsbelege bleiben wegen der Aufbewahrungspflicht (§ 147 AO) anonymisiert erhalten.
+* Nur ein technisch notwendiges Cookie, kein Tracking. Sicherheits-Header (CSP, `X-Frame-Options: DENY`).
+
+## Zwei-Faktor-Anmeldung (MFA)
+
+* TOTP nach RFC 6238 – funktioniert mit Google Authenticator, Microsoft Authenticator, Authy, 1Password usw. Einrichtung per QR-Code (oder Schlüssel abtippen) unter **Profil → Sicherheit**.
+* 10 einmalig nutzbare **Backup-Codes** (gespeichert nur als Hash), neu erzeugbar.
+* Login in zwei Schritten: Passwort → kurzlebiges Token (5 Min., max. 5 Versuche) → Code. Ein Code kann nicht zweimal verwendet werden.
+* 2FA-Schlüssel liegen AES-256-GCM-verschlüsselt im Datenspeicher.
+* Sensible Aktionen (2FA abschalten, Backup-Codes erneuern, Konto löschen) verlangen Passwort **und** Code.
+* Bremse gegen Passwort-Ausprobieren (10 Versuche / 15 Min. pro IP und E-Mail), Übersicht der angemeldeten Geräte, „Alle anderen Geräte abmelden“.
+* Fahrer und Betreiber werden aktiv aufgefordert, 2FA zu aktivieren.
 
 ## Matching – wie der „beste Fahrer“ gefunden wird
 
@@ -51,7 +76,7 @@ Alle Werte sind über `.env` einstellbar (siehe `.env.example`).
 * Mit `GOOGLE_MAPS_API_KEY` (Geocoding API + Directions API aktivieren) laufen Adresssuche und Routenberechnung über Google.
 * Fahrer können einen **Google-Maps-Routenlink** einfügen (`google.com/maps/dir/Start/Ziel`, `?api=1&origin=…&destination=…` oder Kurzlink `maps.app.goo.gl/…`) – Start und Ziel werden daraus gelesen und die Route berechnet.
 * Ohne Key: OpenStreetMap (Nominatim + OSRM-Demoserver). Fällt der Routingdienst aus, wird die Luftlinie × 1,3 verwendet.
-* Kartenanzeige: Leaflet (lokal in `public/vendor/`, BSD-2-Lizenz) mit OpenStreetMap-Kacheln.
+* Kartenanzeige: Leaflet (lokal in `public/vendor/`, BSD-2-Lizenz) mit OpenStreetMap-Kacheln. QR-Codes: qrcode-generator (MIT).
 
 ## Projektstruktur
 
@@ -61,6 +86,8 @@ src/app.js           REST-API (Konten, Führerschein, Fahrten, Matching, Buchung
 src/matching.js      Fahrer-Suche und Bewertung
 src/pricing.js       Kilometerabrechnung, Provision, Spende, CO₂
 src/license.js       Führerschein-Prüfung
+src/profile.js       Profile, Anzeigenamen, Privatsphäre-Regeln
+src/mfa.js           TOTP, Backup-Codes, Verschlüsselung der 2FA-Schlüssel
 src/routing.js       Google Maps / OSM, Google-Maps-Link-Parser
 src/geo.js           Distanzen, Polylines, Projektion auf Routen
 src/db.js            JSON-Dateispeicher (data/db.json)
@@ -78,4 +105,5 @@ Dieser Code ist ein funktionsfähiger Prototyp. Für den echten Betrieb fehlen b
 4. **Versicherung:** Klären, wie Mitfahrer abgesichert sind (Kfz-Haftpflicht des Fahrers deckt Insassen grundsätzlich ab, bei gewerblicher Nutzung aber nicht zwingend).
 5. **Spende:** Empfängerorganisation festlegen und die gesammelten Beträge (Admin-Übersicht) regelmäßig überweisen; transparent ausweisen.
 6. **Technik:** JSON-Datei durch eine Datenbank (z. B. PostgreSQL/PostGIS) ersetzen, HTTPS erzwingen, Rate-Limiting für Login, Push-Benachrichtigungen statt Polling, Google-Maps-Nutzungsbedingungen beachten (Google-Daten auf Google-Karten anzeigen oder Maps JavaScript API verwenden).
-7. **Rechtliches:** Impressum, AGB, Datenschutzerklärung.
+7. **Rechtliches:** Impressum und Datenschutzerklärung (Vorlagen in der App) ausfüllen und prüfen lassen, AGB ergänzen, Auftragsverarbeitungsverträge (Hosting, Zahlungsdienst) abschließen, Verarbeitungsverzeichnis anlegen.
+8. **Domain & Betrieb:** joinmyride.com mit HTTPS (z. B. hinter einem Reverse-Proxy mit `X-Forwarded-Proto`), `APP_SECRET` sicher setzen, regelmäßige Backups von `data/`.

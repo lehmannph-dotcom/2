@@ -59,9 +59,9 @@ test('kompletter Ablauf: Führerschein → Fahrt → Match → Buchung → GPS �
   const driver = client(base);
   const rider = client(base);
 
-  assert.equal((await admin('POST', '/api/register', { name: 'Chef', email: 'chef@example.org', password: 'geheim123' })).user.isAdmin, true);
-  const d = (await driver('POST', '/api/register', { name: 'Doris Fahrer', email: 'doris@example.org', password: 'geheim123' })).user;
-  await rider('POST', '/api/register', { name: 'Rudi Mit', email: 'rudi@example.org', password: 'geheim123' });
+  assert.equal((await admin('POST', '/api/register', { name: 'Chef', email: 'chef@example.org', password: 'geheim123', acceptPrivacy: true })).user.isAdmin, true);
+  const d = (await driver('POST', '/api/register', { name: 'Doris Fahrer', email: 'doris@example.org', password: 'geheim123', acceptPrivacy: true })).user;
+  await rider('POST', '/api/register', { name: 'Rudi Mit', email: 'rudi@example.org', password: 'geheim123', acceptPrivacy: true });
   assert.equal(d.isAdmin, false);
 
   // Ohne Führerschein kein Angebot
@@ -89,7 +89,7 @@ test('kompletter Ablauf: Führerschein → Fahrt → Match → Buchung → GPS �
   const dropoff = { ...pointAlongRoute(trip.route.coords, 20), label: 'Ziel' };
   const { matches } = await rider('POST', '/api/match', { pickup, dropoff, seats: 1 });
   assert.equal(matches.length, 1);
-  assert.equal(matches[0].driverName, 'Doris Fahrer');
+  assert.equal(matches[0].driverName, 'Doris F.'); // Nachname standardmäßig abgekürzt
   assert.ok(Math.abs(matches[0].plannedKm - 17) < 0.5, String(matches[0].plannedKm));
 
   // Ohne Guthaben keine Buchung

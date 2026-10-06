@@ -1,6 +1,6 @@
 'use strict';
 
-/* Mitfahrzentrale – Frontend (ohne Build-Schritt) */
+/* joinmyride.com – Frontend (ohne Build-Schritt) */
 
 const state = {
   me: null,
@@ -34,6 +34,7 @@ async function api(path, body, method) {
     const err = new Error(data.error || `Fehler ${res.status}`);
     err.details = data.details;
     err.status = res.status;
+    err.code = data.code;
     throw err;
   }
   return data;
@@ -53,7 +54,8 @@ async function guard(fn, btn) {
     return await fn();
   } catch (err) {
     toast(err.message + (err.details ? ' ' + err.details.join(' ') : ''));
-    if (err.status === 401) { state.me = null; render(); }
+    // Nur bei abgelaufener Sitzung zur Anmeldung – nicht bei falschem Passwort/Code.
+    if (err.code === 'auth_required' && state.me) { state.me = null; stopDriving(); render(); }
   } finally {
     if (btn) btn.disabled = false;
   }
@@ -223,11 +225,15 @@ function renderHeader() {
 function render() {
   renderHeader();
   clearInterval(state.pollTimer);
+  closeModal();
   const panel = $('#panel');
-  if (!state.me) return renderAuth(panel);
   const view = currentView();
+  if (view === 'datenschutz') return renderPrivacyPolicy(panel);
+  if (view === 'impressum') return renderImprint(panel);
+  if (!state.me) return renderAuth(panel);
   if (view === 'fahren') guard(() => renderDriver(panel));
   else if (view === 'konto') guard(() => renderAccount(panel));
+  else if (view === 'profil') guard(() => renderProfile(panel));
   else if (view === 'admin' && state.me.isAdmin) guard(() => renderAdmin(panel));
   else guard(() => renderRider(panel));
 }
@@ -261,7 +267,18 @@ function renderAuth(panel) {
         <input id="a-email" type="email" autocomplete="email" required>
         <label for="a-pass">Passwort</label>
         <input id="a-pass" type="password" autocomplete="current-password" minlength="8" required>
+        <label class="check" id="consent-field" hidden>
+          <input type="checkbox" id="a-consent">
+          <span>Ich habe die <a href="#/datenschutz" target="_blank">Datenschutzerklärung</a> gelesen und stimme der Verarbeitung meiner Daten zur Vermittlung und Abrechnung von Fahrten zu.</span>
+        </label>
         <button class="full" style="margin-top:14px" id="a-submit">Anmelden</button>
+      </form>
+      <form id="mfa-form" hidden>
+        <h3>🔐 Zwei-Faktor-Bestätigung</h3>
+        <p class="muted small">Gib den 6-stelligen Code aus deiner Authenticator-App ein – oder einen deiner Backup-Codes.</p>
+        <input id="mfa-code" class="code-input" inputmode="numeric" autocomplete="one-time-code" maxlength="9" placeholder="123456" required>
+        <button class="full" style="margin-top:14px" id="mfa-submit">Bestätigen</button>
+        <button type="button" class="secondary full" style="margin-top:8px" id="mfa-back">Zurück</button>
       </form>
     </div>
     <div class="card">
@@ -278,6 +295,7 @@ function renderAuth(panel) {
     $('#tab-login').className = m === 'login' ? '' : 'secondary';
     $('#tab-register').className = m === 'register' ? '' : 'secondary';
     $('#name-field').hidden = m !== 'register';
+    $('#consent-field').hidden = m !== 'register';
     $('#a-submit').textContent = m === 'login' ? 'Anmelden' : 'Konto erstellen';
     $('#a-pass').autocomplete = m === 'login' ? 'current-password' : 'new-password';
   };
@@ -286,11 +304,42 @@ function renderAuth(panel) {
   $('#auth-form').onsubmit = (e) => {
     e.preventDefault();
     guard(async () => {
-      const body = { email: $('#a-email').value, password: $('#a-pass').value, name: $('#a-name').value };
-      const { user } = await api(mode === 'login' ? '/api/login' : '/api/register', body);
-      state.me = user;
+      const body = { email: $('#a-email').value, password: $('#a-pass').value, name: $('#a-name').value, acceptPrivacy: $('#a-consent').checked };
+      if (mode === 'register' && !body.acceptPrivacy) throw new Error('Bitte der Datenschutzerklärung zustimmen.');
+      const res = await api(mode === 'login' ? '/api/login' : '/api/register', body);
+      if (res.mfaRequired) {
+        mfaToken = res.mfaToken;
+        $('#auth-form').hidden = true;
+        $('.tabs').hidden = true;
+        $('#mfa-form').hidden = false;
+        $('#mfa-code').focus();
+        return;
+      }
+      state.me = res.user;
       render();
     }, $('#a-submit'));
+  };
+  let mfaToken = null;
+  $('#mfa-form').onsubmit = (e) => {
+    e.preventDefault();
+    guard(async () => {
+      try {
+        const res = await api('/api/login/mfa', { mfaToken, code: $('#mfa-code').value });
+        state.me = res.user;
+        if (res.usedBackupCode) toast(`Backup-Code verwendet – noch ${res.user.backupCodesLeft} übrig.`);
+        render();
+      } catch (err) {
+        $('#mfa-code').value = '';
+        if (err.status === 429 || /abgelaufen/.test(err.message)) $('#mfa-back').click();
+        throw err;
+      }
+    }, $('#mfa-submit'));
+  };
+  $('#mfa-back').onclick = () => {
+    $('#auth-form').hidden = false;
+    $('.tabs').hidden = false;
+    $('#mfa-form').hidden = true;
+    $('#a-pass').value = '';
   };
 }
 
@@ -357,7 +406,7 @@ async function renderMatches() {
     ${state.matches.map((m, i) => `
       <div class="match ${state.selected && state.selected.tripId === m.tripId ? 'selected' : ''}" data-i="${i}">
         <div class="top">
-          <div><b>${esc(m.driverName)}</b> ${i === 0 ? '<span class="badge best">Beste Wahl</span>' : ''}<br>
+          <div>${profileLink(m.driverId, m.driverName)} ${i === 0 ? '<span class="badge best">Beste Wahl</span>' : ''}<br>
             <span class="muted small">★ ${m.driverRating} · ${esc(m.vehicle || 'Pkw')} · ${m.seatsFree} frei</span></div>
           <div class="price">${euro(m.price.totalCents)}</div>
         </div>
@@ -441,7 +490,7 @@ async function renderRiderRide(panel, ride) {
     <div class="card">
       <h2>Deine Mitfahrt</h2>
       ${statusBadge(ride.status)}
-      <p><b>${esc(ride.driverName)}</b> ${ride.vehicle ? '· ' + esc(ride.vehicle) : ''}</p>
+      <p>${profileLink(ride.driverId, ride.driverName)} ${ride.vehicle ? '· ' + esc(ride.vehicle) : ''}</p>
       <p class="muted small">Abholung: ${esc(shortLabel(ride.pickup))}<br>Ziel: ${esc(shortLabel(ride.dropoff))}</p>
       ${ride.status === 'picked_up' ? `<p>Gefahren: <b>${km(ride.trackedKm)}</b> von ca. ${km(ride.plannedKm)}</p>` : ''}
       ${['requested', 'accepted'].includes(ride.status) ? '<button class="secondary" id="r-cancel">Stornieren</button>' : ''}
@@ -530,6 +579,7 @@ async function renderActiveTrip(panel) {
   panel.innerHTML = `
     <div class="card">
       <h2>Du bist online 🚗</h2>
+      ${mfaHint()}
       <p><b>${esc(shortLabel(trip.origin))}</b> → <b>${esc(shortLabel(trip.destination))}</b></p>
       <p class="muted small">${km(trip.route.distanceKm)} · ${trip.seatsFree} von ${trip.seats} Plätzen frei · zurückgelegt ${km(trip.progressKm || 0)}</p>
       <div class="btn-row">
@@ -596,7 +646,7 @@ function driverRideCard(r) {
     picked_up: `<button data-act="complete" data-id="${r.id}">Am Ziel abgesetzt</button>`,
   }[r.status];
   return `<div class="match">
-    <div class="top"><b>${esc(r.riderName)}</b> ${statusBadge(r.status)}</div>
+    <div class="top">${profileLink(r.riderId, r.riderName)} ${statusBadge(r.status)}</div>
     <div class="muted small">${r.seats} Pers. · ${esc(shortLabel(r.pickup))} → ${esc(shortLabel(r.dropoff))}</div>
     <div class="muted small">Umweg ca. ${km(r.detourKm)} · Mitfahrt ${km(r.plannedKm)} · dein Anteil ca. <b>${euro(r.estimate.driverCents)}</b></div>
     ${r.status === 'picked_up' ? `<div class="small">Gefahren (GPS): <b>${km(r.trackedKm)}</b></div>` : ''}
@@ -792,6 +842,7 @@ async function renderAdmin(panel) {
   panel.innerHTML = `
     <div class="card">
       <h2>Betreiber-Übersicht</h2>
+      ${mfaHint('Als Betreiber hast du Zugriff auf Führerscheindaten aller Fahrer – bitte unbedingt die Zwei-Faktor-Anmeldung aktivieren.')}
       <div class="stats">
         <div class="stat"><b>${euro(stats.commissionCents)}</b><span>Provision (deine Einnahmen)</span></div>
         <div class="stat"><b>${euro(stats.donationCents)}</b><span>Umweltspenden gesammelt</span></div>
@@ -826,6 +877,367 @@ async function renderAdmin(panel) {
       render();
     }, b)),
   );
+}
+
+// ---------- Profile anderer Nutzer (Popup) ----------
+function profileLink(userId, name) {
+  return `<button type="button" class="linkish" data-profile="${esc(userId)}" title="Profil ansehen">${esc(name)}</button>`;
+}
+
+function avatar(p, cls = '') {
+  return p.hasPhoto
+    ? `<img class="avatar ${cls}" src="/api/users/${esc(p.id)}/photo?v=${Date.now()}" alt="">`
+    : `<span class="avatar ${cls}">${esc((p.name || '?')[0].toUpperCase())}</span>`;
+}
+
+const PREF_LABELS = { smoking: '🚬 Rauchen', pets: '🐾 Tiere', music: '🎵 Musik', chat: '💬 Unterhaltung' };
+
+function profileHtml(p) {
+  return `
+    <div class="profile-head">${avatar(p)}
+      <div><h2 style="margin:0">${esc(p.name)}</h2>
+        <div class="chips">
+          ${p.verifiedDriver ? '<span class="badge ok">✔ Führerschein geprüft</span>' : ''}
+          ${p.mfaEnabled ? '<span class="badge ok">🔐 2FA gesichert</span>' : ''}
+          ${p.rating ? `<span class="badge">★ ${p.rating} (${p.ratingCount})</span>` : '<span class="badge">Noch keine Bewertung</span>'}
+        </div>
+      </div>
+    </div>
+    ${p.bio ? `<p>${esc(p.bio)}</p>` : ''}
+    ${p.phone ? `<p>📞 <a href="tel:${esc(p.phone.replace(/[^+0-9]/g, ''))}">${esc(p.phone)}</a></p>` : ''}
+    ${p.vehicle && p.vehicle.model ? `<p class="muted">🚗 ${esc([p.vehicle.color, p.vehicle.model].filter(Boolean).join(' '))}</p>` : ''}
+    <div class="chips">${Object.entries(p.preferences).map(([k, v]) => `<span class="badge">${PREF_LABELS[k]}: ${esc(v)}</span>`).join('')}</div>
+    ${p.languages.length ? `<p class="muted small">Spricht: ${esc(p.languages.join(', '))}</p>` : ''}
+    ${p.stats ? `<div class="stats" style="margin-top:10px">
+      <div class="stat"><b>${p.stats.ridesAsDriver}</b><span>Fahrten als Fahrer</span></div>
+      <div class="stat"><b>${p.stats.ridesAsRider}</b><span>Fahrten als Mitfahrer</span></div>
+      <div class="stat"><b>${p.stats.co2SavedKg.toLocaleString('de-DE')} kg</b><span>CO₂ gespart</span></div>
+      <div class="stat"><b>${esc(p.stats.memberSince.split('-').reverse().join('/'))}</b><span>Mitglied seit</span></div>
+    </div>` : ''}`;
+}
+
+async function showProfile(userId, preview) {
+  const { profile } = await api(`/api/users/${encodeURIComponent(userId)}/profile${preview ? '?preview=' + preview : ''}`);
+  openModal(profileHtml(profile) + (preview ? `<p class="muted small" style="margin-top:12px">Vorschau: So sieht dich ${preview === 'booked' ? 'ein bestätigter Fahrtpartner' : 'ein anderes Mitglied vor einer Buchung'}.</p>` : ''));
+}
+
+document.addEventListener('click', (e) => {
+  const el = e.target.closest('[data-profile]');
+  if (!el) return;
+  e.preventDefault();
+  e.stopPropagation();
+  guard(() => showProfile(el.dataset.profile));
+}, true);
+
+function openModal(html) {
+  $('#modal-body').innerHTML = html;
+  $('#modal').hidden = false;
+  $('.modal-close').focus();
+}
+function closeModal() {
+  $('#modal').hidden = true;
+  $('#modal-body').innerHTML = '';
+}
+$('.modal-close').addEventListener('click', closeModal);
+$('#modal').addEventListener('click', (e) => { if (e.target.id === 'modal') closeModal(); });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('#modal').hidden) closeModal(); });
+
+/** Fragt Passwort (und ggf. 2FA-Code) zur Bestätigung sensibler Aktionen ab. */
+function askCredentials(title, text, confirmLabel = 'Bestätigen', danger = false) {
+  return new Promise((resolve) => {
+    openModal(`<h2>${esc(title)}</h2><p class="muted">${text}</p>
+      <form id="cred-form">
+        <label for="c-pass">Passwort</label><input id="c-pass" type="password" autocomplete="current-password" required>
+        ${state.me.mfaEnabled ? '<label for="c-code">Code aus Authenticator-App oder Backup-Code</label><input id="c-code" class="code-input" inputmode="numeric" autocomplete="one-time-code" required>' : ''}
+        <div class="btn-row"><button class="${danger ? 'danger' : ''}">${esc(confirmLabel)}</button><button type="button" class="secondary" id="c-cancel">Abbrechen</button></div>
+      </form>`);
+    $('#c-pass').focus();
+    $('#c-cancel').onclick = () => { closeModal(); resolve(null); };
+    $('#cred-form').onsubmit = (e) => {
+      e.preventDefault();
+      const creds = { password: $('#c-pass').value, code: $('#c-code') ? $('#c-code').value : undefined };
+      closeModal();
+      resolve(creds);
+    };
+  });
+}
+
+function mfaHint(text) {
+  if (!state.me || state.me.mfaEnabled) return '';
+  return `<div class="card notice" style="margin:10px 0"><b>🔐 Konto absichern</b><p class="small" style="margin:4px 0 8px">${esc(text || 'Du teilst deinen Standort und erhältst Auszahlungen – schütze dein Konto mit der Zwei-Faktor-Anmeldung.')}</p><a class="btn" href="#/profil">2FA aktivieren</a></div>`;
+}
+
+// ---------- Eigenes Profil, Privatsphäre, Sicherheit, Daten ----------
+async function renderProfile(panel) {
+  drawMap();
+  await refreshMe();
+  const me = state.me;
+  const p = me.profile;
+  const pv = me.privacy;
+  const { sessions } = await api('/api/me/sessions');
+  const LANGS = ['Deutsch', 'Englisch', 'Französisch', 'Spanisch', 'Italienisch', 'Türkisch', 'Polnisch', 'Russisch', 'Arabisch', 'Ukrainisch'];
+  const PREFS = { smoking: ['nein', 'ja'], pets: ['nein', 'nach Absprache', 'ja'], music: ['egal', 'gerne', 'lieber leise'], chat: ['egal', 'gerne', 'lieber ruhig'] };
+  const sel = (k) => `<div><label for="p-${k}">${PREF_LABELS[k]}</label><select id="p-${k}">${PREFS[k].map((o) => `<option ${p.preferences[k] === o ? 'selected' : ''}>${o}</option>`).join('')}</select></div>`;
+
+  panel.innerHTML = `
+    <div class="card">
+      <h2>Mein Profil</h2>
+      <div class="profile-head">
+        ${avatar({ id: me.id, name: me.name, hasPhoto: me.hasPhoto })}
+        <div class="btn-row" style="margin:0">
+          <label class="btn secondary" style="margin:0;color:var(--text)">📷 Foto wählen<input type="file" id="p-photo" accept="image/*" hidden></label>
+          ${me.hasPhoto ? '<button class="secondary" id="p-photo-del">Entfernen</button>' : ''}
+        </div>
+      </div>
+      <form id="profile-form">
+        <label for="p-name">Name</label><input id="p-name" value="${esc(me.name)}" required>
+        <label for="p-bio">Über mich</label><textarea id="p-bio" maxlength="500" placeholder="z. B. Pendle werktags Berlin → Potsdam, fahre entspannt.">${esc(p.bio)}</textarea>
+        <label for="p-phone">Telefon (für Absprachen am Treffpunkt)</label><input id="p-phone" type="tel" value="${esc(p.phone)}" placeholder="+49 …">
+        <label>Sprachen</label>
+        <div class="checks">${LANGS.map((l) => `<label class="check"><input type="checkbox" name="lang" value="${l}" ${p.languages.includes(l) ? 'checked' : ''}>${l}</label>`).join('')}</div>
+        <div class="row">${sel('smoking')}${sel('pets')}</div>
+        <div class="row">${sel('music')}${sel('chat')}</div>
+        <div class="row">
+          <div><label for="p-model">Fahrzeug (Fahrer)</label><input id="p-model" value="${esc(p.vehicle.model)}" placeholder="VW Golf"></div>
+          <div><label for="p-color">Farbe</label><input id="p-color" value="${esc(p.vehicle.color)}" placeholder="blau"></div>
+        </div>
+        <div class="btn-row">
+          <button id="p-save">Profil speichern</button>
+          <button type="button" class="secondary" data-preview="stranger">So sehen mich andere</button>
+        </div>
+      </form>
+    </div>
+
+    <div class="card">
+      <h2>Privatsphäre</h2>
+      <p class="muted small">Andere Mitglieder sehen dein Profil nur, wenn du gerade als Fahrer online bist oder ihr gemeinsam fahrt. Deine E-Mail-Adresse ist nie sichtbar.</p>
+      <label class="check"><input type="checkbox" id="pv-fullname" ${pv.showFullName ? 'checked' : ''}><span>Vollständigen Nachnamen zeigen <span class="muted">(sonst „${esc(me.name.split(/\s+/)[0])} ${esc((me.name.split(/\s+/).slice(-1)[0] || '')[0] || '')}.“)</span></span></label>
+      <label class="check"><input type="checkbox" id="pv-photo" ${pv.showPhoto ? 'checked' : ''}><span>Profilfoto zeigen</span></label>
+      <label class="check"><input type="checkbox" id="pv-stats" ${pv.showStats ? 'checked' : ''}><span>Statistik zeigen (Anzahl Fahrten, CO₂, Mitglied seit)</span></label>
+      <label for="pv-phone">Telefonnummer sichtbar für</label>
+      <select id="pv-phone">
+        <option value="never" ${pv.phoneVisibility === 'never' ? 'selected' : ''}>niemanden</option>
+        <option value="booked" ${pv.phoneVisibility === 'booked' ? 'selected' : ''}>bestätigte Fahrtpartner während der Fahrt</option>
+      </select>
+      <p class="muted small">Start und Ziel deiner Fahrten sehen andere nur ungefähr (Ort statt Straße, Route ohne die ersten und letzten 500 m). Deinen Live-Standort sehen nur bestätigte Mitfahrer – und nur, solange du online bist.</p>
+      <div class="btn-row"><button id="pv-save">Privatsphäre speichern</button><button type="button" class="secondary" data-preview="booked">Vorschau für Fahrtpartner</button></div>
+    </div>
+
+    <div class="card" id="security">
+      <h2>Sicherheit & Anmeldung</h2>
+      ${me.mfaEnabled
+        ? `<p><span class="badge ok">🔐 Zwei-Faktor-Anmeldung aktiv</span></p>
+           <p class="muted small">Noch ${me.backupCodesLeft} Backup-Codes übrig.${me.backupCodesLeft < 3 ? ' <b>Bitte neue erzeugen.</b>' : ''}</p>
+           <div class="btn-row"><button class="secondary" id="mfa-codes">Neue Backup-Codes</button><button class="secondary" id="mfa-off">2FA deaktivieren</button></div>`
+        : `<p><span class="badge warn">Zwei-Faktor-Anmeldung aus</span></p>
+           <p class="muted small">Mit 2FA brauchst du beim Anmelden zusätzlich einen Code aus einer Authenticator-App (z. B. Google Authenticator, Microsoft Authenticator, Authy, 1Password). Selbst wer dein Passwort kennt, kommt so nicht in dein Konto.</p>
+           <button id="mfa-on">2FA einrichten</button>
+           <div id="mfa-setup"></div>`}
+      <h3 style="margin-top:16px">Angemeldete Geräte (${sessions.length})</h3>
+      <table class="breakdown">${sessions.map((s) => `<tr><td>${esc(shortAgent(s.userAgent))}${s.current ? ' <span class="badge ok">dieses Gerät</span>' : ''}</td><td class="muted small">${s.createdAt ? new Date(s.createdAt).toLocaleDateString('de-DE') : ''}</td></tr>`).join('')}</table>
+      ${sessions.length > 1 ? '<div class="btn-row"><button class="secondary" id="sess-revoke">Alle anderen Geräte abmelden</button></div>' : ''}
+    </div>
+
+    <div class="card">
+      <h2>Meine Daten</h2>
+      <p class="muted small">Einwilligung zur <a href="#/datenschutz">Datenschutzerklärung</a> erteilt am ${me.consentAt ? new Date(me.consentAt).toLocaleString('de-DE') : '–'}.</p>
+      <div class="btn-row">
+        <a class="btn secondary" style="color:var(--text)" href="/api/me/export" download>⬇ Alle meine Daten herunterladen (JSON)</a>
+      </div>
+      <p class="muted small">Auskunft und Datenübertragbarkeit nach Art. 15 und 20 DSGVO.</p>
+      <h3 style="margin-top:16px">Konto löschen</h3>
+      <p class="muted small">Profil, Fotos, Telefonnummer, Führerscheindaten und Anmeldedaten werden sofort gelöscht. Abrechnungsbelege müssen wir gesetzlich 10 Jahre aufbewahren – sie bleiben anonymisiert („Gelöschtes Konto“) erhalten. Restguthaben wird ausgezahlt.</p>
+      <button class="danger" id="acc-delete">Konto endgültig löschen</button>
+    </div>`;
+
+  panel.querySelectorAll('[data-preview]').forEach((b) => (b.onclick = () => guard(() => showProfile(me.id, b.dataset.preview))));
+
+  $('#p-photo').onchange = (e) => guard(async () => {
+    const image = await resizeImage(e.target.files[0], 512);
+    await api('/api/me/photo', { image });
+    toast('Profilfoto gespeichert.');
+    render();
+  });
+  const del = $('#p-photo-del');
+  if (del) del.onclick = () => guard(async () => { await api('/api/me/photo', {}, 'DELETE'); render(); }, del);
+
+  $('#profile-form').onsubmit = (e) => {
+    e.preventDefault();
+    guard(async () => {
+      try {
+        await api('/api/me/profile', {
+          name: $('#p-name').value,
+          profile: {
+            bio: $('#p-bio').value,
+            phone: $('#p-phone').value,
+            languages: [...panel.querySelectorAll('input[name=lang]:checked')].map((i) => i.value),
+            preferences: Object.fromEntries(Object.keys(PREFS).map((k) => [k, $('#p-' + k).value])),
+            vehicle: { model: $('#p-model').value, color: $('#p-color').value },
+          },
+        }, 'PUT');
+        toast('Profil gespeichert.');
+        await refreshMe();
+      } catch (err) {
+        if (err.details) err.message += ' ' + err.details.join(' ');
+        err.details = null;
+        throw err;
+      }
+    }, $('#p-save'));
+  };
+
+  $('#pv-save').onclick = (e) => guard(async () => {
+    await api('/api/me/profile', {
+      privacy: { showFullName: $('#pv-fullname').checked, showPhoto: $('#pv-photo').checked, showStats: $('#pv-stats').checked, phoneVisibility: $('#pv-phone').value },
+    }, 'PUT');
+    toast('Privatsphäre-Einstellungen gespeichert.');
+    await refreshMe();
+  }, e.target);
+
+  const on = (id, fn) => { const el = $(id); if (el) el.onclick = (e) => guard(() => fn(e), e.target); };
+  on('#mfa-on', startMfaSetup);
+  on('#mfa-codes', async () => {
+    const creds = await askCredentials('Neue Backup-Codes', 'Die bisherigen Backup-Codes werden ungültig.');
+    if (!creds) return;
+    const { backupCodes } = await api('/api/mfa/backup-codes', creds);
+    showBackupCodes(backupCodes);
+  });
+  on('#mfa-off', async () => {
+    const creds = await askCredentials('2FA deaktivieren', 'Dein Konto ist danach nur noch durch das Passwort geschützt.', 'Deaktivieren', true);
+    if (!creds) return;
+    await api('/api/mfa/disable', creds);
+    toast('Zwei-Faktor-Anmeldung deaktiviert.');
+    render();
+  });
+  on('#sess-revoke', async () => {
+    await api('/api/me/sessions/revoke-others', {});
+    toast('Alle anderen Geräte wurden abgemeldet.');
+    render();
+  });
+  on('#acc-delete', async () => {
+    const creds = await askCredentials('Konto endgültig löschen?', 'Das kann nicht rückgängig gemacht werden. Offene Fahrten müssen vorher abgeschlossen sein.', 'Endgültig löschen', true);
+    if (!creds) return;
+    const { payoutCents } = await api('/api/me/delete', creds);
+    state.me = null;
+    stopDriving();
+    location.hash = '#/mitfahren';
+    render();
+    toast('Dein Konto wurde gelöscht.' + (payoutCents ? ` Restguthaben von ${euro(payoutCents)} wird ausgezahlt.` : ''));
+  });
+}
+
+function shortAgent(ua) {
+  if (!ua) return 'Unbekanntes Gerät';
+  const os = /iPhone|iPad/.test(ua) ? 'iOS' : /Android/.test(ua) ? 'Android' : /Mac OS/.test(ua) ? 'macOS' : /Windows/.test(ua) ? 'Windows' : /Linux/.test(ua) ? 'Linux' : '';
+  const br = /Edg\//.test(ua) ? 'Edge' : /Firefox\//.test(ua) ? 'Firefox' : /Chrome\//.test(ua) ? 'Chrome' : /Safari\//.test(ua) ? 'Safari' : 'Browser';
+  return os ? `${br} auf ${os}` : br;
+}
+
+async function startMfaSetup() {
+  const { secret, otpauthUri } = await api('/api/mfa/setup', {});
+  const qr = qrcode(0, 'M');
+  qr.addData(otpauthUri);
+  qr.make();
+  $('#mfa-on').hidden = true;
+  $('#mfa-setup').innerHTML = `
+    <ol class="steps">
+      <li>Öffne deine Authenticator-App und scanne den QR-Code:</li>
+    </ol>
+    <div class="qr">${qr.createSvgTag({ cellSize: 4, margin: 2, scalable: true, alt: 'QR-Code für die Authenticator-App' })}</div>
+    <p class="muted small">Kein Scan möglich? Schlüssel manuell eingeben:</p>
+    <div class="secret">${esc(secret.match(/.{1,4}/g).join(' '))}</div>
+    <p class="muted small"><a href="${esc(otpauthUri)}">Auf diesem Gerät in der Authenticator-App öffnen</a></p>
+    <form id="mfa-enable">
+      <label for="mfa-first">2. Angezeigten 6-stelligen Code eingeben</label>
+      <input id="mfa-first" class="code-input" inputmode="numeric" autocomplete="one-time-code" maxlength="6" required>
+      <button class="full" style="margin-top:10px" id="mfa-confirm">2FA aktivieren</button>
+    </form>`;
+  $('#mfa-first').focus();
+  $('#mfa-enable').onsubmit = (e) => {
+    e.preventDefault();
+    guard(async () => {
+      const { backupCodes } = await api('/api/mfa/enable', { code: $('#mfa-first').value });
+      await refreshMe();
+      showBackupCodes(backupCodes);
+    }, $('#mfa-confirm'));
+  };
+}
+
+function showBackupCodes(codes) {
+  const text = `joinmyride.com – Backup-Codes für ${state.me.email}\nJeder Code funktioniert nur einmal.\n\n${codes.join('\n')}\n`;
+  const href = URL.createObjectURL(new Blob([text], { type: 'text/plain' }));
+  openModal(`<h2>🔐 Deine Backup-Codes</h2>
+    <p class="muted">Bewahre diese Codes sicher auf (z. B. ausgedruckt oder im Passwortmanager). Wenn du dein Handy verlierst, kommst du nur damit in dein Konto. Jeder Code gilt einmal. <b>Sie werden nur jetzt angezeigt.</b></p>
+    <div class="codes">${codes.map((c) => `<span>${esc(c)}</span>`).join('')}</div>
+    <div class="btn-row"><a class="btn secondary" style="color:var(--text)" href="${href}" download="joinmyride-backup-codes.txt">⬇ Als Datei speichern</a><button id="codes-done">Ich habe die Codes gespeichert</button></div>`);
+  $('#codes-done').onclick = () => { closeModal(); URL.revokeObjectURL(href); render(); };
+}
+
+// ---------- Rechtliches ----------
+function renderPrivacyPolicy(panel) {
+  drawMap();
+  const cfg = state.config ? state.config.pricing : { donationCentsPerRide: 1, commissionPercent: 10 };
+  panel.innerHTML = `
+    <div class="card legal">
+      <h2>Datenschutzerklärung</h2>
+      <p class="muted small">Stand: Oktober 2026 · ${state.me ? '<a href="#/profil">Zu meinen Datenschutz-Einstellungen</a>' : '<a href="#/mitfahren">Zur Anmeldung</a>'}</p>
+      <div class="card notice small">Vorlage – vor dem Livegang durch eine Datenschutz-Fachkraft prüfen lassen und die Angaben in eckigen Klammern ergänzen.</div>
+
+      <h3>1. Verantwortlicher</h3>
+      <p>[Name / Firma], [Anschrift], E-Mail: datenschutz@joinmyride.com. [Ggf. Datenschutzbeauftragte/r: Kontakt]</p>
+
+      <h3>2. Welche Daten wir verarbeiten und warum</h3>
+      <ul>
+        <li><b>Konto:</b> Name, E-Mail, Passwort (nur als scrypt-Hash), Zeitpunkt der Einwilligung. Zweck: Nutzerkonto, Vertragsdurchführung (Art. 6 Abs. 1 lit. b DSGVO).</li>
+        <li><b>Profil (freiwillig):</b> Foto, Über-mich-Text, Telefonnummer, Sprachen, Vorlieben, Fahrzeug. Zweck: Vertrauen und Absprachen zwischen Fahrtpartnern (Art. 6 Abs. 1 lit. b, lit. a DSGVO). Sichtbarkeit steuerst du in den Privatsphäre-Einstellungen.</li>
+        <li><b>Führerschein (nur Fahrer):</b> Name, Geburtsdatum, Führerscheinnummer, Klassen, Ablaufdatum, Fotos von Vorder- und Rückseite. Zweck: Sicherheit der Mitfahrer, Prüfung der Fahrberechtigung (Art. 6 Abs. 1 lit. b und f DSGVO). <b>Die Fotos werden direkt nach der Prüfung gelöscht</b>; gespeichert bleiben nur Nummer (anderen nie sichtbar), Klassen, Ablaufdatum und Prüfergebnis.</li>
+        <li><b>Standortdaten:</b> Abholort und Ziel von Mitfahrern; Route und – nur während einer aktiv angebotenen Fahrt und nur nach deinem Start der Standortfreigabe – der GPS-Standort von Fahrern. Zweck: Vermittlung und Abrechnung nach gefahrenen Kilometern (Art. 6 Abs. 1 lit. b DSGVO). Andere Mitglieder sehen Start und Ziel eines Fahrers nur vergröbert; den Live-Standort sehen nur bestätigte Mitfahrer.</li>
+        <li><b>Fahrten und Zahlungen:</b> Buchungen, gefahrene km, Preise, Provision (${cfg.commissionPercent} %), Umweltspende (${(cfg.donationCentsPerRide / 100).toFixed(2).replace('.', ',')} € pro Fahrt), Bewertungen. Zweck: Abrechnung und gesetzliche Aufbewahrung (Art. 6 Abs. 1 lit. b und c DSGVO).</li>
+        <li><b>Sicherheit:</b> Angemeldete Geräte (Browser-Kennung, Zeitpunkt), Daten der Zwei-Faktor-Anmeldung (Schlüssel verschlüsselt, Backup-Codes nur als Hash), Schutz vor Passwort-Ausprobieren. Zweck: Schutz deines Kontos (Art. 6 Abs. 1 lit. f, Art. 32 DSGVO).</li>
+      </ul>
+
+      <h3>3. Cookies und Tracking</h3>
+      <p>Wir verwenden ausschließlich ein technisch notwendiges Sitzungs-Cookie („sid“, HttpOnly, 30 Tage) für die Anmeldung (§ 25 Abs. 2 Nr. 2 TDDDG). Keine Werbe- oder Analyse-Cookies, kein Tracking, keine Weitergabe zu Werbezwecken.</p>
+
+      <h3>4. Empfänger</h3>
+      <ul>
+        <li><b>Fahrtpartner:</b> Profilangaben gemäß deinen Privatsphäre-Einstellungen, Abhol- und Zielort der gebuchten Fahrt.</li>
+        <li><b>Kartendienste:</b> Adress- und Routensuche über Google Maps Platform (Google Ireland Ltd.; ggf. Übermittlung in die USA auf Grundlage des EU-US Data Privacy Framework) bzw. OpenStreetMap (Nominatim/OSRM). Kartenkacheln werden von OpenStreetMap geladen; dabei wird deine IP-Adresse übertragen.</li>
+        <li><b>Zahlungsdienstleister:</b> [Name, z. B. Stripe Payments Europe Ltd.] für Zahlungen und Auszahlungen.</li>
+        <li><b>Hosting:</b> [Anbieter, Serverstandort EU] als Auftragsverarbeiter (Art. 28 DSGVO).</li>
+      </ul>
+
+      <h3>5. Speicherdauer</h3>
+      <ul>
+        <li>Konto- und Profildaten: bis zur Löschung deines Kontos.</li>
+        <li>Führerscheinfotos: bis zum Abschluss der Prüfung (in der Regel wenige Tage).</li>
+        <li>GPS-Standort: nur der jeweils letzte Standort während einer aktiven Fahrt; nach Fahrtende nicht mehr sichtbar.</li>
+        <li>Abrechnungsdaten: 10 Jahre (§ 147 AO, § 257 HGB) – nach Kontolöschung anonymisiert.</li>
+        <li>Anmeldesitzungen: 30 Tage oder bis zur Abmeldung.</li>
+      </ul>
+
+      <h3>6. Deine Rechte</h3>
+      <p>Du hast das Recht auf Auskunft (Art. 15), Berichtigung (Art. 16), Löschung (Art. 17), Einschränkung (Art. 18), Datenübertragbarkeit (Art. 20) und Widerspruch (Art. 21 DSGVO) sowie auf Widerruf erteilter Einwilligungen mit Wirkung für die Zukunft (Art. 7 Abs. 3). ${state.me ? 'Datenexport und Kontolöschung kannst du jederzeit selbst in deinem <a href="#/profil">Profil</a> ausführen.' : 'Datenexport und Kontolöschung kannst du nach der Anmeldung jederzeit selbst im Profil ausführen.'} Du kannst dich außerdem bei einer Datenschutz-Aufsichtsbehörde beschweren (Art. 77 DSGVO), z. B. [zuständige Landesbehörde].</p>
+
+      <h3>7. Sicherheit</h3>
+      <p>Verschlüsselte Übertragung (HTTPS), Passwörter nur als Hash, optionale Zwei-Faktor-Anmeldung (TOTP), verschlüsselte Speicherung der 2FA-Schlüssel, Begrenzung von Anmeldeversuchen, Zugriff auf Führerscheindaten nur durch den Betreiber.</p>
+
+      <h3>8. Automatisierte Entscheidungen</h3>
+      <p>Die Reihenfolge der vorgeschlagenen Fahrer wird automatisch aus Umweg, Wartezeit, Streckenabdeckung und Bewertung berechnet. Es findet kein Profiling mit rechtlicher Wirkung im Sinne von Art. 22 DSGVO statt; du entscheidest selbst, bei wem du mitfährst.</p>
+    </div>`;
+}
+
+function renderImprint(panel) {
+  drawMap();
+  panel.innerHTML = `
+    <div class="card legal">
+      <h2>Impressum</h2>
+      <div class="card notice small">Platzhalter – bitte vor dem Livegang vollständig ausfüllen (§ 5 DDG).</div>
+      <p><b>joinmyride.com</b><br>[Name / Firma, Rechtsform]<br>[Straße Nr.]<br>[PLZ Ort]</p>
+      <p>E-Mail: kontakt@joinmyride.com<br>Telefon: [Nummer]</p>
+      <p>[Vertretungsberechtigt: …]<br>[Registergericht, Registernummer]<br>[USt-IdNr.]</p>
+      <p>Verantwortlich für den Inhalt nach § 18 Abs. 2 MStV: [Name, Anschrift]</p>
+      <p class="muted small">Plattform der EU-Kommission zur Online-Streitbeilegung: https://ec.europa.eu/consumers/odr/ – wir sind nicht verpflichtet und nicht bereit, an Streitbeilegungsverfahren vor einer Verbraucherschlichtungsstelle teilzunehmen. [anpassen]</p>
+    </div>`;
 }
 
 // ---------- Start ----------

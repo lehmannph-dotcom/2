@@ -1,7 +1,7 @@
 {
-  "name": "mitfahrzentrale-adhoc",
-  "version": "0.1.0",
-  "description": "Ad-hoc Mitfahrzentrale: Jeder Fahrer mit gültigem Führerschein wird auf Basis seiner Google-Maps-Route zum Anbieter. Abrechnung nach Kilometern, Provision und 1 Cent Umweltspende pro Fahrt.",
+  "name": "joinmyride",
+  "version": "0.2.0",
+  "description": "joinmyride.com – Ad-hoc-Mitfahrzentrale: Jeder Fahrer mit gültigem Führerschein wird auf Basis seiner Google-Maps-Route zum Anbieter. Abrechnung nach Kilometern, Provision und 1 Cent Umweltspende pro Fahrt.",
   "main": "server.js",
   "type": "commonjs",
   "engines": { "node": ">=20" },

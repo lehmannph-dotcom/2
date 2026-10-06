@@ -1,12 +1,19 @@
 'use strict';
 
 const fs = require('node:fs');
+const crypto = require('node:crypto');
 const path = require('node:path');
 const { hashPassword, verifyPassword, createSession, userFromRequest, sessionCookie, parseCookies } = require('./auth');
 const { validateLicense, canDrive } = require('./license');
 const { findMatches } = require('./matching');
 const { computeFare, billableKm } = require('./pricing');
 const { haversineKm, projectOntoRoute, cumulativeKm, isLatLng } = require('./geo');
+const mfa = require('./mfa');
+const { displayName, publicProfile, privacyOf, profileOf, sanitizeProfile, sanitizePrivacy } = require('./profile');
+
+const PRIVACY_POLICY_VERSION = '2026-10';
+const MFA_LOGIN_TTL_MS = 5 * 60 * 1000;
+const MFA_MAX_ATTEMPTS = 5;
 
 const PUBLIC_DIR = path.join(__dirname, '..', 'public');
 const MAX_BODY = 16 * 1024 * 1024;
@@ -21,10 +28,11 @@ const MIME = {
 };
 
 class HttpError extends Error {
-  constructor(status, message, details) {
+  constructor(status, message, details, code) {
     super(message);
     this.status = status;
     this.details = details;
+    this.code = code;
   }
 }
 
@@ -58,6 +66,12 @@ function createApp({ store, config, routing }) {
     ratingCount: u.ratingCount,
     co2SavedKg: Math.round((u.co2SavedKg || 0) * 100) / 100,
     canDrive: canDrive(u),
+    mfaEnabled: Boolean(u.mfa && u.mfa.enabled),
+    backupCodesLeft: u.mfa && u.mfa.enabled ? u.mfa.backupHashes.length : 0,
+    hasPhoto: Boolean(profileOf(u).photo),
+    profile: { ...profileOf(u), photo: undefined },
+    privacy: privacyOf(u),
+    consentAt: u.consentAt || null,
     license: u.license
       ? {
           status: u.license.status,
@@ -82,11 +96,41 @@ function createApp({ store, config, routing }) {
     return {
       ...ride,
       role: viewer.id === ride.driverId ? 'driver' : 'rider',
-      riderName: rider ? rider.name : '?',
-      driverName: driver ? driver.name : '?',
+      riderName: displayName(rider, viewer),
+      driverName: displayName(driver, viewer),
       vehicle: trip ? trip.vehicle : '',
       driverPosition: trip ? trip.position || null : null,
       tripDestination: trip ? trip.destination : null,
+    };
+  };
+  // Datenschutz: Start und Ziel eines Fahrers sind oft Wohn- oder Arbeitsadresse.
+  // Wer nicht bestätigt mitfährt, sieht sie nur vergröbert (Ort statt Straße, Route ohne die ersten/letzten 500 m).
+  const PRIVACY_TRIM_KM = 0.5;
+  const coarsePlace = (p) => {
+    const parts = String(p.label || '').split(',').map((x) => x.trim()).filter(Boolean);
+    const isCoords = /^-?\d+(\.\d+)?$/.test(parts[0] || '') && parts.length === 2;
+    const label = isCoords ? 'Ungefährer Ort' : parts.length > 1 ? parts.slice(1).join(', ') : parts[0] || '';
+    return { label, lat: Math.round(p.lat * 100) / 100, lng: Math.round(p.lng * 100) / 100 };
+  };
+  const isBookedOn = (trip, userId) =>
+    Object.values(db.rides).some((r) => r.tripId === trip.id && r.riderId === userId && ['accepted', 'picked_up'].includes(r.status));
+  const tripView = (trip, viewer) => {
+    if (trip.driverId === viewer.id || isBookedOn(trip, viewer.id)) return trip;
+    const cum = tripCum(trip);
+    const total = cum[cum.length - 1];
+    const coords = trip.route.coords.filter((_, i) => cum[i] >= PRIVACY_TRIM_KM && cum[i] <= total - PRIVACY_TRIM_KM);
+    return {
+      id: trip.id,
+      driverId: trip.driverId,
+      status: trip.status,
+      seats: trip.seats,
+      seatsFree: trip.seatsFree,
+      vehicle: trip.vehicle,
+      origin: coarsePlace(trip.origin),
+      destination: coarsePlace(trip.destination),
+      route: { ...trip.route, coords: coords.length >= 2 ? coords : [] },
+      position: null,
+      progressKm: trip.progressKm,
     };
   };
   const releaseReservation = (ride) => {
@@ -109,13 +153,48 @@ function createApp({ store, config, routing }) {
   }), { public: true });
 
   // ---------- Konto ----------
+  const box = mfa.createSecretBox(store.secretKey());
+  const pendingLogins = new Map(); // mfaToken → { userId, expires, attempts }
+  const attempts = new Map(); // Brute-Force-Schutz: key → { count, reset }
+  const throttle = (key, max = 10, windowMs = 15 * 60 * 1000) => {
+    const t = Date.now();
+    const a = attempts.get(key);
+    if (!a || a.reset < t) return attempts.set(key, { count: 1, reset: t + windowMs }), undefined;
+    a.count++;
+    need(a.count <= max, 429, 'Zu viele Versuche. Bitte in 15 Minuten erneut versuchen.');
+  };
+  const clientIp = (req) => String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim();
+  const startSession = (user, req, res) => {
+    const token = createSession(store, user.id);
+    Object.assign(db.sessions[token], { createdAt: now(), userAgent: String(req.headers['user-agent'] || '').slice(0, 160) });
+    user.lastLoginAt = now();
+    res.setHeader('Set-Cookie', sessionCookie(token, req));
+  };
+  /** Prüft TOTP- oder Backup-Code; schützt vor Wiederverwendung eines TOTP-Codes. */
+  const checkSecondFactor = (user, code) => {
+    const c = String(code || '').trim();
+    const step = mfa.verifyTotp(box.decrypt(user.mfa.secret), c, { lastStep: user.mfa.lastStep ?? -1 });
+    if (step !== null) {
+      user.mfa.lastStep = step;
+      return 'totp';
+    }
+    if (mfa.useBackupCode(user.mfa.backupHashes, c)) return 'backup';
+    return null;
+  };
+  const confirmIdentity = (user, body) => {
+    need(verifyPassword(String(body.password || ''), user.passwordHash), 401, 'Passwort ist falsch.');
+    if (user.mfa && user.mfa.enabled) need(checkSecondFactor(user, body.code), 401, 'Bestätigungscode ist ungültig.');
+  };
+
   on('POST', '/api/register', async ({ body, req, res }) => {
+    throttle('register:' + clientIp(req), 20, 60 * 60 * 1000);
     const name = String(body.name || '').trim().slice(0, 80);
     const email = String(body.email || '').trim().toLowerCase();
     const password = String(body.password || '');
     need(name.length >= 2, 400, 'Bitte Namen angeben.');
     need(/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email), 400, 'Ungültige E-Mail-Adresse.');
     need(password.length >= 8, 400, 'Passwort muss mindestens 8 Zeichen haben.');
+    need(body.acceptPrivacy === true, 400, 'Bitte der Datenschutzerklärung und den Nutzungsbedingungen zustimmen.');
     need(!Object.values(db.users).some((u) => u.email === email), 409, 'E-Mail ist bereits registriert.');
     const isFirst = Object.keys(db.users).length === 0;
     const user = {
@@ -130,19 +209,48 @@ function createApp({ store, config, routing }) {
       ratingCount: 0,
       co2SavedKg: 0,
       license: null,
+      profile: null,
+      privacy: null,
+      mfa: null,
+      consentAt: now(),
+      consentVersion: PRIVACY_POLICY_VERSION,
       createdAt: now(),
     };
     db.users[user.id] = user;
-    res.setHeader('Set-Cookie', sessionCookie(createSession(store, user.id), req));
+    startSession(user, req, res);
     return { user: publicUser(user) };
   }, { public: true });
 
+  // Schritt 1: Passwort. Ist MFA aktiv, gibt es noch keine Sitzung, sondern ein kurzlebiges mfaToken.
   on('POST', '/api/login', ({ body, req, res }) => {
     const email = String(body.email || '').trim().toLowerCase();
-    const user = Object.values(db.users).find((u) => u.email === email);
+    throttle('login:' + clientIp(req) + ':' + email);
+    const user = Object.values(db.users).find((u) => u.email === email && !u.deleted);
     need(user && verifyPassword(String(body.password || ''), user.passwordHash), 401, 'E-Mail oder Passwort falsch.');
-    res.setHeader('Set-Cookie', sessionCookie(createSession(store, user.id), req));
+    if (user.mfa && user.mfa.enabled) {
+      const mfaToken = crypto.randomBytes(24).toString('base64url');
+      pendingLogins.set(mfaToken, { userId: user.id, expires: Date.now() + MFA_LOGIN_TTL_MS, attempts: 0 });
+      return { mfaRequired: true, mfaToken };
+    }
+    startSession(user, req, res);
     return { user: publicUser(user) };
+  }, { public: true });
+
+  // Schritt 2: Code aus der Authenticator-App oder Backup-Code.
+  on('POST', '/api/login/mfa', ({ body, req, res }) => {
+    const pending = pendingLogins.get(String(body.mfaToken || ''));
+    need(pending && pending.expires > Date.now(), 401, 'Anmeldung abgelaufen. Bitte erneut mit Passwort anmelden.');
+    pending.attempts++;
+    if (pending.attempts > MFA_MAX_ATTEMPTS) {
+      pendingLogins.delete(body.mfaToken);
+      throw new HttpError(429, 'Zu viele falsche Codes. Bitte erneut mit Passwort anmelden.');
+    }
+    const user = db.users[pending.userId];
+    const method = checkSecondFactor(user, body.code);
+    need(method, 401, 'Code ist ungültig.');
+    pendingLogins.delete(body.mfaToken);
+    startSession(user, req, res);
+    return { user: publicUser(user), usedBackupCode: method === 'backup' };
   }, { public: true });
 
   on('POST', '/api/logout', ({ req, res }) => {
@@ -152,6 +260,198 @@ function createApp({ store, config, routing }) {
   }, { public: true });
 
   on('GET', '/api/me', ({ user }) => ({ user: publicUser(user) }));
+
+  // ---------- MFA einrichten / verwalten ----------
+  on('POST', '/api/mfa/setup', ({ user }) => {
+    need(!(user.mfa && user.mfa.enabled), 409, 'MFA ist bereits aktiv.');
+    const secret = mfa.generateSecret();
+    user.mfaPending = { secret: box.encrypt(secret), createdAt: now() };
+    return { secret, otpauthUri: mfa.otpauthUri(secret, user.email) };
+  });
+
+  on('POST', '/api/mfa/enable', ({ user, body }) => {
+    need(user.mfaPending, 409, 'Bitte MFA-Einrichtung zuerst starten.');
+    const secret = box.decrypt(user.mfaPending.secret);
+    const step = mfa.verifyTotp(secret, body.code);
+    need(step !== null, 400, 'Code stimmt nicht. Bitte Uhrzeit des Handys prüfen und erneut versuchen.');
+    const { codes, hashes } = mfa.generateBackupCodes();
+    user.mfa = { enabled: true, secret: user.mfaPending.secret, lastStep: step, backupHashes: hashes, enabledAt: now() };
+    delete user.mfaPending;
+    return { user: publicUser(user), backupCodes: codes };
+  });
+
+  on('POST', '/api/mfa/backup-codes', ({ user, body }) => {
+    need(user.mfa && user.mfa.enabled, 409, 'MFA ist nicht aktiv.');
+    confirmIdentity(user, body);
+    const { codes, hashes } = mfa.generateBackupCodes();
+    user.mfa.backupHashes = hashes;
+    return { user: publicUser(user), backupCodes: codes };
+  });
+
+  on('POST', '/api/mfa/disable', ({ user, body }) => {
+    need(user.mfa && user.mfa.enabled, 409, 'MFA ist nicht aktiv.');
+    confirmIdentity(user, body);
+    user.mfa = null;
+    return { user: publicUser(user) };
+  });
+
+  // ---------- Profil & Privatsphäre ----------
+  const rideStats = (userId) => {
+    let asDriver = 0;
+    let asRider = 0;
+    for (const r of Object.values(db.rides)) {
+      if (r.status !== 'completed') continue;
+      if (r.driverId === userId) asDriver++;
+      if (r.riderId === userId) asRider++;
+    }
+    return { asDriver, asRider };
+  };
+  const sharesBooking = (a, b) =>
+    Object.values(db.rides).some(
+      (r) => ['accepted', 'picked_up'].includes(r.status) && ((r.driverId === a && r.riderId === b) || (r.driverId === b && r.riderId === a)),
+    );
+  const sharesAnyRide = (a, b) =>
+    Object.values(db.rides).some((r) => (r.driverId === a && r.riderId === b) || (r.driverId === b && r.riderId === a));
+  // Profile sind nur für angemeldete Nutzer sichtbar – und nur für aktive Fahrer
+  // oder Fahrtpartner (keine Möglichkeit, alle Mitglieder zu durchsuchen).
+  const canSeeProfile = (viewer, target) =>
+    viewer.id === target.id ||
+    viewer.isAdmin ||
+    sharesAnyRide(viewer.id, target.id) ||
+    Object.values(db.trips).some((t) => t.driverId === target.id && t.status === 'active');
+
+  on('PUT', '/api/me/profile', ({ user, body }) => {
+    const name = body.name !== undefined ? String(body.name).trim().slice(0, 80) : user.name;
+    need(name.length >= 2, 400, 'Bitte Namen angeben.');
+    const { errors, profile } = sanitizeProfile(body.profile || {}, user.profile);
+    if (errors.length) throw new HttpError(400, 'Profil unvollständig.', errors);
+    user.name = name;
+    user.profile = profile;
+    if (body.privacy) user.privacy = sanitizePrivacy(body.privacy, user.privacy);
+    return { user: publicUser(user) };
+  });
+
+  on('POST', '/api/me/photo', ({ user, body }) => {
+    const dataUrl = String(body.image || '');
+    need(/^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(dataUrl) && dataUrl.length < 3_000_000, 400, 'Bitte ein Bild (JPG/PNG, max. 2 MB) wählen.');
+    const prof = profileOf(user);
+    store.removeUpload(prof.photo);
+    const ext = dataUrl.slice(11, dataUrl.indexOf(';')).replace('jpeg', 'jpg');
+    const file = `${user.id}_photo_${Date.now()}.${ext}`;
+    fs.writeFileSync(store.uploadPath(file), Buffer.from(dataUrl.split(',')[1], 'base64'));
+    user.profile = { ...prof, photo: file };
+    return { user: publicUser(user) };
+  });
+
+  on('DELETE', '/api/me/photo', ({ user }) => {
+    const prof = profileOf(user);
+    store.removeUpload(prof.photo);
+    user.profile = { ...prof, photo: null };
+    return { user: publicUser(user) };
+  });
+
+  on('GET', '/api/users/:id/profile', ({ user, params, query }) => {
+    const target = db.users[params.id];
+    need(target && !target.deleted && canSeeProfile(user, target), 404, 'Profil nicht gefunden.');
+    // Vorschau des eigenen Profils aus Sicht eines Fremden bzw. eines bestätigten Fahrtpartners
+    const preview = target.id === user.id && query.get('preview');
+    if (preview) {
+      return { profile: publicProfile(target, { id: 'preview' }, { hasBooking: preview === 'booked', stats: rideStats(target.id) }) };
+    }
+    return { profile: publicProfile(target, user, { hasBooking: sharesBooking(user.id, target.id), stats: rideStats(target.id) }) };
+  });
+
+  on('GET', '/api/users/:id/photo', ({ user, params, res }) => {
+    const target = db.users[params.id];
+    need(target && !target.deleted && canSeeProfile(user, target), 404, 'Kein Foto.');
+    const photo = profileOf(target).photo;
+    need(photo && (privacyOf(target).showPhoto || target.id === user.id), 404, 'Kein Foto.');
+    const ext = path.extname(photo).slice(1);
+    res.writeHead(200, { 'Content-Type': `image/${ext === 'jpg' ? 'jpeg' : ext}`, 'Cache-Control': 'private, max-age=300', 'X-Content-Type-Options': 'nosniff' });
+    res.end(fs.readFileSync(store.uploadPath(photo)));
+    return undefined;
+  });
+
+  // ---------- Sitzungen ----------
+  on('GET', '/api/me/sessions', ({ user, req }) => {
+    const current = parseCookies(req.headers.cookie).sid;
+    return {
+      sessions: Object.entries(db.sessions)
+        .filter(([, s]) => s.userId === user.id && s.expires > Date.now())
+        .map(([token, s]) => ({ current: token === current, createdAt: s.createdAt || null, userAgent: s.userAgent || '' })),
+    };
+  });
+
+  on('POST', '/api/me/sessions/revoke-others', ({ user, req }) => {
+    const current = parseCookies(req.headers.cookie).sid;
+    for (const [token, s] of Object.entries(db.sessions)) if (s.userId === user.id && token !== current) delete db.sessions[token];
+    return { ok: true };
+  });
+
+  // ---------- DSGVO: Auskunft / Datenübertragbarkeit (Art. 15, 20) ----------
+  on('GET', '/api/me/export', ({ user, res }) => {
+    const { passwordHash, mfa: m, mfaPending, ...account } = user;
+    const data = {
+      exportedAt: now(),
+      service: 'joinmyride.com',
+      account: {
+        ...account,
+        mfa: m && m.enabled ? { enabled: true, enabledAt: m.enabledAt, backupCodesLeft: m.backupHashes.length } : { enabled: false },
+        license: user.license ? { ...user.license, files: user.license.files ? Object.keys(user.license.files) : [] } : null,
+      },
+      trips: Object.values(db.trips).filter((t) => t.driverId === user.id),
+      rides: Object.values(db.rides)
+        .filter((r) => r.riderId === user.id || r.driverId === user.id)
+        .map((r) => ({ ...r, partner: displayName(db.users[r.riderId === user.id ? r.driverId : r.riderId], user) })),
+      transactions: db.ledger.filter((t) => t.account === `user:${user.id}`),
+      sessions: Object.values(db.sessions).filter((s) => s.userId === user.id).map((s) => ({ createdAt: s.createdAt, userAgent: s.userAgent })),
+    };
+    res.writeHead(200, {
+      'Content-Type': 'application/json; charset=utf-8',
+      'Content-Disposition': `attachment; filename="joinmyride-daten-${new Date().toISOString().slice(0, 10)}.json"`,
+      'Cache-Control': 'no-store',
+    });
+    res.end(JSON.stringify(data, null, 2));
+    return undefined;
+  });
+
+  // ---------- DSGVO: Konto löschen (Art. 17) ----------
+  // Persönliche Daten werden gelöscht. Buchungen bleiben anonymisiert erhalten,
+  // weil Abrechnungsbelege gesetzlich aufbewahrt werden müssen (§ 147 AO, § 257 HGB).
+  on('POST', '/api/me/delete', ({ user, body, req, res }) => {
+    confirmIdentity(user, body);
+    const open = Object.values(db.rides).some((r) => (r.riderId === user.id || r.driverId === user.id) && ['requested', 'accepted', 'picked_up'].includes(r.status));
+    need(!open, 409, 'Bitte zuerst offene Fahrten abschließen oder stornieren.');
+    need(!Object.values(db.trips).some((t) => t.driverId === user.id && t.status === 'active'), 409, 'Bitte zuerst deine aktive Fahrt beenden.');
+    need(user.walletCents >= 0, 409, 'Bitte zuerst den offenen Betrag ausgleichen.');
+    store.removeUpload(profileOf(user).photo);
+    if (user.license && user.license.files) Object.values(user.license.files).forEach((f) => store.removeUpload(f));
+    for (const [token, s] of Object.entries(db.sessions)) if (s.userId === user.id) delete db.sessions[token];
+    for (const t of Object.values(db.trips)) {
+      if (t.driverId !== user.id) continue;
+      t.position = null;
+      t.vehicle = '';
+    }
+    const payoutCents = user.walletCents;
+    Object.assign(user, {
+      deleted: true,
+      deletedAt: now(),
+      name: 'Gelöschtes Konto',
+      email: null,
+      passwordHash: null,
+      profile: null,
+      privacy: null,
+      mfa: null,
+      mfaPending: null,
+      license: null,
+      isAdmin: false,
+      walletCents: 0,
+      reservedCents: 0,
+    });
+    if (payoutCents > 0) book(`user:${user.id}`, -payoutCents, 'payout', null, 'Auszahlung Restguthaben bei Kontolöschung');
+    res.setHeader('Set-Cookie', sessionCookie('', req));
+    return { ok: true, payoutCents };
+  });
 
   // Demo-Guthaben. Produktiv: Zahlungsdienstleister (z. B. Stripe Connect), siehe README.
   on('POST', '/api/wallet/topup', ({ user, body }) => {
@@ -211,7 +511,7 @@ function createApp({ store, config, routing }) {
       route: { coords: r.coords, distanceKm: r.distanceKm, durationMin: r.durationMin, provider: r.provider },
       seats,
       seatsFree: seats,
-      vehicle: String(body.vehicle || '').slice(0, 80),
+      vehicle: String(body.vehicle || [profileOf(user).vehicle.color, profileOf(user).vehicle.model].filter(Boolean).join(' ')).slice(0, 80),
       position: r.origin,
       progressKm: 0,
       createdAt: now(),
@@ -229,7 +529,7 @@ function createApp({ store, config, routing }) {
     need(trip, 404, 'Fahrt nicht gefunden.');
     const involved = trip.driverId === user.id || Object.values(db.rides).some((r) => r.tripId === trip.id && r.riderId === user.id);
     need(involved || trip.status === 'active', 403, 'Kein Zugriff.');
-    return { trip };
+    return { trip: tripView(trip, user) };
   });
 
   // GPS-Position des Fahrers. Daraus werden die tatsächlich gefahrenen km je Mitfahrer berechnet.
@@ -285,7 +585,12 @@ function createApp({ store, config, routing }) {
       maxDetourKm: config.matching.maxDetourKm,
       maxResults: config.matching.maxResults,
       users: db.users,
-    });
+    }).map((m) => ({
+      ...m,
+      driverName: displayName(db.users[m.driverId], user),
+      origin: coarsePlace(m.origin),
+      destination: coarsePlace(m.destination),
+    }));
     return { matches, activeDrivers: trips.length };
   });
 
@@ -460,6 +765,9 @@ function createApp({ store, config, routing }) {
     target.license.reviewNote = String(body.note || '').slice(0, 300);
     target.license.reviewedAt = now();
     target.license.reviewedBy = user.id;
+    // Datensparsamkeit: Fotos werden nach der Prüfung gelöscht, nur die Prüfdaten bleiben.
+    Object.values(target.license.files || {}).forEach((f) => store.removeUpload(f));
+    target.license.files = null;
     return { ok: true };
   });
 
@@ -486,7 +794,7 @@ function createApp({ store, config, routing }) {
       const m = url.pathname.match(route.re);
       route.keys.forEach((k, i) => (ctx.params[k] = decodeURIComponent(m[i + 1])));
       ctx.user = userFromRequest(store, req);
-      if (!route.public) need(ctx.user, 401, 'Bitte anmelden.');
+      if (!route.public && !ctx.user) throw new HttpError(401, 'Bitte anmelden.', undefined, 'auth_required');
       if (req.method !== 'GET') {
         // Einfacher CSRF-Schutz: nur JSON-Anfragen akzeptieren.
         need(String(req.headers['content-type'] || '').startsWith('application/json'), 415, 'JSON erwartet.');
@@ -498,7 +806,7 @@ function createApp({ store, config, routing }) {
     } catch (err) {
       const status = err instanceof HttpError ? err.status : 500;
       if (status === 500) console.error(err);
-      sendJson(res, status, { error: status === 500 ? 'Interner Fehler: ' + err.message : err.message, details: err.details });
+      sendJson(res, status, { error: status === 500 ? 'Interner Fehler: ' + err.message : err.message, details: err.details, code: err.code });
     }
   };
 }
@@ -541,11 +849,25 @@ function serveStatic(pathname, res) {
   return serveFile(file, res);
 }
 
+const CSP = [
+  "default-src 'self'",
+  "script-src 'self'",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data: blob: https://*.tile.openstreetmap.org",
+  "connect-src 'self'",
+  "frame-ancestors 'none'",
+  "base-uri 'none'",
+  "form-action 'self'",
+].join('; ');
+
 function serveFile(file, res) {
   res.writeHead(200, {
     'Content-Type': MIME[path.extname(file)] || 'application/octet-stream',
     'X-Content-Type-Options': 'nosniff',
     'Referrer-Policy': 'same-origin',
+    'X-Frame-Options': 'DENY',
+    'Content-Security-Policy': CSP,
+    'Permissions-Policy': 'camera=(self), geolocation=(self), microphone=()',
   });
   fs.createReadStream(file).pipe(res);
 }
