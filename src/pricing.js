@@ -3,19 +3,24 @@
 /**
  * Abrechnung nach gefahrenen Kilometern.
  *
- *   Fahrpreis   = km × Kilometersatz
- *   Provision   = Fahrpreis × Provisionssatz   → Betreiber
- *   Fahreranteil = Fahrpreis − Provision        → Fahrer
- *   Spende      = fester Betrag pro Fahrt       → Umweltschutz
- *   Gesamt (Mitfahrer zahlt) = Fahrpreis + Spende
+ *   Fahrpreis        = km der gemeinsamen Strecke × Kilometersatz × Personen
+ *   Provision        = Fahrpreis × Provisionssatz          → Betreiber
+ *   Anfahrt          = Umweg-km zum Treffpunkt × Kilometersatz → zu 100 % an den Fahrer (keine Provision)
+ *   Fahreranteil     = Fahrpreis − Provision + Anfahrt     → Fahrer
+ *   Spende           = fester Betrag pro Fahrt             → Umweltschutz
+ *   Gesamt (Mitfahrer zahlt) = Fahrpreis + Anfahrt + Spende
  *
+ * Die Anfahrt wird einmal pro Fahrt berechnet (nicht pro Person) und spart kein CO₂ –
+ * sie zählt daher nicht zur CO₂-Ersparnis.
  * Alle Beträge in ganzen Cent, um Rundungsfehler zu vermeiden.
  */
-function computeFare(km, pricing, seats = 1) {
+function computeFare(km, pricing, seats = 1, { pickupDetourKm = 0 } = {}) {
   const billedKm = Math.max(0, Math.round(km * 100) / 100);
+  const detourKm = pickupDetourKm >= 0.1 ? Math.round(pickupDetourKm * 100) / 100 : 0;
   const fareCents = Math.round(billedKm * pricing.ratePerKmCents * seats);
   const commissionCents = Math.round((fareCents * pricing.commissionPercent) / 100);
-  const driverCents = fareCents - commissionCents;
+  const detourCents = Math.round(detourKm * pricing.ratePerKmCents);
+  const driverCents = fareCents - commissionCents + detourCents;
   const donationCents = fareCents > 0 ? pricing.donationCentsPerRide : 0;
   return {
     km: billedKm,
@@ -23,9 +28,11 @@ function computeFare(km, pricing, seats = 1) {
     ratePerKmCents: pricing.ratePerKmCents,
     fareCents,
     commissionCents,
+    detourKm,
+    detourCents,
     driverCents,
     donationCents,
-    totalCents: fareCents + donationCents,
+    totalCents: fareCents + detourCents + donationCents,
     co2SavedKg: co2SavedKg(billedKm * seats, pricing),
   };
 }

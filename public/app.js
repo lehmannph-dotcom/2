@@ -20,6 +20,7 @@ const state = {
 const $ = (sel, root = document) => root.querySelector(sel);
 const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const euro = (cents) => (cents / 100).toLocaleString('de-DE', { style: 'currency', currency: 'EUR' });
+const kg = (v) => Number(v).toLocaleString('de-DE', { maximumFractionDigits: 1 });
 const km = (v) => `${Number(v).toLocaleString('de-DE', { maximumFractionDigits: 1 })} km`;
 const shortLabel = (p) => (p && p.label ? p.label.split(',').slice(0, 2).join(',') : '');
 
@@ -146,6 +147,7 @@ async function guard(fn, btn) {
   try {
     return await fn();
   } catch (err) {
+    if (err instanceof StaleRender) return undefined;
     toast(err.message + (err.details ? ' ' + err.details.join(' ') : ''));
     // Nur bei abgelaufener Sitzung zur Anmeldung – nicht bei falschem Passwort/Code.
     if (err.code === 'auth_required' && state.me) { state.me = null; stopDriving(); render(); }
@@ -315,12 +317,33 @@ function renderHeader() {
   if (lo) lo.onclick = () => guard(async () => { await api('/api/logout', {}); state.me = null; stopDriving(); render(); });
 }
 
+// Ansichten laden teils asynchron. Wechselt man währenddessen die Seite, darf eine veraltete
+// Ansicht das Panel nicht mehr überschreiben: Jede Ansicht bekommt eine laufende Nummer, und
+// ein Schreibversuch einer alten Ansicht bricht still ab (StaleRender).
+class StaleRender extends Error {}
+let renderSeq = 0;
+
+function guardedPanel(seq) {
+  const el = $('#panel');
+  return new Proxy(el, {
+    get(target, prop) {
+      const v = target[prop];
+      return typeof v === 'function' ? v.bind(target) : v;
+    },
+    set(target, prop, value) {
+      if (prop === 'innerHTML' && seq !== renderSeq) throw new StaleRender();
+      target[prop] = value;
+      return true;
+    },
+  });
+}
+
 function render() {
   hideTip();
   renderHeader();
   clearInterval(state.pollTimer);
   closeModal();
-  const panel = $('#panel');
+  const panel = guardedPanel(++renderSeq);
   const view = currentView();
   if (view === 'datenschutz') return renderPrivacyPolicy(panel);
   if (view === 'impressum') return renderImprint(panel);
@@ -458,11 +481,12 @@ const TIP = {
   billing: (who = 'du') => `<p><b>So wird abgerechnet</b></p><p>Grundlage ist die <b>schnellste Route laut Plan</b>, die ihr beide vorab bestätigt habt.</p><p>Ist die per GPS gemessene Strecke kürzer, gilt sie. Ist sie länger (Umweg), gilt die geplante Route – Umwege zahlt ${who === 'du' ? 'du' : 'der Mitfahrer'} nie.</p>`,
   price: () => {
     const c = state.config ? state.config.pricing : { ratePerKmCents: 25, commissionPercent: 10, donationCentsPerRide: 1 };
-    return `<p><b>Kostenteilung pro Kilometer</b></p><table><tr><td>Kilometersatz</td><td>${euro(c.ratePerKmCents)}/km</td></tr><tr><td>an den Fahrer</td><td>${100 - c.commissionPercent} %</td></tr><tr><td>Vermittlungsprovision</td><td>${c.commissionPercent} %</td></tr><tr><td>🌱 Umweltspende je Fahrt</td><td>${euro(c.donationCentsPerRide)}</td></tr></table><p style="margin-top:6px">Der Preis der geplanten Route ist der Höchstbetrag. Er wird reserviert und erst nach der Fahrt abgebucht.</p>`;
+    return `<p><b>Kostenteilung pro Kilometer</b></p><table><tr><td>Kilometersatz</td><td>${euro(c.ratePerKmCents)}/km</td></tr><tr><td>an den Fahrer</td><td>${100 - c.commissionPercent} %</td></tr><tr><td>Vermittlungsprovision</td><td>${c.commissionPercent} %</td></tr><tr><td>Anfahrt zum Treffpunkt</td><td>100 % Fahrer</td></tr><tr><td>🌱 Umweltspende je Fahrt</td><td>${euro(c.donationCentsPerRide)}</td></tr></table><p style="margin-top:6px">Der Preis der geplanten Route ist der Höchstbetrag. Er wird reserviert und erst nach der Fahrt abgebucht.</p>`;
   },
   payment: (isRider) => `<p><b>Wann wird bezahlt?</b></p><p>Sobald der Fahrer ${isRider ? 'dich' : 'den Mitfahrer'} abgesetzt <b>und</b> ${isRider ? 'du die Fahrt' : 'der Mitfahrer die Fahrt'} bewertet ${isRider ? 'hast' : 'hat'} – Reihenfolge egal.</p><p>Die Bewertung ändert den Preis nicht. Ohne Rückmeldung gilt die Fahrt nach 24 h als bestätigt.</p>`,
   points: () => `<p><b>Punkte = Faktor × eingesparte kg CO₂</b></p><p>Der Faktor ist die Bewertung, die du vom jeweils anderen bekommst:</p><table><tr><td>10 · 9 · 8 · 7</td><td>×10 · ×9 · ×8 · ×7</td></tr><tr><td>6 · 5 · 4</td><td>×1</td></tr><tr><td>3 · 2 · 1 · 0</td><td>×0</td></tr></table>`,
   nps: () => `<p><b>NPS – Net Promoter Score</b></p><p>Frage: „Wie wahrscheinlich empfiehlst du diese Person weiter?“ (0–10)</p><table><tr><td>😊 Promotoren</td><td>9–10</td></tr><tr><td>😐 Passive</td><td>7–8</td></tr><tr><td>🙁 Kritiker</td><td>0–6</td></tr></table><p style="margin-top:6px">NPS = % Promotoren − % Kritiker (−100 bis +100).</p>`,
+  detour: () => `<p><b>Anfahrt zum Treffpunkt</b></p><p>Der Umweg, den der Fahrer fährt, um dich abzuholen – zum gleichen Kilometersatz.</p><p>Dieser Teil geht <b>zu 100 % an den Fahrer</b>: Der Plattformbetreiber nimmt darauf keine Provision.</p>`,
   plannedRoute: () => `<p><b>Geplante Route</b></p><p>Die schnellste Route vom Abholort zum Ziel (dunkelgrün gestrichelt auf der Karte). Du und der Fahrer bestätigen sie – sie ist Grundlage und Obergrenze für den Preis.</p>`,
 };
 const BASIS = { geplant: 'geplante Route', gefahren: 'gefahrene Strecke (kürzer)', betreiber: 'Entscheidung Betreiber' };
@@ -570,6 +594,7 @@ function confirmationCard(r) {
       <tr><td>Geplante Route</td><td>${km(p.plannedKm)}${r.plannedRoute ? ` · ${Math.round(r.plannedRoute.durationMin)} min` : ''}</td></tr>
       <tr><td>Gefahren (GPS)${measuring ? ' <span class="muted small">– läuft</span>' : ''}</td><td>${p.trackedKm > 0.2 ? km(p.trackedKm) : '–'}</td></tr>
       <tr class="total"><td>Abgerechnet: ${BASIS[p.basis]} ${info(TIP.billing(isRider ? 'du' : 'mitfahrer'))}</td><td>${km(p.billedKm)}</td></tr>
+      ${p.price.detourCents ? `<tr><td>↪ Anfahrt zum Treffpunkt ${info(TIP.detour())}</td><td>${km(p.price.detourKm)}</td></tr>` : ''}
       <tr><td>${isRider ? 'Du zahlst' : 'Dein Anteil'}</td><td><b>${euro(isRider ? p.price.totalCents : p.price.driverCents)}</b></td></tr>
     </table>
     <p class="status-lines">${mine}<br>${theirs}
@@ -635,13 +660,11 @@ async function renderRider(panel) {
         </div>
         <div class="shrink"><button id="r-search">Besten Fahrer finden</button></div>
       </div>
-      ${filterPanel()}
     </div>
     <div id="matches"></div>`;
   bindPlaceFields(panel);
   $('#r-seats').onchange = (e) => (state.seats = Number(e.target.value));
   $('#r-search').onclick = (e) => guard(searchMatches, e.target);
-  bindFilterPanel(panel);
   if (state.matches.length) renderMatches();
   else previewPlaces();
 }
@@ -659,7 +682,7 @@ async function searchMatches() {
   state.activeDrivers = activeDrivers;
   if (!matches.length) {
     $('#matches').innerHTML = res.hiddenByFilters
-      ? `<div class="card"><h3>Kein Fahrer erfüllt alle Wünsche ${info('Lockere einzelne Wünsche, um mehr Fahrer zu sehen.')}</h3>${filterSummary(res)}</div>`
+      ? `<div class="card"><h3>Kein passender Fahrer</h3>${filterSummary(res)}</div>`
       : `<div class="card"><h3>Gerade kein passender Fahrer ${info(`${activeDrivers} Fahrer sind gerade unterwegs, aber keiner fährt in der Nähe deiner Strecke vorbei. Versuche es in ein paar Minuten erneut.`)}</h3><p class="muted">Bitte später noch einmal versuchen.</p></div>`;
     previewPlaces();
     return;
@@ -670,17 +693,17 @@ async function searchMatches() {
 async function renderMatches() {
   const box = $('#matches');
   if (!box) return;
-  box.innerHTML = `<div class="card"><h2>${state.matches.length} ${state.matches.length === 1 ? 'passender' : 'passende'} Fahrer</h2>
+  box.innerHTML = `<div class="card"><h2>${state.matches.length} ${state.matches.length === 1 ? 'passender' : 'passende'} Fahrer ${info('<p><b>Sortiert nach kürzestem Umweg</b> 🌱</p><p>Ganz oben steht immer der Fahrer, der für dich den geringsten Umweg fährt – das spart die meisten zusätzlichen Kilometer. Bei gleichem Umweg entscheidet die kürzere Wartezeit.</p>')}</h2>
     ${state.matchResult ? filterSummary(state.matchResult) : ''}
     ${state.matches.map((m, i) => `
       <div class="match ${state.selected && state.selected.tripId === m.tripId ? 'selected' : ''}" data-i="${i}">
         <div class="top">
-          <div>${profileLink(m.driverId, m.driverName)} ${i === 0 ? `<span class="badge best" data-tip="Kleinster Umweg, kürzeste Wartezeit, beste Streckenabdeckung und gute Bewertungen.">Beste Wahl</span>` : ''}<br>
+          <div>${profileLink(m.driverId, m.driverName)} ${i === 0 ? `<span class="badge best" tabindex="0" data-tip="Sortiert nach dem kürzesten Umweg des Fahrers – so entstehen die wenigsten zusätzlichen Kilometer.">🌱 Kürzester Umweg</span>` : ''}<br>
             ${npsBadge(m.driverNps)} ${prefIcons(m)}<br><span class="muted small">${esc(m.vehicle || 'Pkw')} · ${m.seatsFree} frei</span></div>
           <div class="price">${euro(m.price.totalCents)}</div>
         </div>
         <div class="muted small" style="margin-top:6px">
-          ⏱ ${m.etaMin} min · 🌱 ${m.price.co2SavedKg.toLocaleString('de-DE')} kg CO₂ ${info(`<table><tr><td>Abholung in ca.</td><td>${m.etaMin} min</td></tr><tr><td>Umweg für den Fahrer</td><td>${km(m.detourKm)}</td></tr><tr><td>CO₂-Ersparnis</td><td>${m.price.co2SavedKg.toLocaleString('de-DE')} kg</td></tr></table><p style="margin-top:6px">Fahrer fährt (ungefähr): ${esc(shortLabel(m.origin))} → ${esc(shortLabel(m.destination))}. Start und Ziel des Fahrers zeigen wir zum Schutz seiner Adresse nur ungefähr.</p>`, 'Details zur Fahrt')}
+          ↪ ${km(m.detourKm)} Umweg · ⏱ ${m.etaMin} min · 🌱 ${kg(m.price.co2SavedKg)} kg CO₂ ${info(`<table><tr><td>Abholung in ca.</td><td>${m.etaMin} min</td></tr><tr><td>Umweg für den Fahrer</td><td>${km(m.detourKm)}</td></tr><tr><td>davon Anfahrt zum Treffpunkt</td><td>${km(m.pickupDetourKm)}</td></tr><tr><td>CO₂-Ersparnis</td><td>${kg(m.price.co2SavedKg)} kg</td></tr></table><p style="margin-top:6px">Fahrer fährt (ungefähr): ${esc(shortLabel(m.origin))} → ${esc(shortLabel(m.destination))}. Start und Ziel des Fahrers zeigen wir zum Schutz seiner Adresse nur ungefähr.</p>`, 'Details zur Fahrt')}
         </div>
       </div>`).join('')}
     </div>
@@ -714,10 +737,11 @@ async function showMatchOnMap(m) {
 }
 
 function priceCard(p, title) {
-  const split = `<table><tr><td>${km(p.km)} × ${euro(p.ratePerKmCents)}${p.seats > 1 ? ` × ${p.seats} Pers.` : ''}</td><td>${euro(p.fareCents)}</td></tr><tr><td>davon an den Fahrer</td><td>${euro(p.driverCents)}</td></tr><tr><td>davon Vermittlungsprovision</td><td>${euro(p.commissionCents)}</td></tr><tr><td>🌱 Spende Umweltschutz</td><td>${euro(p.donationCents)}</td></tr></table>`;
+  const split = `<table><tr><td>${km(p.km)} × ${euro(p.ratePerKmCents)}${p.seats > 1 ? ` × ${p.seats} Pers.` : ''}</td><td>${euro(p.fareCents)}</td></tr><tr><td>davon an den Fahrer</td><td>${euro(p.driverCents)}</td></tr><tr><td>davon Vermittlungsprovision</td><td>${euro(p.commissionCents)}</td></tr><tr><td>🌱 Spende Umweltschutz</td><td>${euro(p.donationCents)}</td></tr></table><p style="margin-top:6px">Provision nur auf die gemeinsame Strecke – nicht auf die Anfahrt zum Treffpunkt.</p>`;
   return `<div class="card"><h3>${title} ${info(TIP.price())}</h3>
     <table class="breakdown">
       <tr><td>${withTip(`Fahrtkosten ${km(p.km)}`, split)}</td><td>${euro(p.fareCents)}</td></tr>
+      ${p.detourCents ? `<tr><td>↪ Anfahrt zum Treffpunkt ${km(p.detourKm)} ${info(TIP.detour())}</td><td>${euro(p.detourCents)}</td></tr>` : ''}
       <tr><td>🌱 Umweltspende</td><td>${euro(p.donationCents)}</td></tr>
       <tr class="total"><td>Gesamt ${info(TIP.billing())}</td><td>${euro(p.totalCents)}</td></tr>
     </table>
@@ -1082,7 +1106,7 @@ async function renderAccount(panel) {
       <h2>Mein Konto</h2>
       <div class="stats">
         <div class="stat"><b>${euro(me.walletCents - me.reservedCents)}</b><span>verfügbares Guthaben${me.reservedCents ? ` (${euro(me.reservedCents)} reserviert)` : ''}</span></div>
-        <div class="stat"><b>${me.co2SavedKg.toLocaleString('de-DE')} kg</b><span>CO₂ gemeinsam eingespart</span></div>
+        <div class="stat"><b>${kg(me.co2SavedKg)} kg</b><span>CO₂ gemeinsam eingespart</span></div>
         <div class="stat"><b>${me.nps.count ? (me.nps.score > 0 ? '+' : '') + me.nps.score : '–'}</b><span>dein NPS (${bewertungen(me.nps.count)}: ${me.nps.promoters} 😊 · ${me.nps.passives} 😐 · ${me.nps.detractors} 🙁)</span></div>
         <div class="stat"><b>${me.canDrive ? '✅' : '—'}</b><span>Fahrer verifiziert</span></div>
       </div>
@@ -1095,7 +1119,7 @@ async function renderAccount(panel) {
         <div class="match">
           <div class="top"><span>${r.role === 'rider' ? 'Mitgefahren bei' : 'Mitgenommen:'} <b>${esc(r.role === 'rider' ? r.driverName : r.riderName)}</b></span>
             <b>${r.role === 'rider' ? '−' + euro(r.final.totalCents) : '+' + euro(r.final.driverCents)}</b></div>
-          <div class="muted small">${new Date(r.completedAt).toLocaleDateString('de-DE')} · ${km(r.final.km)} · 🌱 ${r.final.co2SavedKg.toLocaleString('de-DE')} kg CO₂ ${info(`<table><tr><td>Abgerechnet</td><td>${km(r.final.km)}</td></tr><tr><td>Grundlage</td><td>${esc(BASIS[r.final.billing] || r.final.billing)}</td></tr>${r.final.plannedKm ? `<tr><td>Geplante Route</td><td>${km(r.final.plannedKm)}</td></tr><tr><td>Gefahren (GPS)</td><td>${r.final.trackedKm > 0.2 ? km(r.final.trackedKm) : '–'}</td></tr>` : ''}<tr><td>CO₂ gespart</td><td>${r.final.co2SavedKg.toLocaleString('de-DE')} kg</td></tr><tr><td>🌱 Umweltspende</td><td>${euro(r.final.donationCents)}</td></tr></table><p style="margin-top:6px">${new Date(r.completedAt).toLocaleString('de-DE')}</p>`, 'Details zur Abrechnung')}</div>
+          <div class="muted small">${new Date(r.completedAt).toLocaleDateString('de-DE')} · ${km(r.final.km)} · 🌱 ${kg(r.final.co2SavedKg)} kg CO₂ ${info(`<table><tr><td>Abgerechnet</td><td>${km(r.final.km)}</td></tr><tr><td>Grundlage</td><td>${esc(BASIS[r.final.billing] || r.final.billing)}</td></tr>${r.final.plannedKm ? `<tr><td>Geplante Route</td><td>${km(r.final.plannedKm)}</td></tr><tr><td>Gefahren (GPS)</td><td>${r.final.trackedKm > 0.2 ? km(r.final.trackedKm) : '–'}</td></tr>` : ''}${r.final.detourCents ? `<tr><td>Anfahrt zum Treffpunkt</td><td>${km(r.final.detourKm)} · ${euro(r.final.detourCents)} (ohne Provision)</td></tr>` : ''}<tr><td>CO₂ gespart</td><td>${kg(r.final.co2SavedKg)} kg</td></tr><tr><td>🌱 Umweltspende</td><td>${euro(r.final.donationCents)}</td></tr></table><p style="margin-top:6px">${new Date(r.completedAt).toLocaleString('de-DE')}</p>`, 'Details zur Abrechnung')}</div>
           <div class="small">${ridePointsLine(r.myPoints)}</div>
           ${r.role === 'rider' ? riderGuestbookLine(r) : ''}
           ${r.myRating ? `<div class="muted small">Deine Bewertung: <b>${r.myRating.score}</b>/10${r.myRating.aspects && r.myRating.aspects.length ? ` · Gründe: ${r.myRating.aspects.map((id) => esc(((state.config.aspects[r.role === 'rider' ? 'driver' : 'rider'] || []).find((a) => a.id === id) || { label: id }).label)).join(', ')}` : ''}</div>` : `<form class="nps-form" data-rate-form="${r.id}">${npsWidget(`Wie wahrscheinlich ist es, dass du ${r.role === 'rider' ? r.driverName : r.riderName} weiterempfiehlst?`, r.role === 'rider' ? 'driver' : 'rider')}<div class="btn-row"><button data-submit disabled>Bewertung senden</button></div></form>`}
@@ -1129,7 +1153,7 @@ async function renderAdmin(panel) {
         <div class="stat"><b>${euro(stats.donationCents)}</b><span>Umweltspenden gesammelt</span></div>
         <div class="stat"><b>${stats.ridesCompleted}</b><span>abgeschlossene Mitfahrten</span></div>
         <div class="stat"><b>${km(stats.kmShared)}</b><span>geteilte Kilometer</span></div>
-        <div class="stat"><b>${stats.co2SavedKg.toLocaleString('de-DE')} kg</b><span>CO₂ eingespart</span></div>
+        <div class="stat"><b>${kg(stats.co2SavedKg)} kg</b><span>CO₂ eingespart</span></div>
         <div class="stat"><b>${stats.driverNps.count ? (stats.driverNps.score > 0 ? '+' : '') + stats.driverNps.score : '–'}</b><span>NPS der Fahrer (${bewertungen(stats.driverNps.count)})</span></div>
         <div class="stat"><b>${stats.openDisputes}</b><span>offene Reklamationen</span></div>
         <div class="stat"><b>${stats.activeTrips} / ${stats.verifiedDrivers}</b><span>Fahrer online / verifiziert</span></div>
@@ -1220,7 +1244,7 @@ function profileHtml(p) {
     ${p.stats ? `<div class="stats" style="margin-top:10px">
       <div class="stat"><b>${p.stats.ridesAsDriver}</b><span>Fahrten als Fahrer</span></div>
       <div class="stat"><b>${p.stats.ridesAsRider}</b><span>Fahrten als Mitfahrer</span></div>
-      <div class="stat"><b>${p.stats.co2SavedKg.toLocaleString('de-DE')} kg</b><span>CO₂ gespart</span></div>
+      <div class="stat"><b>${kg(p.stats.co2SavedKg)} kg</b><span>CO₂ gespart</span></div>
       <div class="stat"><b>${esc(p.stats.memberSince.split('-').reverse().join('/'))}</b><span>Mitglied seit</span></div>
       ${p.stats.level ? `<div class="stat"><b>${p.stats.level.icon} ${esc(p.stats.level.name)}</b><span>Level</span></div><div class="stat"><b>${Number(p.stats.points).toLocaleString('de-DE')}</b><span>Punkte</span></div>` : ''}
     </div>
@@ -1232,6 +1256,10 @@ async function showProfile(userId, preview) {
   const { profile } = await api(`/api/users/${encodeURIComponent(userId)}/profile${preview ? '?preview=' + preview : ''}`);
   openModal(profileHtml(profile) + (preview ? `<p class="muted small" style="margin-top:12px">👁 Vorschau: ${preview === 'booked' ? 'Sicht eines bestätigten Fahrtpartners' : 'Sicht anderer Mitglieder'}</p>` : ''));
 }
+
+document.addEventListener('click', (e) => {
+  if (e.target.closest('[data-goto-filters]')) state.scrollToFilters = true;
+});
 
 document.addEventListener('click', (e) => {
   const el = e.target.closest('[data-profile]');
@@ -1284,6 +1312,7 @@ async function renderProfile(panel) {
   drawMap();
   await refreshMe();
   const me = state.me;
+  state.filters = me.riderFilters || {};
   const p = me.profile;
   const pv = me.privacy;
   const { sessions } = await api('/api/me/sessions');
@@ -1341,6 +1370,11 @@ async function renderProfile(panel) {
       <div class="btn-row"><button id="pv-save">Privatsphäre speichern</button><button type="button" class="secondary" data-preview="booked">Vorschau für Fahrtpartner</button></div>
     </div>
 
+    <div class="card" id="rider-filters-card">
+      <h2>🎯 Meine Wünsche an Fahrer ${info('<p>Diese Kriterien muss ein Fahrer erfüllen, damit er dir bei der Suche angezeigt wird.</p><p>Sie gelten automatisch bei jeder Suche – auf allen deinen Geräten. In der Suche siehst du nur, wie viele Fahrer deswegen ausgeblendet wurden.</p>')}</h2>
+      ${filterPanel()}
+    </div>
+
     ${await feedbackCard()}
 
     ${await myGuestbookCard()}
@@ -1369,6 +1403,11 @@ async function renderProfile(panel) {
     </div>`;
 
   panel.querySelectorAll('[data-preview]').forEach((b) => (b.onclick = () => guard(() => showProfile(me.id, b.dataset.preview))));
+  bindFilterPanel(panel);
+  if (state.scrollToFilters) {
+    state.scrollToFilters = false;
+    $('#rider-filters-card').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
   $('#p-plate').addEventListener('input', (e) => {
     const code = e.target.value.trim().toUpperCase();
     const name = (state.config.plateRegions || {})[code];
@@ -1574,7 +1613,7 @@ const pts = (n) => `${Number(n).toLocaleString('de-DE')} ${n === 1 ? 'Punkt' : '
 
 function ridePointsLine(p) {
   if (!p) return '';
-  return `<span class="points-chip">+${pts(p.points)} ${info(`<table><tr><td>Faktor</td><td>×${p.factor}</td></tr><tr><td>CO₂ gespart</td><td>${p.co2Kg.toLocaleString('de-DE')} kg</td></tr></table><p style="margin-top:6px">${p.rated ? `Bewertet mit ${p.score} (${CAT_LABEL[p.category]}).` : 'Noch nicht bewertet – vorläufiger Faktor.'}</p>`, 'Punkte-Details')}</span>`;
+  return `<span class="points-chip">+${pts(p.points)} ${info(`<table><tr><td>Faktor</td><td>×${p.factor}</td></tr><tr><td>CO₂ gespart</td><td>${kg(p.co2Kg)} kg</td></tr></table><p style="margin-top:6px">${p.rated ? `Bewertet mit ${p.score} (${CAT_LABEL[p.category]}).` : 'Noch nicht bewertet – vorläufiger Faktor.'}</p>`, 'Punkte-Details')}</span>`;
 }
 
 async function renderPoints(panel) {
@@ -1616,7 +1655,7 @@ async function renderPoints(panel) {
 
     <div class="card">
       <h2>Punkte-Verlauf</h2>
-      ${g.history.length ? `<table class="breakdown">${g.history.map((h) => `<tr><td>${h.role === 'driver' ? '🚗 Mitgenommen' : '🧍 Mitgefahren bei'} ${esc(h.partner)}<br><span class="muted small">${new Date(h.at).toLocaleDateString('de-DE')} · ${km(h.km)} · ${h.rated ? `bewertet mit ${h.score} (${CAT_LABEL[h.category]})` : 'noch nicht bewertet'}</span></td><td><b>+${h.points}</b><br><span class="muted small">×${h.factor} · ${h.co2Kg.toLocaleString('de-DE')} kg</span></td></tr>`).join('')}</table>` : '<p class="muted">Noch keine Punkte – teile deine erste Fahrt! 🌱</p>'}
+      ${g.history.length ? `<table class="breakdown">${g.history.map((h) => `<tr><td>${h.role === 'driver' ? '🚗 Mitgenommen' : '🧍 Mitgefahren bei'} ${esc(h.partner)}<br><span class="muted small">${new Date(h.at).toLocaleDateString('de-DE')} · ${km(h.km)} · ${h.rated ? `bewertet mit ${h.score} (${CAT_LABEL[h.category]})` : 'noch nicht bewertet'}</span></td><td><b>+${h.points}</b><br><span class="muted small">×${h.factor} · ${kg(h.co2Kg)} kg</span></td></tr>`).join('')}</table>` : '<p class="muted">Noch keine Punkte – teile deine erste Fahrt! 🌱</p>'}
     </div>`;
 
   const loadBoard = async (period) => {
@@ -1776,16 +1815,9 @@ async function renderFunfacts(panel) {
 }
 
 // ---------- Filter des Mitfahrers: Kriterien, die der Fahrer erfüllen muss ----------
-const FILTER_STORE = 'jmr-filters';
 const LANGS_ALL = ['Deutsch', 'Englisch', 'Französisch', 'Spanisch', 'Italienisch', 'Türkisch', 'Polnisch', 'Russisch', 'Arabisch', 'Ukrainisch'];
 
-function loadFilters() {
-  try { return JSON.parse(localStorage.getItem(FILTER_STORE)) || {}; } catch { return {}; }
-}
-function saveFilters(f) {
-  try { localStorage.setItem(FILTER_STORE, JSON.stringify(f)); } catch {}
-}
-state.filters = loadFilters();
+state.filters = {};
 
 function activeFilterCount(f) {
   return ['minNps', 'nonSmoker', 'pets', 'chat', 'music', 'language', 'mfa', 'safeDriving', 'maxEtaMin'].filter((k) => f[k] !== undefined && f[k] !== '' && f[k] !== false).length + (f.includeNew === false ? 1 : 0);
@@ -1795,8 +1827,8 @@ function filterPanel() {
   const f = state.filters;
   const opt = (v, label, cur) => `<option value="${v}" ${String(cur ?? '') === String(v) ? 'selected' : ''}>${label}</option>`;
   const n = activeFilterCount(f);
-  return `<details class="filters" ${n ? 'open' : ''}>
-    <summary>⚙️ Wünsche an den Fahrer ${n ? `<span class="badge ok">${n} aktiv</span>` : '<span class="muted small">(optional)</span>'}</summary>
+  return `<div class="filters" id="filters">
+    <p class="muted small" id="flt-count">${n ? `<span class="badge ok">${n} aktiv</span>` : 'Keine Wünsche gesetzt – alle passenden Fahrer werden angezeigt.'}</p>
     <div class="row">
       <div><label for="flt-nps">Mindest-NPS ${info(TIP.nps())}</label><select id="flt-nps">${opt('', 'egal', f.minNps)}${opt(0, '≥ 0', f.minNps)}${opt(30, '≥ +30', f.minNps)}${opt(50, '≥ +50', f.minNps)}${opt(70, '≥ +70', f.minNps)}</select></div>
       <div><label for="flt-eta">Max. Wartezeit</label><select id="flt-eta">${opt('', 'egal', f.maxEtaMin)}${opt(5, '5 min', f.maxEtaMin)}${opt(10, '10 min', f.maxEtaMin)}${opt(15, '15 min', f.maxEtaMin)}${opt(30, '30 min', f.maxEtaMin)}</select></div>
@@ -1813,8 +1845,8 @@ function filterPanel() {
       <div><label for="flt-music">Musik</label><select id="flt-music">${opt('', 'egal', f.music)}${opt('quiet', 'lieber leise', f.music)}</select></div>
     </div>
     <label for="flt-lang">Fahrer spricht</label><select id="flt-lang">${opt('', 'egal', f.language)}${LANGS_ALL.map((l) => opt(l, l, f.language)).join('')}</select>
-    <div class="btn-row"><button type="button" class="secondary" id="flt-reset">Wünsche zurücksetzen</button></div>
-  </details>`;
+    <div class="btn-row"><button type="button" id="flt-save">Wünsche speichern</button><button type="button" class="secondary" id="flt-reset">Zurücksetzen</button></div>
+  </div>`;
 }
 
 function bindFilterPanel(root) {
@@ -1832,24 +1864,29 @@ function bindFilterPanel(root) {
     if (v('#flt-music')) f.music = v('#flt-music');
     if (v('#flt-lang')) f.language = v('#flt-lang');
     state.filters = f;
-    saveFilters(f);
     const n = activeFilterCount(f);
-    root.querySelector('.filters summary').innerHTML = `⚙️ Wünsche an den Fahrer ${n ? `<span class="badge ok">${n} aktiv</span>` : '<span class="muted small">(optional)</span>'}`;
+    $('#flt-count').innerHTML = n ? `<span class="badge ok">${n} aktiv</span> <span class="muted small">– noch nicht gespeichert</span>` : 'Keine Wünsche gesetzt.';
   };
-  root.querySelectorAll('.filters select, .filters input').forEach((el) => el.addEventListener('change', read));
-  $('#flt-reset').onclick = () => {
-    state.filters = {};
-    saveFilters({});
-    root.querySelector('.filters').outerHTML = filterPanel();
+  const save = async (f, btn) => {
+    const { user } = await api('/api/me/profile', { riderFilters: f }, 'PUT');
+    state.me = user;
+    state.filters = user.riderFilters;
+    state.matches = [];
+    $('#filters').outerHTML = filterPanel();
     bindFilterPanel(root);
+    toast('Deine Wünsche an Fahrer sind gespeichert und gelten ab jetzt bei jeder Suche.');
+    return btn;
   };
+  root.querySelectorAll('#filters select, #filters input').forEach((el) => el.addEventListener('change', read));
+  $('#flt-save').onclick = (e) => guard(() => save(state.filters, e.target), e.target);
+  $('#flt-reset').onclick = (e) => guard(() => save({}, e.target), e.target);
 }
 
+/** In der Suche nur ein Satz – die Wünsche selbst stehen im Profil. */
 function filterSummary(res) {
   if (!res.hiddenByFilters) return '';
-  const labels = (state.config && state.config.filterLabels) || {};
-  const reasons = Object.entries(res.filteredOut).map(([k, n]) => `${esc(labels[k] || k)} (${n})`).join(', ');
-  return `<p class="muted small">🔎 ${res.hiddenByFilters} ${res.hiddenByFilters === 1 ? 'Fahrer passt' : 'Fahrer passen'} nicht zu deinen Wünschen: ${reasons}.</p>`;
+  const n = res.hiddenByFilters;
+  return `<p class="muted small">🔎 ${n} ${n === 1 ? 'Fahrer wird' : 'Fahrer werden'} dir wegen deiner Filter nicht angezeigt. <a href="#/profil" data-goto-filters>Filter ändern</a></p>`;
 }
 
 function prefIcons(m) {

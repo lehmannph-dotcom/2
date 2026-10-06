@@ -51,14 +51,14 @@ Fahrer und Mitfahrer haben ein Profil (Seite **Profil**): Foto, „Über mich“
 * Bremse gegen Passwort-Ausprobieren (10 Versuche / 15 Min. pro IP und E-Mail), Übersicht der angemeldeten Geräte, „Alle anderen Geräte abmelden“.
 * Fahrer und Betreiber werden aktiv aufgefordert, 2FA zu aktivieren.
 
-## Matching – wie der „beste Fahrer“ gefunden wird
+## Matching – welcher Fahrer oben steht
 
 Für jede aktive Fahrt (`src/matching.js`):
 
 1. Abholort und Ziel werden auf die Route des Fahrers projiziert – beide müssen höchstens `MAX_DETOUR_KM` (Standard 3 km) entfernt liegen.
 2. Der Abholort muss in Fahrtrichtung **vor** dem Ziel liegen, und der Fahrer darf ihn noch nicht passiert haben (Live-GPS).
-3. Genug freie Plätze, Führerschein verifiziert und gültig.
-4. Bewertung (kleiner = besser): `2 × Umweg-km + 0,5 × Wartezeit-min + 10 × (1 − Streckenabdeckung) + 8 × (100 − geglätteter NPS) / 200`.
+3. Genug freie Plätze, Führerschein verifiziert und gültig, Wünsche des Mitfahrers erfüllt.
+4. **Sortierung – ökologisch:** immer zuerst der Fahrer mit dem **kürzesten Umweg**, damit möglichst wenige zusätzliche Kilometer entstehen. Bei gleichem Umweg (±100 m) entscheidet die kürzere Wartezeit, danach Streckenabdeckung und geglätteter NPS.
 
 ## Bestätigung der Fahrt durch Fahrer und Mitfahrer
 
@@ -78,7 +78,7 @@ Grundlage ist die **schnellste Route laut Plan** vom Abholort zum Ziel (Google D
 
 ## Wünsche an den Fahrer (Filter für Mitfahrer)
 
-Unter „⚙️ Wünsche an den Fahrer“ legt der Mitfahrer fest, welche Kriterien der Fahrer erfüllen muss (im Browser gespeichert):
+Im **Profil** unter „🎯 Meine Wünsche an Fahrer“ legt der Mitfahrer fest, welche Kriterien der Fahrer erfüllen muss. Die Wünsche werden im Konto gespeichert und gelten automatisch bei jeder Suche (auf allen Geräten):
 
 | Kriterium | Bedeutung |
 |---|---|
@@ -90,7 +90,7 @@ Unter „⚙️ Wünsche an den Fahrer“ legt der Mitfahrer fest, welche Kriter
 | 🛣️ Sichere Fahrweise | höchstens 10 % der Bewertungen nennen „Fahrweise“ als Grund (ab 3 Bewertungen) |
 | Max. Wartezeit | Abholung in höchstens 5 / 10 / 15 / 30 min |
 
-Die Trefferliste zeigt, wie viele Fahrer durch welchen Wunsch ausgeblendet wurden. Die Vorlieben der Fahrer erscheinen als Symbole (🚭 🐾 🤫 💬 🎵 🔐 🗣️).
+Die Suche zeigt dazu nur einen Satz: „X Fahrer werden dir wegen deiner Filter nicht angezeigt.“ – mit Link zu den Wünschen im Profil. Die Vorlieben der Fahrer erscheinen als Symbole (🚭 🐾 🤫 💬 🎵 🔐 🗣️).
 
 ## Gründe bei kritischen Bewertungen & Feedback zum Lernen
 
@@ -168,11 +168,14 @@ Eigenes Menü **Funfacts** (auch ohne Anmeldung): Wo und in welchen Autos sitzen
 ```
 abgerechnete km = geplante Route – oder die gefahrene Strecke (GPS), sofern diese kürzer ist
 Fahrpreis       = abgerechnete km × Kilometersatz (Standard 0,25 €/km) × Personen
-Provision       = Fahrpreis × 10 %         → Betreiber
-Fahreranteil    = Fahrpreis − Provision    → Fahrer
-Spende          = 0,01 € pro Fahrt         → Umweltschutz
-Mitfahrer zahlt = Fahrpreis + Spende
+Provision       = Fahrpreis × 10 %                       → Betreiber
+Anfahrt         = Umweg zum Treffpunkt (km) × Kilometersatz → zu 100 % Fahrer, KEINE Provision
+Fahreranteil    = Fahrpreis − Provision + Anfahrt         → Fahrer
+Spende          = 0,01 € pro Fahrt                       → Umweltschutz
+Mitfahrer zahlt = Fahrpreis + Anfahrt + Spende
 ```
+
+* **Anfahrt zum Treffpunkt:** der Weg von der Route des Fahrers zum Abholort (Abstand × Straßenfaktor 1,3). Sie wird bei der Buchung festgelegt und von beiden bestätigt, einmal pro Fahrt berechnet (nicht pro Person), im Journal als eigene Buchung („Anfahrt zum Treffpunkt … (ohne Provision)“) geführt und zählt nicht zur CO₂-Ersparnis.
 
 * **Umwege zahlt der Mitfahrer nie**: Ist die gefahrene Strecke länger als geplant, gilt die geplante Route. Ohne GPS-Daten gilt ebenfalls die geplante Route.
 * Der Preis der geplanten Route ist damit der **Höchstbetrag**. Er wird bei der Annahme durch den Fahrer auf dem Guthaben reserviert; abgebucht wird erst nach beiden Bestätigungen.

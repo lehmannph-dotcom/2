@@ -122,3 +122,36 @@ test('Google-Maps-Links werden erkannt', () => {
   assert.deepEqual(c, { origin: { lat: 52.5, lng: 13.4 }, destination: 'Dresden' });
   assert.throws(() => parseGoogleMapsUrl(new URL('https://www.google.com/maps/place/Berlin')));
 });
+
+test('Anfahrt zum Treffpunkt: ohne Provision, 100 % an den Fahrer, ohne CO₂-Gutschrift', () => {
+  const f = computeFare(100, pricing, 1, { pickupDetourKm: 2 });
+  assert.equal(f.fareCents, 2500);
+  assert.equal(f.commissionCents, 250, 'Provision nur auf die gemeinsame Strecke');
+  assert.equal(f.detourKm, 2);
+  assert.equal(f.detourCents, 50);
+  assert.equal(f.driverCents, 2250 + 50);
+  assert.equal(f.totalCents, 2500 + 50 + 1);
+  assert.equal(f.driverCents + f.commissionCents + f.donationCents, f.totalCents);
+  assert.equal(f.co2SavedKg, 15, 'Anfahrt spart kein CO₂');
+  // Anfahrt einmal pro Fahrt, nicht pro Person; Kleinstwerte ignoriert
+  assert.equal(computeFare(10, pricing, 3, { pickupDetourKm: 2 }).detourCents, 50);
+  assert.equal(computeFare(10, pricing, 1, { pickupDetourKm: 0.05 }).detourCents, 0);
+});
+
+test('Sortierung: immer der kürzeste Umweg zuerst – auch vor besserer Bewertung und kürzerer Wartezeit', () => {
+  const line = (lat) => straightLine({ lat, lng: 13 }, { lat, lng: 14 });
+  const users = {
+    star: { id: 'star', nps: { promoters: 50, passives: 0, detractors: 0 } },
+    eco: { id: 'eco', nps: { promoters: 0, passives: 0, detractors: 5 } },
+  };
+  const trips = [
+    // bester NPS, kurze Wartezeit, aber ~2 km neben der Strecke
+    { id: 'far', driverId: 'star', status: 'active', seatsFree: 1, progressKm: 0.3, route: { coords: line(52.018), distanceKm: 70, durationMin: 50 } },
+    // schlechter NPS, aber direkt auf der Strecke
+    { id: 'near', driverId: 'eco', status: 'active', seatsFree: 1, route: { coords: line(52), distanceKm: 70, durationMin: 50 } },
+  ];
+  const res = findMatches({ trips, users, request: { pickup: { lat: 52, lng: 13.2 }, dropoff: { lat: 52, lng: 13.8 }, riderId: 'r' }, pricing });
+  assert.deepEqual(res.map((r) => r.tripId), ['near', 'far']);
+  assert.ok(res[1].pickupDetourKm > 2 && res[1].price.detourCents > 0);
+  assert.equal(res[0].pickupDetourKm, 0);
+});

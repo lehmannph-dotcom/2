@@ -396,3 +396,57 @@ test('Gründe bei kritischer Bewertung, anonymes Feedback und Filter beim Suchen
   assert.deepEqual(m.filteredOut, { minNps: 1, safeDriving: 1 });
   assert.ok(t2.id);
 });
+
+test('Anfahrt zum Treffpunkt geht ohne Provision an den Fahrer; Filter kommen aus dem Profil', async (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mfz-'));
+  const store = new Store(dir);
+  const server = http.createServer(createApp({ store, config, routing: fakeRouting }));
+  await new Promise((r) => server.listen(0, r));
+  t.after(() => { server.close(); store.flush(); fs.rmSync(dir, { recursive: true, force: true }); });
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const admin = client(base), driver = client(base), rider = client(base);
+  await admin('POST', '/api/register', { name: 'Chef', email: 'chef@example.org', password: 'geheim123', acceptPrivacy: true });
+  const d = (await driver('POST', '/api/register', { name: 'Doris Fahrer', email: 'd@example.org', password: 'geheim123', acceptPrivacy: true })).user;
+  await rider('POST', '/api/register', { name: 'Rudi Mit', email: 'r@example.org', password: 'geheim123', acceptPrivacy: true });
+  const img = 'data:image/png;base64,iVBORw0KGgo=';
+  await driver('POST', '/api/license', { fullName: 'Doris Fahrer', number: 'B072RRE2I55', classes: 'B', expiry: '2099-01-01', birthdate: '1985-01-01', frontImage: img, backImage: img });
+  await admin('POST', `/api/admin/licenses/${d.id}`, { decision: 'verified' });
+  await driver('PUT', '/api/me/profile', { profile: { preferences: { smoking: 'ja' } } });
+  const { trip } = await driver('POST', '/api/trips', { origin: 'Berlin', destination: 'Potsdam', seats: 1 });
+
+  // Abholort ca. 1 km neben der Route des Fahrers
+  const onRoute = pointAlongRoute(trip.route.coords, 3);
+  const pickup = { lat: onRoute.lat + 0.009, lng: onRoute.lng };
+  const dropoff = pointAlongRoute(trip.route.coords, 15);
+
+  // Filter im Profil: Nichtraucher → Fahrer (Raucher) wird nicht angezeigt
+  const me = (await rider('PUT', '/api/me/profile', { riderFilters: { nonSmoker: true, chat: 'laut' } })).user;
+  assert.deepEqual(me.riderFilters, { nonSmoker: true }, 'ungültige Werte werden verworfen');
+  let m = await rider('POST', '/api/match', { pickup, dropoff });
+  assert.equal(m.matches.length, 0);
+  assert.equal(m.hiddenByFilters, 1);
+  await rider('PUT', '/api/me/profile', { riderFilters: {} });
+  m = await rider('POST', '/api/match', { pickup, dropoff });
+  assert.equal(m.matches.length, 1);
+  const price = m.matches[0].price;
+  assert.ok(price.detourKm > 0.9 && price.detourKm < 1.6, String(price.detourKm));
+  assert.equal(price.detourCents, Math.round(price.detourKm * 25));
+
+  // Buchen, fahren, abrechnen
+  await rider('POST', '/api/wallet/topup', { amountCents: 2000 });
+  const { ride } = await rider('POST', '/api/rides', { tripId: trip.id, pickup, dropoff, confirmPlannedRoute: true });
+  assert.equal(ride.pickupDetourKm, price.detourKm);
+  assert.equal(ride.maxChargeCents, price.totalCents);
+  await driver('POST', `/api/rides/${ride.id}/accept`, { confirmPlannedRoute: true });
+  await driver('POST', `/api/rides/${ride.id}/pickup`, {});
+  await driver('POST', `/api/rides/${ride.id}/confirm`, {});
+  const done = (await rider('POST', `/api/rides/${ride.id}/confirm`, { nps: 9 })).ride;
+  assert.equal(done.final.detourCents, price.detourCents);
+  assert.equal(done.final.commissionCents, Math.round((done.final.fareCents * 10) / 100), 'Provision nur auf gemeinsame Strecke');
+  const tx = (await driver('GET', '/api/wallet/transactions')).transactions;
+  assert.equal(tx.find((x) => x.type === 'pickup_detour').amountCents, price.detourCents);
+  const dMe = (await driver('GET', '/api/me')).user;
+  assert.equal(dMe.walletCents, done.final.driverCents);
+  assert.equal(done.final.driverCents, done.final.fareCents - done.final.commissionCents + done.final.detourCents);
+  assert.equal((await admin('GET', '/api/admin/stats')).commissionCents, done.final.commissionCents);
+});

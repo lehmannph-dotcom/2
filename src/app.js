@@ -80,6 +80,7 @@ function createApp({ store, config, routing }) {
     hasPhoto: Boolean(profileOf(u).photo),
     profile: { ...profileOf(u), photo: undefined },
     privacy: privacyOf(u),
+    riderFilters: u.riderFilters || {},
     consentAt: u.consentAt || null,
     license: u.license
       ? {
@@ -93,6 +94,8 @@ function createApp({ store, config, routing }) {
   });
   const gameAll = () => game.computeAll(Object.values(db.rides), config.points, { month: game.monthKey(now()) });
   const gameOf = (userId) => game.summaryFor(gameAll().get(userId));
+  // Kilometer im deutschen Format, gleich gerundet wie in der Oberfläche (z. B. „0,9“)
+  const fmtKm = (n) => Number(n).toLocaleString('de-DE', { maximumFractionDigits: 1 });
   const book = (account, amountCents, type, rideId, note) => {
     db.ledger.push({ id: store.id('tx'), at: now(), account, amountCents, type, rideId, note });
   };
@@ -110,7 +113,7 @@ function createApp({ store, config, routing }) {
     let settlementPreview = null;
     if (['picked_up', 'confirming', 'disputed'].includes(ride.status)) {
       const b = billableKm(ride.plannedKm, ride.trackedKm);
-      settlementPreview = { plannedKm: ride.plannedKm, trackedKm: ride.trackedKm, billedKm: b.km, basis: b.basis, price: computeFare(b.km, config.pricing, ride.seats) };
+      settlementPreview = { plannedKm: ride.plannedKm, trackedKm: ride.trackedKm, billedKm: b.km, basis: b.basis, price: computeFare(b.km, config.pricing, ride.seats, { pickupDetourKm: ride.pickupDetourKm || 0 }) };
     }
     return {
       ...ride,
@@ -375,6 +378,8 @@ function createApp({ store, config, routing }) {
     user.name = name;
     user.profile = profile;
     if (body.privacy) user.privacy = sanitizePrivacy(body.privacy, user.privacy);
+    // Wünsche an den Fahrer – gelten automatisch bei jeder Suche
+    if (body.riderFilters) user.riderFilters = filters.sanitizeFilters(body.riderFilters);
     return { user: publicUser(user) };
   });
 
@@ -759,7 +764,8 @@ function createApp({ store, config, routing }) {
       users: db.users,
     });
     // Filter des Mitfahrers: Kriterien, die der Fahrer erfüllen muss
-    const wanted = filters.sanitizeFilters(body.filters || {});
+    // Filter aus dem Profil des Mitfahrers (body.filters nur für API-Clients/Tests)
+    const wanted = filters.sanitizeFilters(body.filters !== undefined ? body.filters : user.riderFilters || {});
     const filteredOut = {};
     let hidden = 0;
     const matches = all
@@ -783,7 +789,7 @@ function createApp({ store, config, routing }) {
         ...m,
         plannedKm: plannedRoute.distanceKm,
         plannedDurationMin: plannedRoute.durationMin,
-        price: computeFare(plannedRoute.distanceKm, config.pricing, seats),
+        price: computeFare(plannedRoute.distanceKm, config.pricing, seats, { pickupDetourKm: m.pickupDetourKm }),
         driverName: displayName(db.users[m.driverId], user),
         origin: coarsePlace(m.origin),
         destination: coarsePlace(m.destination),
@@ -817,7 +823,7 @@ function createApp({ store, config, routing }) {
     if (body.plannedKm !== undefined && Math.abs(Number(body.plannedKm) - plannedRoute.distanceKm) > 0.5) {
       throw new HttpError(409, 'Die geplante Route hat sich geändert. Bitte erneut suchen und bestätigen.');
     }
-    const estimate = computeFare(plannedRoute.distanceKm, config.pricing, seats);
+    const estimate = computeFare(plannedRoute.distanceKm, config.pricing, seats, { pickupDetourKm: match.pickupDetourKm });
     // Da nie mehr als die geplante Route berechnet wird, ist der geplante Preis zugleich der Höchstbetrag.
     need(user.walletCents - user.reservedCents >= estimate.totalCents, 402, `Nicht genug Guthaben. Benötigt werden ${(estimate.totalCents / 100).toFixed(2).replace('.', ',')} €.`);
     const ride = {
@@ -831,6 +837,7 @@ function createApp({ store, config, routing }) {
       seats,
       plannedRoute,
       plannedKm: plannedRoute.distanceKm,
+      pickupDetourKm: estimate.detourKm, // Anfahrt zum Treffpunkt – ohne Provision, 100 % an den Fahrer
       pickupAlongKm: match.pickupAlongKm,
       detourKm: match.detourKm,
       estimate,
@@ -912,7 +919,7 @@ function createApp({ store, config, routing }) {
    */
   const settle = (ride, confirmedBy, kmOverride) => {
     const basis = kmOverride !== undefined ? { km: kmOverride, basis: 'betreiber' } : billableKm(ride.plannedKm, ride.trackedKm);
-    const fare = computeFare(basis.km, config.pricing, ride.seats);
+    const fare = computeFare(basis.km, config.pricing, ride.seats, { pickupDetourKm: ride.pickupDetourKm || 0 });
     const rider = db.users[ride.riderId];
     const driver = db.users[ride.driverId];
     releaseReservation(ride);
@@ -920,8 +927,9 @@ function createApp({ store, config, routing }) {
 
     rider.walletCents -= fare.totalCents;
     driver.walletCents += fare.driverCents;
-    book(`user:${rider.id}`, -fare.totalCents, 'ride_payment', ride.id, `Mitfahrt ${fare.km.toFixed(1)} km`);
-    book(`user:${driver.id}`, fare.driverCents, 'ride_earning', ride.id, `Fahreranteil ${fare.km.toFixed(1)} km`);
+    book(`user:${rider.id}`, -fare.totalCents, 'ride_payment', ride.id, `Mitfahrt ${fmtKm(fare.km)} km`);
+    book(`user:${driver.id}`, fare.driverCents - fare.detourCents, 'ride_earning', ride.id, `Fahreranteil ${fmtKm(fare.km)} km`);
+    if (fare.detourCents) book(`user:${driver.id}`, fare.detourCents, 'pickup_detour', ride.id, `Anfahrt zum Treffpunkt ${fmtKm(fare.detourKm)} km (ohne Provision)`);
     book('platform', fare.commissionCents, 'commission', ride.id, `Provision ${config.pricing.commissionPercent} %`);
     book('donation', fare.donationCents, 'donation', ride.id, 'Spende Umweltschutz');
 

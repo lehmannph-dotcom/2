@@ -15,9 +15,9 @@ const ROAD_FACTOR = 1.3;
  *  2. Liegt der Abholort in Fahrtrichtung VOR dem Ziel?
  *  3. Hat der Fahrer den Abholort noch nicht passiert und genug freie Plätze?
  *
- * Bewertung (kleiner = besser): Umweg des Fahrers, Wartezeit bis Abholung,
- * Anteil der Strecke, die der Mitfahrer nicht abgedeckt bekommt, und NPS des Fahrers
- * (geglättet, damit wenige Bewertungen nicht überbewertet werden).
+ * Sortierung (ökologisch): immer zuerst der Fahrer mit dem KÜRZESTEN UMWEG – so entstehen
+ * die wenigsten zusätzlichen Kilometer. Bei gleichem Umweg (±100 m) entscheidet die kürzere
+ * Wartezeit, danach eine Gesamtbewertung (Streckenabdeckung, geglätteter NPS).
  */
 function findMatches({ trips, request, pricing, maxDetourKm = 3, maxResults = 10, users = {} }) {
   const { pickup, dropoff, seats = 1, riderId } = request;
@@ -64,15 +64,18 @@ function findMatches({ trips, request, pricing, maxDetourKm = 3, maxResults = 10
       pickupOffKm: round(p.offKm),
       dropoffOffKm: round(d.offKm),
       detourKm: round(detourKm),
+      // Anfahrt zum Treffpunkt: Weg von der Route des Fahrers zum Abholort
+      pickupDetourKm: round(p.offKm * ROAD_FACTOR),
       etaMin: Math.round(etaMin),
       plannedKm: round(sharedKm),
       routeShare: round(sharedKm / totalKm),
       score: round(score),
-      price: computeFare(sharedKm, pricing, seats),
+      price: computeFare(sharedKm, pricing, seats, { pickupDetourKm: p.offKm * ROAD_FACTOR }),
     });
   }
 
-  results.sort((a, b) => a.score - b.score);
+  const sameDetour = (a, b) => Math.abs(a.detourKm - b.detourKm) < 0.1;
+  results.sort((a, b) => (sameDetour(a, b) ? a.etaMin - b.etaMin || a.score - b.score : a.detourKm - b.detourKm));
   return results.slice(0, maxResults);
 }
 
