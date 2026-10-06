@@ -266,3 +266,10 @@ table.breakdown tr.total td { border-top: 1px solid var(--line); font-weight: 70
 /* Kartenkacheln dezent entsättigt – passend zur Pastell-Optik */
 .leaflet-tile-pane { filter: saturate(.55) brightness(1.04) contrast(.94); }
 .leaflet-container { font: inherit; }
+
+/* Logo, Level-Kreis und Vorlieben-Chips (ohne Emoji) */
+.brand { display: inline-flex; align-items: center; gap: 6px; }
+.brand .logo { flex: 0 0 auto; }
+.level-icon { display: inline-flex; align-items: center; justify-content: center; width: 56px; height: 56px; border-radius: 50%; background: var(--mint-300); color: var(--green-900); font-size: 1.5rem; font-weight: 800; }
+.pref-chips { display: inline-flex; flex-wrap: wrap; gap: 4px; margin-left: 4px; vertical-align: middle; }
+.pref { font-size: .7rem; padding: 1px 6px; border-radius: 999px; background: var(--white); border: 1px solid var(--line); color: var(--muted); }

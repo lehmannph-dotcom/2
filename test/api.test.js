@@ -128,7 +128,7 @@ test('kompletter Ablauf: Führerschein → Fahrt → Match → Buchung → GPS �
   assert.equal(half.status, 'confirming');
   assert.equal(half.myEndConfirmed, true);
   assert.equal(half.partnerEndConfirmed, false);
-  assert.equal(half.settlementPreview.basis, 'gefahren');
+  assert.equal(half.settlementPreview.basis, 'geplant');
   assert.equal((await driver('POST', `/api/rides/${ride.id}/confirm`, {})).status, 409, 'nicht doppelt');
   await driver('POST', `/api/trips/${trip.id}/position`, pointAlongRoute(trip.route.coords, 16));
   assert.equal((await rider('GET', '/api/rides')).rides[0].trackedKm, half.trackedKm, 'nach Bestätigung keine km mehr');
@@ -138,14 +138,15 @@ test('kompletter Ablauf: Führerschein → Fahrt → Match → Buchung → GPS �
   assert.equal((await rider('POST', `/api/rides/${ride.id}/confirm`, {})).status, 400);
   assert.equal((await rider('POST', `/api/rides/${ride.id}/confirm`, { nps: 11 })).status, 400);
   assert.equal((await rider('GET', '/api/me')).user.walletCents, 2000);
-  // Bewertung → Abrechnung: gefahrene 10 km < geplante 17 km
+  // Bewertung → Abrechnung: nur 10 km gefahren, trotzdem ist mit Fahrtantritt die geplante Route (17 km) fällig
   const done = (await rider('POST', `/api/rides/${ride.id}/confirm`, { nps: 10, comment: 'Super pünktlich!' })).ride;
   assert.equal(done.myRating.score, 10);
   assert.equal(done.myRating.category, 'promoter');
   assert.equal(done.status, 'completed');
-  assert.equal(done.final.billing, 'gefahren');
+  assert.equal(done.final.billing, 'geplant');
   assert.equal(done.final.confirmedBy, 'beide');
-  assert.ok(Math.abs(done.final.km - 10) < 0.1, String(done.final.km));
+  assert.ok(Math.abs(done.final.km - done.final.plannedKm) < 0.01, String(done.final.km));
+  assert.ok(Math.abs(done.final.trackedKm - 10) < 0.1);
   assert.ok(done.final.plannedKm > 16);
   assert.equal(done.final.fareCents, Math.round(done.final.km * 25));
   assert.equal(done.final.donationCents, 1);
@@ -239,7 +240,7 @@ test('Einseitige Bestätigung wird nach Frist automatisch abgerechnet', async (t
   const r = (await rider('GET', '/api/rides')).rides[0];
   assert.equal(r.status, 'completed');
   assert.equal(r.final.confirmedBy, 'automatisch');
-  assert.equal(r.final.billing, 'gefahren');
+  assert.equal(r.final.billing, 'geplant');
 });
 
 test('Reklamation: keine Abrechnung, Betreiber entscheidet', async (t) => {
@@ -271,7 +272,7 @@ test('Gezahlt wird erst mit Absetzen UND NPS-Bewertung des Mitfahrers', async (t
   assert.equal(r2.status, 'completed');
   assert.ok((await rider('GET', '/api/me')).user.walletCents < 1000);
   // Bewertung ändert den Preis nicht
-  assert.equal(r2.final.km, Math.min(r2.final.plannedKm, r2.final.trackedKm));
+  assert.equal(r2.final.km, r2.final.plannedKm);
   assert.equal((await driver('GET', '/api/me')).user.nps.score, -100);
   assert.equal((await rider('GET', '/api/me')).user.nps.score, 100);
 });
@@ -449,4 +450,39 @@ test('Anfahrt zum Treffpunkt geht ohne Provision an den Fahrer; Filter kommen au
   assert.equal(dMe.walletCents, done.final.driverCents);
   assert.equal(done.final.driverCents, done.final.fareCents - done.final.commissionCents + done.final.detourCents);
   assert.equal((await admin('GET', '/api/admin/stats')).commissionCents, done.final.commissionCents);
+});
+
+test('Fahrtabbruch: begründet, nur gefahrene Strecke, Fahrtabbruchsquote bei beiden', async (t) => {
+  const { driver, rider, ride, store } = await bookedRide(t, { kmDriven: 4 });
+  // Begründung ist Pflicht
+  assert.equal((await rider('POST', `/api/rides/${ride.id}/abort`, { reason: 'Mir ist schlecht geworden.' })).status, 400);
+  assert.equal((await rider('POST', `/api/rides/${ride.id}/abort`, { category: 'health', reason: 'kurz' })).status, 400);
+  const res = (await rider('POST', `/api/rides/${ride.id}/abort`, { category: 'health', reason: 'Mir ist schlecht geworden, bitte anhalten.' })).ride;
+  assert.equal(res.status, 'completed');
+  assert.equal(res.final.billing, 'abbruch');
+  assert.ok(res.final.km < res.final.plannedKm);
+  assert.ok(Math.abs(res.final.km - res.final.trackedKm) < 0.01);
+  assert.equal(res.abort.by, 'rider');
+  assert.equal(res.abort.category, 'health');
+  // Kein zweiter Abbruch, keine Bestätigung mehr
+  assert.equal((await driver('POST', `/api/rides/${ride.id}/abort`, { category: 'other', reason: 'nochmal abbrechen?' })).status, 409);
+  // Quote bei beiden: 1 von 1 Fahrten abgebrochen
+  const r = (await rider('GET', '/api/me')).user.abortStats.asRider;
+  assert.deepEqual(r, { rides: 1, aborted: 1, initiated: 1, quote: 100 });
+  const d = (await driver('GET', '/api/me')).user.abortStats.asDriver;
+  assert.deepEqual(d, { rides: 1, aborted: 1, initiated: 0, quote: 100 });
+  // Im Profil des Fahrers sichtbar; Bewertung kann nachgeholt werden
+  const prof = (await rider('GET', `/api/users/${ride.driverId}/profile`)).profile;
+  assert.equal(prof.abortStats.asDriver.quote, 100);
+  assert.equal((await rider('POST', `/api/rides/${ride.id}/rate`, { nps: 7 })).status, 200);
+  // Zweite, normale Fahrt → Quote 50 %
+  const r2 = { ...store.data.rides[ride.id], id: 'r2', abort: undefined, final: { ...store.data.rides[ride.id].final, billing: 'geplant' } };
+  store.data.rides.r2 = r2;
+  assert.equal((await driver('GET', '/api/me')).user.abortStats.asDriver.quote, 50);
+});
+
+test('Fahrtabbruch nur während der Fahrt möglich', async (t) => {
+  const { driver, rider, ride } = await bookedRide(t, { kmDriven: 2 });
+  await driver('POST', `/api/rides/${ride.id}/confirm`, {});
+  assert.equal((await rider('POST', `/api/rides/${ride.id}/abort`, { category: 'other', reason: 'Zu spät für einen Abbruch.' })).status, 409);
 });

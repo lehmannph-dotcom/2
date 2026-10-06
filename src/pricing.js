@@ -43,13 +43,18 @@ function co2SavedKg(passengerKm, pricing) {
 }
 
 /**
- * Bestimmt die abzurechnenden Kilometer:
- * die schnellste Route laut Plan – oder die tatsächlich gefahrene Strecke (GPS), sofern diese kürzer ist.
- * Mitfahrer zahlen also nie mehr als die vorab bestätigte Route.
+ * Bestimmt die abzurechnenden Kilometer.
+ *
+ * Mit dem Fahrtantritt (Einsteigen) wird der Preis der geplanten Route fällig – auch wenn die
+ * Fahrt früher endet. So lohnt es sich nicht, dass Fahrer und Mitfahrer sich absprechen und die
+ * Fahrt vorzeitig beenden. Umwege zahlt der Mitfahrer nie (höchstens die geplante Route).
+ *
+ * Ausnahme: begründeter Fahrtabbruch – dann wird nur die bis dahin gefahrene Strecke (GPS)
+ * berechnet, höchstens die geplante Route.
  */
-function billableKm(plannedKm, trackedKm) {
-  if (!(trackedKm > 0.2)) return { km: plannedKm, basis: 'geplant' };
-  return trackedKm < plannedKm ? { km: trackedKm, basis: 'gefahren' } : { km: plannedKm, basis: 'geplant' };
+function billableKm(plannedKm, trackedKm, { aborted = false } = {}) {
+  if (!aborted) return { km: plannedKm, basis: 'geplant' };
+  return { km: Math.min(Math.max(trackedKm || 0, 0), plannedKm), basis: 'abbruch' };
 }
 
 const formatEuro = (cents) => (cents / 100).toFixed(2).replace('.', ',') + ' €';

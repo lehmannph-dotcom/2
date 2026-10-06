@@ -51,10 +51,13 @@ test('Preis für mehrere Personen und Rundung in Cent', () => {
   assert.ok(Number.isInteger(f.commissionCents) && Number.isInteger(f.driverCents));
 });
 
-test('Abgerechnet wird die geplante Route oder die gefahrene, sofern kürzer', () => {
+test('Mit Fahrtantritt ist die geplante Route fällig – nur beim Fahrtabbruch die gefahrene Strecke', () => {
   assert.deepEqual(billableKm(10, 0), { km: 10, basis: 'geplant' }, 'ohne GPS: geplante Route');
-  assert.deepEqual(billableKm(10, 9.4), { km: 9.4, basis: 'gefahren' }, 'kürzer gefahren');
+  assert.deepEqual(billableKm(10, 4), { km: 10, basis: 'geplant' }, 'früher ausgestiegen: trotzdem geplante Route');
   assert.deepEqual(billableKm(10, 14), { km: 10, basis: 'geplant' }, 'Umweg zahlt der Mitfahrer nicht');
+  assert.deepEqual(billableKm(10, 4, { aborted: true }), { km: 4, basis: 'abbruch' }, 'Abbruch: gefahrene Strecke');
+  assert.deepEqual(billableKm(10, 14, { aborted: true }), { km: 10, basis: 'abbruch' }, 'Abbruch: höchstens geplante Route');
+  assert.deepEqual(billableKm(10, 0, { aborted: true }), { km: 0, basis: 'abbruch' });
 });
 
 test('Matching: findet Fahrer in Fahrtrichtung, ignoriert Gegenrichtung und Umwege', () => {

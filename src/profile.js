@@ -123,8 +123,8 @@ function publicProfile(user, viewer, { hasBooking = false, stats = {}, game = nu
           ridesAsRider: stats.asRider || 0,
           co2SavedKg: Math.round((user.co2SavedKg || 0) * 10) / 10,
           points: game ? game.points : 0,
-          level: game ? { name: game.level.name, icon: game.level.icon } : null,
-          badges: game ? game.badges.filter((b) => b.earned).map((b) => ({ icon: b.icon, name: b.name })) : [],
+          level: game ? { name: game.level.name, rank: game.level.rank } : null,
+          badges: game ? game.badges.filter((b) => b.earned).map((b) => ({ name: b.name })) : [],
         }
       : null,
   };

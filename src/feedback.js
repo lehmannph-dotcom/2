@@ -13,25 +13,25 @@ const crypto = require('node:crypto');
 
 // Aspekte, wenn der Mitfahrer den Fahrer bewertet
 const DRIVER_ASPECTS = [
-  { id: 'cleanliness', label: 'Sauberkeit des Autos', icon: '🧽', tip: 'Kurz vor der Fahrt Müll entfernen, Sitze und Fußraum aussaugen, Fenster innen sauber halten.' },
-  { id: 'condition', label: 'Zustand des Autos', icon: '🔧', tip: 'Reifen, Licht und Bremsen regelmäßig prüfen; klappernde Teile, Warnleuchten oder fehlende Gurte reparieren lassen.' },
-  { id: 'driving', label: 'Fahrweise', icon: '🛣️', tip: 'Vorausschauend und gleichmäßig fahren, Abstand halten, Tempolimits beachten, Handy nur über Freisprechanlage.' },
-  { id: 'interpersonal', label: 'Zwischenmenschliches', icon: '🤝', tip: 'Freundlich begrüßen, kurz nach Wünschen fragen (Temperatur, Musik, Gesprächsbedarf) und respektvoll bleiben.' },
-  { id: 'punctuality', label: 'Pünktlichkeit', icon: '⏰', tip: 'Verspätungen früh ankündigen und die angezeigte Abholzeit realistisch halten.' },
-  { id: 'route', label: 'Route / Umwege', icon: '🗺️', tip: 'Möglichst der bestätigten Route folgen; Änderungen vorher ansprechen. (Umwege zahlt der Mitfahrer ohnehin nicht.)' },
-  { id: 'communication', label: 'Kommunikation / Treffpunkt', icon: '💬', tip: 'Treffpunkt klar beschreiben (Auto, Farbe, Ortskürzel) und bei Bedarf kurz Bescheid geben.' },
-  { id: 'smell', label: 'Gerüche / Rauchen', icon: '👃', tip: 'Gut lüften, nicht im Auto rauchen und starke Duftbäume vermeiden.' },
-  { id: 'music', label: 'Musik / Lautstärke', icon: '🔊', tip: 'Lautstärke moderat halten und fragen, ob Musik gewünscht ist.' },
-  { id: 'comfort', label: 'Platz / Komfort / Temperatur', icon: '🌡️', tip: 'Ausreichend Platz für Gepäck schaffen und Temperatur sowie Sitzposition kurz abstimmen.' },
+  { id: 'cleanliness', label: 'Sauberkeit des Autos', tip: 'Kurz vor der Fahrt Müll entfernen, Sitze und Fußraum aussaugen, Fenster innen sauber halten.' },
+  { id: 'condition', label: 'Zustand des Autos', tip: 'Reifen, Licht und Bremsen regelmäßig prüfen; klappernde Teile, Warnleuchten oder fehlende Gurte reparieren lassen.' },
+  { id: 'driving', label: 'Fahrweise', tip: 'Vorausschauend und gleichmäßig fahren, Abstand halten, Tempolimits beachten, Handy nur über Freisprechanlage.' },
+  { id: 'interpersonal', label: 'Zwischenmenschliches', tip: 'Freundlich begrüßen, kurz nach Wünschen fragen (Temperatur, Musik, Gesprächsbedarf) und respektvoll bleiben.' },
+  { id: 'punctuality', label: 'Pünktlichkeit', tip: 'Verspätungen früh ankündigen und die angezeigte Abholzeit realistisch halten.' },
+  { id: 'route', label: 'Route / Umwege', tip: 'Möglichst der bestätigten Route folgen; Änderungen vorher ansprechen. (Umwege zahlt der Mitfahrer ohnehin nicht.)' },
+  { id: 'communication', label: 'Kommunikation / Treffpunkt', tip: 'Treffpunkt klar beschreiben (Auto, Farbe, Ortskürzel) und bei Bedarf kurz Bescheid geben.' },
+  { id: 'smell', label: 'Gerüche / Rauchen', tip: 'Gut lüften, nicht im Auto rauchen und starke Duftbäume vermeiden.' },
+  { id: 'music', label: 'Musik / Lautstärke', tip: 'Lautstärke moderat halten und fragen, ob Musik gewünscht ist.' },
+  { id: 'comfort', label: 'Platz / Komfort / Temperatur', tip: 'Ausreichend Platz für Gepäck schaffen und Temperatur sowie Sitzposition kurz abstimmen.' },
 ];
 
 // Aspekte, wenn der Fahrer den Mitfahrer bewertet
 const RIDER_ASPECTS = [
-  { id: 'punctuality', label: 'Pünktlichkeit', icon: '⏰', tip: 'Ein paar Minuten vor der Abholzeit am Treffpunkt sein.' },
-  { id: 'interpersonal', label: 'Zwischenmenschliches', icon: '🤝', tip: 'Freundlich und respektvoll bleiben – das Auto ist der private Raum des Fahrers.' },
-  { id: 'cleanliness', label: 'Sauberkeit / Verhalten im Auto', icon: '🧽', tip: 'Keinen Müll zurücklassen, nicht mit schmutzigen Schuhen auf die Sitze, Essen vorher absprechen.' },
-  { id: 'communication', label: 'Kommunikation / Treffpunkt', icon: '💬', tip: 'Am richtigen Treffpunkt warten und bei Änderungen rechtzeitig Bescheid geben.' },
-  { id: 'luggage', label: 'Gepäck', icon: '🧳', tip: 'Größeres Gepäck vorher ankündigen.' },
+  { id: 'punctuality', label: 'Pünktlichkeit', tip: 'Ein paar Minuten vor der Abholzeit am Treffpunkt sein.' },
+  { id: 'interpersonal', label: 'Zwischenmenschliches', tip: 'Freundlich und respektvoll bleiben – das Auto ist der private Raum des Fahrers.' },
+  { id: 'cleanliness', label: 'Sauberkeit / Verhalten im Auto', tip: 'Keinen Müll zurücklassen, nicht mit schmutzigen Schuhen auf die Sitze, Essen vorher absprechen.' },
+  { id: 'communication', label: 'Kommunikation / Treffpunkt', tip: 'Am richtigen Treffpunkt warten und bei Änderungen rechtzeitig Bescheid geben.' },
+  { id: 'luggage', label: 'Gepäck', tip: 'Größeres Gepäck vorher ankündigen.' },
 ];
 
 const MIN_ENTRIES = 3;

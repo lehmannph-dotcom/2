@@ -192,7 +192,7 @@ function drawMap({ routes = [], points = [], driver = null, fit = true } = {}) {
 
 function updateDriverMarker(pos) {
   if (!pos) return;
-  if (!driverMarker) driverMarker = L.marker([pos.lat, pos.lng], { icon: pin('#9bd3b2', '🚗'), zIndexOffset: 1000 }).addTo(layers);
+  if (!driverMarker) driverMarker = L.marker([pos.lat, pos.lng], { icon: pin('#4a9a6e', 'F'), zIndexOffset: 1000 }).addTo(layers);
   else driverMarker.setLatLng([pos.lat, pos.lng]);
 }
 
@@ -218,7 +218,7 @@ function placeField(key, label, placeholder, withLocate) {
         <input id="f-${key}" data-place="${key}" autocomplete="off" placeholder="${placeholder}" value="${esc(p ? p.label : '')}">
         <ul hidden></ul>
       </div>
-      ${withLocate ? `<button type="button" class="secondary shrink" data-locate="${key}" data-tip="Aktuellen Standort verwenden" aria-label="Aktuellen Standort verwenden">📍</button>` : ''}
+      ${withLocate ? `<button type="button" class="secondary shrink" data-locate="${key}" data-tip="Aktuellen Standort verwenden" aria-label="Aktuellen Standort verwenden">Standort</button>` : ''}
     </div>`;
 }
 
@@ -311,7 +311,7 @@ function renderHeader() {
   $('#nav-admin').hidden = !(state.me && state.me.isAdmin);
   nav.querySelectorAll('a').forEach((a) => a.classList.toggle('active', a.dataset.view === currentView()));
   $('#userbox').innerHTML = state.me
-    ? `<a class="points-pill" href="#/punkte" data-tip="Level ${esc(state.me.level.name)}">${state.me.level.icon} ${Number(state.me.points).toLocaleString('de-DE')} P</a><span>${esc(state.me.name)} · <b>${euro(state.me.walletCents - state.me.reservedCents)}</b></span><button class="secondary" id="logout">Abmelden</button>`
+    ? `<a class="points-pill" href="#/punkte" data-tip="Level ${esc(state.me.level.name)}">${Number(state.me.points).toLocaleString('de-DE')} P</a><span>${esc(state.me.name)} · <b>${euro(state.me.walletCents - state.me.reservedCents)}</b></span><button class="secondary" id="logout">Abmelden</button>`
     : '';
   const lo = $('#logout');
   if (lo) lo.onclick = () => guard(async () => { await api('/api/logout', {}); state.me = null; stopDriving(); render(); });
@@ -369,7 +369,7 @@ function renderAuth(panel) {
   const cfg = state.config ? state.config.pricing : null;
   panel.innerHTML = `
     <div class="card hero">
-      <h2>Teilen statt Leerfahren 🌍</h2>
+      <h2>Teilen statt Leerfahren </h2>
       <p>Spontan mitfahren, Kosten pro Kilometer teilen, CO₂ sparen.</p>
     </div>
     <div class="card">
@@ -393,7 +393,7 @@ function renderAuth(panel) {
         <button class="full" style="margin-top:14px" id="a-submit">Anmelden</button>
       </form>
       <form id="mfa-form" hidden>
-        <h3>🔐 Zwei-Faktor-Bestätigung ${info('Gib den 6-stelligen Code aus deiner Authenticator-App ein – oder einen deiner Backup-Codes.')}</h3>
+        <h3>Zwei-Faktor-Bestätigung ${info('Gib den 6-stelligen Code aus deiner Authenticator-App ein – oder einen deiner Backup-Codes.')}</h3>
         <input id="mfa-code" class="code-input" inputmode="numeric" autocomplete="one-time-code" maxlength="9" placeholder="123456" required>
         <button class="full" style="margin-top:14px" id="mfa-submit">Bestätigen</button>
         <button type="button" class="secondary full" style="margin-top:8px" id="mfa-back">Zurück</button>
@@ -402,9 +402,9 @@ function renderAuth(panel) {
     <div class="card">
       <h3>So funktioniert's</h3>
       <ol class="steps">
-        <li>🚗 <b>Fahrer</b> gehen mit ihrer Route online ${info('Einmalig den Führerschein verifizieren, dann Route eingeben oder einen Google-Maps-Link einfügen.')}</li>
-        <li>🧍 <b>Mitfahrer</b> finden den passenden Fahrer ${info('Ziel eingeben – die App findet den Fahrer mit dem kleinsten Umweg, der kürzesten Wartezeit und guten Bewertungen.')}</li>
-        <li>🌱 <b>Kosten teilen</b> pro Kilometer ${info(`<p>Abgerechnet wird die geplante Route – oder die gefahrene Strecke, wenn sie kürzer ist${cfg ? ` (${euro(cfg.ratePerKmCents)}/km)` : ''}.</p><p>Der Großteil geht an den Fahrer, ${cfg ? cfg.commissionPercent : '–'} % Vermittlungsprovision, ${cfg ? euro(cfg.donationCentsPerRide) : '1 Cent'} Umweltspende je Fahrt.</p>`)}</li>
+        <li><b>Fahrer</b> gehen mit ihrer Route online ${info('Einmalig den Führerschein verifizieren, dann Route eingeben oder einen Google-Maps-Link einfügen.')}</li>
+        <li><b>Mitfahrer</b> finden den passenden Fahrer ${info('Ziel eingeben – die App findet den Fahrer mit dem kleinsten Umweg, der kürzesten Wartezeit und guten Bewertungen.')}</li>
+        <li><b>Kosten teilen</b> pro Kilometer ${info(`<p>Abgerechnet wird die geplante Route – oder die gefahrene Strecke, wenn sie kürzer ist${cfg ? ` (${euro(cfg.ratePerKmCents)}/km)` : ''}.</p><p>Der Großteil geht an den Fahrer, ${cfg ? cfg.commissionPercent : '–'} % Vermittlungsprovision, ${cfg ? euro(cfg.donationCentsPerRide) : '1 Cent'} Umweltspende je Fahrt.</p>`)}</li>
       </ol>
     </div>`;
   let mode = 'login';
@@ -476,24 +476,31 @@ const STATUS = {
 };
 const statusBadge = (s) => `<span class="badge ${STATUS[s][1]}">${STATUS[s][0]}</span>`;
 const PLANNED_STYLE = { color: '#2f7350', weight: 4, dash: '10 8', opacity: 0.9 };
-const BILLING_RULE = 'Abgerechnet wird die geplante Route – oder die tatsächlich gefahrene Strecke, falls sie kürzer ist. Umwege zahlst du nie.';
+const BILLING_RULE = 'Mit dem Einsteigen wird der Preis der geplanten Route fällig – auch wenn die Fahrt früher endet. Umwege zahlst du nie. Nur bei einem begründeten Fahrtabbruch wird die bis dahin gefahrene Strecke berechnet.';
 const TIP = {
-  billing: (who = 'du') => `<p><b>So wird abgerechnet</b></p><p>Grundlage ist die <b>schnellste Route laut Plan</b>, die ihr beide vorab bestätigt habt.</p><p>Ist die per GPS gemessene Strecke kürzer, gilt sie. Ist sie länger (Umweg), gilt die geplante Route – Umwege zahlt ${who === 'du' ? 'du' : 'der Mitfahrer'} nie.</p>`,
+  billing: (who = 'du') => `<p><b>So wird abgerechnet</b></p><p>Grundlage ist die <b>schnellste Route laut Plan</b>, die ihr beide vorab bestätigt habt.</p><p>Mit dem <b>Einsteigen</b> wird der Preis der geplanten Route fällig – auch wenn die Fahrt früher endet. Ist die Strecke länger (Umweg), bleibt es beim geplanten Preis – Umwege zahlt ${who === 'du' ? 'du' : 'der Mitfahrer'} nie.</p><p>Nur bei einem <b>begründeten Fahrtabbruch</b> wird die bis dahin gefahrene Strecke (GPS) berechnet. Abbrüche erscheinen als Fahrtabbruchsquote im Profil beider Beteiligten.</p>`,
   price: () => {
     const c = state.config ? state.config.pricing : { ratePerKmCents: 25, commissionPercent: 10, donationCentsPerRide: 1 };
-    return `<p><b>Kostenteilung pro Kilometer</b></p><table><tr><td>Kilometersatz</td><td>${euro(c.ratePerKmCents)}/km</td></tr><tr><td>an den Fahrer</td><td>${100 - c.commissionPercent} %</td></tr><tr><td>Vermittlungsprovision</td><td>${c.commissionPercent} %</td></tr><tr><td>Anfahrt zum Treffpunkt</td><td>100 % Fahrer</td></tr><tr><td>🌱 Umweltspende je Fahrt</td><td>${euro(c.donationCentsPerRide)}</td></tr></table><p style="margin-top:6px">Der Preis der geplanten Route ist der Höchstbetrag. Er wird reserviert und erst nach der Fahrt abgebucht.</p>`;
+    return `<p><b>Kostenteilung pro Kilometer</b></p><table><tr><td>Kilometersatz</td><td>${euro(c.ratePerKmCents)}/km</td></tr><tr><td>an den Fahrer</td><td>${100 - c.commissionPercent} %</td></tr><tr><td>Vermittlungsprovision</td><td>${c.commissionPercent} %</td></tr><tr><td>Anfahrt zum Treffpunkt</td><td>100 % Fahrer</td></tr><tr><td>Umweltspende je Fahrt</td><td>${euro(c.donationCentsPerRide)}</td></tr></table><p style="margin-top:6px">Der Preis der geplanten Route ist der Höchstbetrag. Er wird reserviert und erst nach der Fahrt abgebucht.</p>`;
   },
   payment: (isRider) => `<p><b>Wann wird bezahlt?</b></p><p>Sobald der Fahrer ${isRider ? 'dich' : 'den Mitfahrer'} abgesetzt <b>und</b> ${isRider ? 'du die Fahrt' : 'der Mitfahrer die Fahrt'} bewertet ${isRider ? 'hast' : 'hat'} – Reihenfolge egal.</p><p>Die Bewertung ändert den Preis nicht. Ohne Rückmeldung gilt die Fahrt nach 24 h als bestätigt.</p>`,
   points: () => `<p><b>Punkte = Faktor × eingesparte kg CO₂</b></p><p>Der Faktor ist die Bewertung, die du vom jeweils anderen bekommst:</p><table><tr><td>10 · 9 · 8 · 7</td><td>×10 · ×9 · ×8 · ×7</td></tr><tr><td>6 · 5 · 4</td><td>×1</td></tr><tr><td>3 · 2 · 1 · 0</td><td>×0</td></tr></table>`,
-  nps: () => `<p><b>NPS – Net Promoter Score</b></p><p>Frage: „Wie wahrscheinlich empfiehlst du diese Person weiter?“ (0–10)</p><table><tr><td>😊 Promotoren</td><td>9–10</td></tr><tr><td>😐 Passive</td><td>7–8</td></tr><tr><td>🙁 Kritiker</td><td>0–6</td></tr></table><p style="margin-top:6px">NPS = % Promotoren − % Kritiker (−100 bis +100).</p>`,
+  nps: () => `<p><b>NPS – Net Promoter Score</b></p><p>Frage: „Wie wahrscheinlich empfiehlst du diese Person weiter?“ (0–10)</p><table><tr><td>Promotoren</td><td>9–10</td></tr><tr><td>Passive</td><td>7–8</td></tr><tr><td>Kritiker</td><td>0–6</td></tr></table><p style="margin-top:6px">NPS = % Promotoren − % Kritiker (−100 bis +100).</p>`,
   detour: () => `<p><b>Anfahrt zum Treffpunkt</b></p><p>Der Umweg, den der Fahrer fährt, um dich abzuholen – zum gleichen Kilometersatz.</p><p>Dieser Teil geht <b>zu 100 % an den Fahrer</b>: Der Plattformbetreiber nimmt darauf keine Provision.</p>`,
   plannedRoute: () => `<p><b>Geplante Route</b></p><p>Die schnellste Route vom Abholort zum Ziel (dunkelgrün gestrichelt auf der Karte). Du und der Fahrer bestätigen sie – sie ist Grundlage und Obergrenze für den Preis.</p>`,
 };
-const BASIS = { geplant: 'geplante Route', gefahren: 'gefahrene Strecke (kürzer)', betreiber: 'Entscheidung Betreiber' };
+const BASIS = { geplant: 'geplante Route', gefahren: 'gefahrene Strecke', abbruch: 'Fahrtabbruch (gefahrene Strecke)', betreiber: 'Entscheidung Betreiber' };
+
+/** Fahrtabbruchsquote als Badge: Anteil abgebrochener Fahrten an allen Fahrten in der Rolle. */
+function abortBadge(st, roleLabel = '', short = '') {
+  if (!st || !st.rides) return `<span class="badge" tabindex="0" data-tip="Noch keine abgeschlossenen Fahrten${roleLabel ? ' ' + roleLabel : ''}.">Fahrtabbruchsquote${short} –</span>`;
+  const cls = st.quote <= 5 ? 'ok' : st.quote <= 15 ? 'warn' : 'bad';
+  return `<span class="badge ${cls}" tabindex="0" data-tip="${st.aborted} von ${st.rides} Fahrten${roleLabel ? ' ' + roleLabel : ''} abgebrochen, davon ${st.initiated} selbst. Jeder Abbruch zählt für beide Beteiligten.">Fahrtabbruchsquote${short} ${st.quote} %</span>`;
+}
 
 function plannedRouteHtml(route, note) {
-  const estimated = route.provider === 'luftlinie' ? `<span class="warn-text">⚠ Strecke geschätzt ${info('Der Routendienst ist gerade nicht erreichbar. Die Strecke wurde aus der Luftlinie × 1,3 geschätzt.')}</span>` : '';
-  return `<div class="planned"><span>🗺️ <b>Geplante Route:</b> ${km(route.distanceKm)} · ca. ${Math.round(route.durationMin)} min</span>${info(TIP.plannedRoute())}${estimated}${note ? `<span class="muted small" style="width:100%">${note}</span>` : ''}</div>`;
+  const estimated = route.provider === 'luftlinie' ? `<span class="warn-text">Strecke geschätzt ${info('Der Routendienst ist gerade nicht erreichbar. Die Strecke wurde aus der Luftlinie × 1,3 geschätzt.')}</span>` : '';
+  return `<div class="planned"><span><b>Geplante Route:</b> ${km(route.distanceKm)} · ca. ${Math.round(route.durationMin)} min</span>${info(TIP.plannedRoute())}${estimated}${note ? `<span class="muted small" style="width:100%">${note}</span>` : ''}</div>`;
 }
 
 // ---------- Bewertung nach NPS-Logik (0–10) ----------
@@ -519,7 +526,7 @@ function npsWidget(question, ratedRole = 'driver') {
     <div class="nps-legend"><span>unwahrscheinlich</span><span>sehr wahrscheinlich</span></div>
     <div class="nps-aspects" hidden>
       <p class="nps-aspects-q"><span class="nps-aspects-text"></span>${info(`<p><b>Anonymes Feedback zum Lernen</b></p><p>${partner} sieht deine Hinweise nur gesammelt – frühestens ab 3 Rückmeldungen, ohne Datum und ohne Zuordnung zu dieser Fahrt.</p><p>Bei echten Problemen bitte „Problem melden“.</p>`)}</p>
-      <div class="aspect-chips">${aspects.map((a) => `<button type="button" class="aspect-chip" data-aspect="${a.id}" aria-pressed="false">${a.icon} ${esc(a.label)}</button>`).join('')}</div>
+      <div class="aspect-chips">${aspects.map((a) => `<button type="button" class="aspect-chip" data-aspect="${a.id}" aria-pressed="false">${esc(a.label)}</button>`).join('')}</div>
     </div>
     <label class="nps-comment-label" hidden></label>
     <textarea class="nps-comment" maxlength="500" hidden></textarea>
@@ -585,16 +592,16 @@ function confirmationCard(r) {
   if (!p) return '';
   const measuring = r.status === 'picked_up';
   const isRider = r.role === 'rider';
-  const mine = isRider ? (r.myEndConfirmed ? '✔ Du hast die Fahrt bewertet.' : '○ Deine Bewertung fehlt.') : (r.myEndConfirmed ? '✔ Du hast das Absetzen bestätigt.' : '○ Absetzen noch nicht bestätigt.');
-  const theirs = isRider ? (r.partnerEndConfirmed ? '✔ Der Fahrer hat dich abgesetzt.' : '○ Der Fahrer hat das Absetzen noch nicht bestätigt.') : (r.partnerEndConfirmed ? '✔ Der Mitfahrer hat die Fahrt bewertet.' : '○ Der Mitfahrer hat noch nicht bewertet.');
+  const mine = isRider ? (r.myEndConfirmed ? '✓ Du hast die Fahrt bewertet.' : '○ Deine Bewertung fehlt.') : (r.myEndConfirmed ? '✓ Du hast das Absetzen bestätigt.' : '○ Absetzen noch nicht bestätigt.');
+  const theirs = isRider ? (r.partnerEndConfirmed ? '✓ Der Fahrer hat dich abgesetzt.' : '○ Der Fahrer hat das Absetzen noch nicht bestätigt.') : (r.partnerEndConfirmed ? '✓ Der Mitfahrer hat die Fahrt bewertet.' : '○ Der Mitfahrer hat noch nicht bewertet.');
   const open = !r.myEndConfirmed && r.status !== 'disputed';
   return `<div class="card confirm-card">
-    <h3>${isRider ? '🏁 Angekommen? Bewerten & bezahlen' : '🏁 Mitfahrer absetzen'} ${info(TIP.payment(isRider))}</h3>
+    <h3>${isRider ? 'Angekommen? Bewerten & bezahlen' : 'Mitfahrer absetzen'} ${info(TIP.payment(isRider))}</h3>
     <table class="breakdown">
       <tr><td>Geplante Route</td><td>${km(p.plannedKm)}${r.plannedRoute ? ` · ${Math.round(r.plannedRoute.durationMin)} min` : ''}</td></tr>
       <tr><td>Gefahren (GPS)${measuring ? ' <span class="muted small">– läuft</span>' : ''}</td><td>${p.trackedKm > 0.2 ? km(p.trackedKm) : '–'}</td></tr>
       <tr class="total"><td>Abgerechnet: ${BASIS[p.basis]} ${info(TIP.billing(isRider ? 'du' : 'mitfahrer'))}</td><td>${km(p.billedKm)}</td></tr>
-      ${p.price.detourCents ? `<tr><td>↪ Anfahrt zum Treffpunkt ${info(TIP.detour())}</td><td>${km(p.price.detourKm)}</td></tr>` : ''}
+      ${p.price.detourCents ? `<tr><td>Anfahrt zum Treffpunkt ${info(TIP.detour())}</td><td>${km(p.price.detourKm)}</td></tr>` : ''}
       <tr><td>${isRider ? 'Du zahlst' : 'Dein Anteil'}</td><td><b>${euro(isRider ? p.price.totalCents : p.price.driverCents)}</b></td></tr>
     </table>
     <p class="status-lines">${mine}<br>${theirs}
@@ -602,11 +609,11 @@ function confirmationCard(r) {
     ${r.status === 'disputed' ? `<p class="small"><span class="badge bad">Reklamation</span> ${esc(r.dispute.reason)}</p>` : ''}
     ${open && isRider ? `<form class="nps-form" data-confirm-form="${r.id}">
         ${npsWidget(`Wie wahrscheinlich ist es, dass du ${r.driverName} weiterempfiehlst?`)}
-        <div class="btn-row"><button data-submit disabled>Bewerten & bezahlen</button><button type="button" class="secondary" data-dispute="${r.id}">Problem melden</button></div>
+        <div class="btn-row"><button data-submit disabled>Bewerten & bezahlen</button><button type="button" class="secondary" data-dispute="${r.id}">Problem melden</button>${measuring ? `<button type="button" class="danger" data-abort="${r.id}">Fahrt abbrechen</button>` : ''}</div>
       </form>` : ''}
     ${open && !isRider ? `<form class="nps-form" data-confirm-form="${r.id}">
         <details><summary class="small">Optional: ${esc(r.riderName)} bewerten</summary>${npsWidget(`Wie wahrscheinlich ist es, dass du ${r.riderName} anderen Fahrern weiterempfiehlst?`, 'rider')}</details>
-        <div class="btn-row"><button data-submit>${measuring ? 'Mitfahrer abgesetzt' : 'Absetzen bestätigen'}</button><button type="button" class="secondary" data-dispute="${r.id}">Problem melden</button></div>
+        <div class="btn-row"><button data-submit>${measuring ? 'Mitfahrer abgesetzt' : 'Absetzen bestätigen'}</button><button type="button" class="secondary" data-dispute="${r.id}">Problem melden</button>${measuring ? `<button type="button" class="danger" data-abort="${r.id}">Fahrt abbrechen</button>` : ''}</div>
       </form>` : ''}
   </div>`;
 }
@@ -614,7 +621,7 @@ function confirmationCard(r) {
 function bindConfirmButtons(root) {
   bindNpsForms(root, '[data-confirm-form]', async (form, body) => {
     const { ride } = await api(`/api/rides/${form.dataset.confirmForm}/confirm`, body);
-    if (ride.status === 'completed') toast(`Bezahlt: ${km(ride.final.km)} · ${euro(ride.role === 'driver' ? ride.final.driverCents : ride.final.totalCents)} · +${pts(ride.myPoints.points)} 🌱`);
+    if (ride.status === 'completed') toast(`Bezahlt: ${km(ride.final.km)} · ${euro(ride.role === 'driver' ? ride.final.driverCents : ride.final.totalCents)} · +${pts(ride.myPoints.points)}`);
     if (ride.guestbook && ride.guestbook.eligible) {
       await refreshMe();
       render();
@@ -625,6 +632,36 @@ function bindConfirmButtons(root) {
     await refreshMe();
     render();
   });
+  root.querySelectorAll('[data-abort]').forEach((b) => (b.onclick = () => {
+    const ride = state.rides.find((x) => x.id === b.dataset.abort) || {};
+    const driven = ride.trackedKm > 0 ? km(ride.trackedKm) : '0 km';
+    openModal(`<h2>Fahrt abbrechen</h2>
+      <p>Bei einem Abbruch wird nur die bisher gefahrene Strecke berechnet (zurzeit <b>${driven}</b>${ride.estimate && ride.estimate.detourCents ? ' plus Anfahrt zum Treffpunkt' : ''}). ${info('<p>Ohne Abbruch ist mit dem Einsteigen der Preis der geplanten Route fällig – auch wenn ihr früher aussteigt. So lohnt sich ein abgesprochenes vorzeitiges Ende nicht.</p><p>Jeder Abbruch zählt in der Fahrtabbruchsquote von Fahrer und Mitfahrer und ist in beiden Profilen sichtbar.</p>')}</p>
+      <form id="abort-form">
+        <label for="ab-cat">Grund</label>
+        <select id="ab-cat" required><option value="">Bitte wählen</option>${(state.config.abortReasons || []).map((x) => `<option value="${x.id}">${esc(x.label)}</option>`).join('')}</select>
+        <label for="ab-reason">Begründung</label>
+        <textarea id="ab-reason" maxlength="500" minlength="10" required placeholder="Was ist passiert?"></textarea>
+        <ul class="errors" id="ab-errors"></ul>
+        <div class="btn-row"><button class="danger" id="ab-submit">Fahrt abbrechen und abrechnen</button><button type="button" class="secondary" id="ab-cancel">Weiterfahren</button></div>
+      </form>`);
+    $('#ab-cancel').onclick = closeModal;
+    $('#abort-form').onsubmit = (e) => {
+      e.preventDefault();
+      guard(async () => {
+        try {
+          const { ride: done } = await api(`/api/rides/${b.dataset.abort}/abort`, { category: $('#ab-cat').value, reason: $('#ab-reason').value });
+          closeModal();
+          toast(`Fahrt abgebrochen. Abgerechnet: ${km(done.final.km)} · ${euro(done.role === 'driver' ? done.final.driverCents : done.final.totalCents)}`);
+          await refreshMe();
+          render();
+        } catch (err) {
+          if (err.status !== 400) throw err;
+          $('#ab-errors').innerHTML = `<li>${esc(err.message)}</li>`;
+        }
+      }, $('#ab-submit'));
+    };
+  }));
   root.querySelectorAll('[data-dispute]').forEach((b) => (b.onclick = () => {
     openModal(`<h2>Problem melden</h2>
       <p class="muted">Die Fahrt wird dann nicht automatisch abgerechnet. Der Betreiber prüft den Fall und meldet sich bei euch.</p>
@@ -650,7 +687,7 @@ async function renderRider(panel) {
 
   panel.innerHTML = `
     <div class="card">
-      <h2>Wohin möchtest du? ${info('<p><b>Tipp:</b> Abholort und Ziel kannst du auch direkt auf der Karte anklicken – erst A, dann B.</p><p>📍 nutzt deinen aktuellen Standort.</p>')}</h2>
+      <h2>Wohin möchtest du? ${info('<p><b>Tipp:</b> Abholort und Ziel kannst du auch direkt auf der Karte anklicken – erst A, dann B.</p><p>„Standort“ nutzt deinen aktuellen Standort.</p>')}</h2>
       ${placeField('pickup', 'Abholort', 'Adresse oder Ort', true)}
       ${placeField('dropoff', 'Ziel', 'Wohin soll es gehen?')}
       <div class="row">
@@ -693,17 +730,17 @@ async function searchMatches() {
 async function renderMatches() {
   const box = $('#matches');
   if (!box) return;
-  box.innerHTML = `<div class="card"><h2>${state.matches.length} ${state.matches.length === 1 ? 'passender' : 'passende'} Fahrer ${info('<p><b>Sortiert nach kürzestem Umweg</b> 🌱</p><p>Ganz oben steht immer der Fahrer, der für dich den geringsten Umweg fährt – das spart die meisten zusätzlichen Kilometer. Bei gleichem Umweg entscheidet die kürzere Wartezeit.</p>')}</h2>
+  box.innerHTML = `<div class="card"><h2>${state.matches.length} ${state.matches.length === 1 ? 'passender' : 'passende'} Fahrer ${info('<p><b>Sortiert nach kürzestem Umweg</b> </p><p>Ganz oben steht immer der Fahrer, der für dich den geringsten Umweg fährt – das spart die meisten zusätzlichen Kilometer. Bei gleichem Umweg entscheidet die kürzere Wartezeit.</p>')}</h2>
     ${state.matchResult ? filterSummary(state.matchResult) : ''}
     ${state.matches.map((m, i) => `
       <div class="match ${state.selected && state.selected.tripId === m.tripId ? 'selected' : ''}" data-i="${i}">
         <div class="top">
-          <div>${profileLink(m.driverId, m.driverName)} ${i === 0 ? `<span class="badge best" tabindex="0" data-tip="Sortiert nach dem kürzesten Umweg des Fahrers – so entstehen die wenigsten zusätzlichen Kilometer.">🌱 Kürzester Umweg</span>` : ''}<br>
-            ${npsBadge(m.driverNps)} ${prefIcons(m)}<br><span class="muted small">${esc(m.vehicle || 'Pkw')} · ${m.seatsFree} frei</span></div>
+          <div>${profileLink(m.driverId, m.driverName)} ${i === 0 ? `<span class="badge best" tabindex="0" data-tip="Sortiert nach dem kürzesten Umweg des Fahrers – so entstehen die wenigsten zusätzlichen Kilometer.">Kürzester Umweg</span>` : ''}<br>
+            ${npsBadge(m.driverNps)} ${abortBadge(m.driverAbort, 'als Fahrer')} ${prefIcons(m)}<br><span class="muted small">${esc(m.vehicle || 'Pkw')} · ${m.seatsFree} frei</span></div>
           <div class="price">${euro(m.price.totalCents)}</div>
         </div>
         <div class="muted small" style="margin-top:6px">
-          ↪ ${km(m.detourKm)} Umweg · ⏱ ${m.etaMin} min · 🌱 ${kg(m.price.co2SavedKg)} kg CO₂ ${info(`<table><tr><td>Abholung in ca.</td><td>${m.etaMin} min</td></tr><tr><td>Umweg für den Fahrer</td><td>${km(m.detourKm)}</td></tr><tr><td>davon Anfahrt zum Treffpunkt</td><td>${km(m.pickupDetourKm)}</td></tr><tr><td>CO₂-Ersparnis</td><td>${kg(m.price.co2SavedKg)} kg</td></tr></table><p style="margin-top:6px">Fahrer fährt (ungefähr): ${esc(shortLabel(m.origin))} → ${esc(shortLabel(m.destination))}. Start und Ziel des Fahrers zeigen wir zum Schutz seiner Adresse nur ungefähr.</p>`, 'Details zur Fahrt')}
+          ${km(m.detourKm)} Umweg · ${m.etaMin} min Wartezeit · ${kg(m.price.co2SavedKg)} kg CO₂ gespart ${info(`<table><tr><td>Abholung in ca.</td><td>${m.etaMin} min</td></tr><tr><td>Umweg für den Fahrer</td><td>${km(m.detourKm)}</td></tr><tr><td>davon Anfahrt zum Treffpunkt</td><td>${km(m.pickupDetourKm)}</td></tr><tr><td>CO₂-Ersparnis</td><td>${kg(m.price.co2SavedKg)} kg</td></tr></table><p style="margin-top:6px">Fahrer fährt (ungefähr): ${esc(shortLabel(m.origin))} → ${esc(shortLabel(m.destination))}. Start und Ziel des Fahrers zeigen wir zum Schutz seiner Adresse nur ungefähr.</p>`, 'Details zur Fahrt')}
         </div>
       </div>`).join('')}
     </div>
@@ -737,12 +774,12 @@ async function showMatchOnMap(m) {
 }
 
 function priceCard(p, title) {
-  const split = `<table><tr><td>${km(p.km)} × ${euro(p.ratePerKmCents)}${p.seats > 1 ? ` × ${p.seats} Pers.` : ''}</td><td>${euro(p.fareCents)}</td></tr><tr><td>davon an den Fahrer</td><td>${euro(p.driverCents)}</td></tr><tr><td>davon Vermittlungsprovision</td><td>${euro(p.commissionCents)}</td></tr><tr><td>🌱 Spende Umweltschutz</td><td>${euro(p.donationCents)}</td></tr></table><p style="margin-top:6px">Provision nur auf die gemeinsame Strecke – nicht auf die Anfahrt zum Treffpunkt.</p>`;
+  const split = `<table><tr><td>${km(p.km)} × ${euro(p.ratePerKmCents)}${p.seats > 1 ? ` × ${p.seats} Pers.` : ''}</td><td>${euro(p.fareCents)}</td></tr><tr><td>davon an den Fahrer</td><td>${euro(p.driverCents)}</td></tr><tr><td>davon Vermittlungsprovision</td><td>${euro(p.commissionCents)}</td></tr><tr><td>Spende Umweltschutz</td><td>${euro(p.donationCents)}</td></tr></table><p style="margin-top:6px">Provision nur auf die gemeinsame Strecke – nicht auf die Anfahrt zum Treffpunkt.</p>`;
   return `<div class="card"><h3>${title} ${info(TIP.price())}</h3>
     <table class="breakdown">
       <tr><td>${withTip(`Fahrtkosten ${km(p.km)}`, split)}</td><td>${euro(p.fareCents)}</td></tr>
-      ${p.detourCents ? `<tr><td>↪ Anfahrt zum Treffpunkt ${km(p.detourKm)} ${info(TIP.detour())}</td><td>${euro(p.detourCents)}</td></tr>` : ''}
-      <tr><td>🌱 Umweltspende</td><td>${euro(p.donationCents)}</td></tr>
+      ${p.detourCents ? `<tr><td>Anfahrt zum Treffpunkt ${km(p.detourKm)} ${info(TIP.detour())}</td><td>${euro(p.detourCents)}</td></tr>` : ''}
+      <tr><td>Umweltspende</td><td>${euro(p.donationCents)}</td></tr>
       <tr class="total"><td>Gesamt ${info(TIP.billing())}</td><td>${euro(p.totalCents)}</td></tr>
     </table>
   </div>`;
@@ -790,9 +827,9 @@ async function renderRiderRide(panel, ride) {
     <div class="card">
       <h2>Deine Mitfahrt</h2>
       ${statusBadge(ride.status)}
-      <p>${profileLink(ride.driverId, ride.driverName)} ${ride.vehicle ? '· ' + esc(ride.vehicle) : ''}</p>
+      <p>${profileLink(ride.driverId, ride.driverName)} ${ride.vehicle ? '· ' + esc(ride.vehicle) : ''} ${abortBadge(ride.partnerAbort, 'als Fahrer')}</p>
       <p class="muted small">${esc(shortLabel(ride.pickup))} → ${esc(shortLabel(ride.dropoff))}</p>
-      ${ride.plannedRoute ? plannedRouteHtml(ride.plannedRoute, `${ride.myRouteConfirmed ? '✔ von dir bestätigt' : ''}${ride.partnerRouteConfirmed ? ' · ✔ vom Fahrer bestätigt' : ' · ○ Fahrer hat noch nicht bestätigt'}`) : ''}
+      ${ride.plannedRoute ? plannedRouteHtml(ride.plannedRoute, `${ride.myRouteConfirmed ? '✓ von dir bestätigt' : ''}${ride.partnerRouteConfirmed ? ' · ✓ vom Fahrer bestätigt' : ' · ○ Fahrer hat noch nicht bestätigt'}`) : ''}
       ${['requested', 'accepted'].includes(ride.status) ? '<button class="secondary" id="r-cancel" style="margin-top:10px">Stornieren</button>' : ''}
     </div>
     ${['picked_up', 'confirming'].includes(ride.status) ? confirmationCard(ride) : priceCard(ride.estimate, 'Preis (Höchstbetrag)')}`;
@@ -805,7 +842,7 @@ async function renderRiderRide(panel, ride) {
     try { await loadRides(); } catch { return; }
     const now = state.rides.find((r) => r.id === ride.id);
     if (!now || now.status !== ride.status || now.partnerEndConfirmed !== ride.partnerEndConfirmed || (now.status === 'picked_up' && now.trackedKm !== ride.trackedKm)) {
-      if (now && now.status === 'completed') toast(`Fahrt abgerechnet: ${km(now.final.km)} · ${euro(now.final.totalCents)} – danke fürs Teilen 🌱`);
+      if (now && now.status === 'completed') toast(`Fahrt abgerechnet: ${km(now.final.km)} · ${euro(now.final.totalCents)} – danke fürs Teilen`);
       if (now && now.status === 'declined') toast('Der Fahrer hat abgelehnt. Bitte wähle einen anderen Fahrer.');
       await refreshMe();
       return render();
@@ -877,15 +914,15 @@ async function renderActiveTrip(panel) {
   const tracking = state.gpsWatch !== null || state.simTimer !== null;
   panel.innerHTML = `
     <div class="card">
-      <h2>Du bist online 🚗</h2>
+      <h2>Du bist online </h2>
       ${mfaHint()}
       <p><b>${esc(shortLabel(trip.origin))}</b> → <b>${esc(shortLabel(trip.destination))}</b></p>
       <p class="muted small">${km(trip.route.distanceKm)} · ${trip.seatsFree} von ${trip.seats} Plätzen frei · zurückgelegt ${km(trip.progressKm || 0)}</p>
       <div class="btn-row">
-        ${tracking ? '<button class="secondary" id="d-stoptrack">Standort-Übertragung stoppen</button>' : '<button id="d-gps">📡 GPS-Standort teilen</button><button class="secondary" id="d-sim">Fahrt simulieren (Demo)</button>'}
+        ${tracking ? '<button class="secondary" id="d-stoptrack">Standort-Übertragung stoppen</button>' : '<button id="d-gps">GPS-Standort teilen</button><button class="secondary" id="d-sim">Fahrt simulieren (Demo)</button>'}
         <button class="danger" id="d-end">Fahrt beenden</button>
       </div>
-      <p class="muted small">📡 GPS misst die gefahrenen Kilometer ${info(TIP.billing('mitfahrer') + '<p>Dein Standort wird nur während der aktiven Fahrt übertragen und nur bestätigten Mitfahrern angezeigt.</p>')}</p>
+      <p class="muted small">GPS misst die gefahrenen Kilometer ${info(TIP.billing('mitfahrer') + '<p>Dein Standort wird nur während der aktiven Fahrt übertragen und nur bestätigten Mitfahrern angezeigt.</p>')}</p>
     </div>
     <div class="card">
       <h2>Mitfahrer</h2>
@@ -949,9 +986,9 @@ function driverRideCard(r) {
     accepted: `<button data-act="pickup" data-id="${r.id}">Eingestiegen</button><button class="secondary" data-act="cancel" data-id="${r.id}">Stornieren</button>`,
   }[r.status] || '';
   return `<div class="match">
-    <div class="top">${profileLink(r.riderId, r.riderName)} ${statusBadge(r.status)}</div>
+    <div class="top"><span>${profileLink(r.riderId, r.riderName)} ${abortBadge(r.partnerAbort, 'als Mitfahrer')}</span> ${statusBadge(r.status)}</div>
     <div class="muted small">${r.seats} Pers. · ${esc(shortLabel(r.pickup))} → ${esc(shortLabel(r.dropoff))} ${info(`Umweg für dich: ca. ${km(r.detourKm)}`)}</div>
-    ${r.plannedRoute && ['requested', 'accepted'].includes(r.status) ? plannedRouteHtml(r.plannedRoute, `dein Anteil max. <b>${euro(r.estimate.driverCents)}</b>${r.partnerRouteConfirmed ? ' · ✔ Mitfahrer' : ''}${r.myRouteConfirmed ? ' · ✔ du' : ''}`) : ''}
+    ${r.plannedRoute && ['requested', 'accepted'].includes(r.status) ? plannedRouteHtml(r.plannedRoute, `dein Anteil max. <b>${euro(r.estimate.driverCents)}</b>${r.partnerRouteConfirmed ? ' · ✓ Mitfahrer' : ''}${r.myRouteConfirmed ? ' · ✓ du' : ''}`) : ''}
     ${['picked_up', 'confirming'].includes(r.status) ? confirmationCard(r) : ''}
     ${actions ? `<div class="btn-row">${actions}</div>` : ''}
   </div>`;
@@ -1107,8 +1144,9 @@ async function renderAccount(panel) {
       <div class="stats">
         <div class="stat"><b>${euro(me.walletCents - me.reservedCents)}</b><span>verfügbares Guthaben${me.reservedCents ? ` (${euro(me.reservedCents)} reserviert)` : ''}</span></div>
         <div class="stat"><b>${kg(me.co2SavedKg)} kg</b><span>CO₂ gemeinsam eingespart</span></div>
-        <div class="stat"><b>${me.nps.count ? (me.nps.score > 0 ? '+' : '') + me.nps.score : '–'}</b><span>dein NPS (${bewertungen(me.nps.count)}: ${me.nps.promoters} 😊 · ${me.nps.passives} 😐 · ${me.nps.detractors} 🙁)</span></div>
-        <div class="stat"><b>${me.canDrive ? '✅' : '—'}</b><span>Fahrer verifiziert</span></div>
+        <div class="stat"><b>${me.nps.count ? (me.nps.score > 0 ? '+' : '') + me.nps.score : '–'}</b><span>dein NPS (${bewertungen(me.nps.count)}: ${me.nps.promoters} Promotoren · ${me.nps.passives} Passive · ${me.nps.detractors} Kritiker)</span></div>
+        <div class="stat"><b>${me.abortStats.asDriver.rides || me.abortStats.asRider.rides ? `${me.abortStats.asDriver.rides ? me.abortStats.asDriver.quote + ' %' : '–'} / ${me.abortStats.asRider.rides ? me.abortStats.asRider.quote + ' %' : '–'}` : '–'}</b><span>Fahrtabbruchsquote Fahrer / Mitfahrer ${info(`<p>Anteil abgebrochener Fahrten an allen deinen Fahrten.</p><table><tr><td>als Fahrer</td><td>${me.abortStats.asDriver.aborted} von ${me.abortStats.asDriver.rides}</td></tr><tr><td>als Mitfahrer</td><td>${me.abortStats.asRider.aborted} von ${me.abortStats.asRider.rides}</td></tr></table><p style="margin-top:6px">Sichtbar in deinem Profil für Fahrtpartner.</p>`)}</span></div>
+        <div class="stat"><b>${me.canDrive ? 'ja' : 'nein'}</b><span>Fahrer verifiziert</span></div>
       </div>
       <h3 style="margin-top:14px">Guthaben aufladen ${info('Demo-Zahlung. Im Livebetrieb läuft die Zahlung über einen Zahlungsdienstleister.')}</h3>
       <div class="btn-row">${[1000, 2000, 5000].map((c) => `<button class="secondary" data-topup="${c}">+ ${euro(c)}</button>`).join('')}</div>
@@ -1117,9 +1155,9 @@ async function renderAccount(panel) {
       <h2>Fahrten</h2>
       ${done.length ? done.map((r) => `
         <div class="match">
-          <div class="top"><span>${r.role === 'rider' ? 'Mitgefahren bei' : 'Mitgenommen:'} <b>${esc(r.role === 'rider' ? r.driverName : r.riderName)}</b></span>
+          <div class="top"><span>${r.role === 'rider' ? 'Mitgefahren bei' : 'Mitgenommen:'} <b>${esc(r.role === 'rider' ? r.driverName : r.riderName)}</b>${r.abort ? ` <span class="badge warn" tabindex="0" data-tip="Abgebrochen von ${r.abort.by === r.role ? 'dir' : r.role === 'rider' ? 'dem Fahrer' : 'dem Mitfahrer'}: ${esc(((state.config.abortReasons || []).find((x) => x.id === r.abort.category) || { label: '' }).label)} – ${esc(r.abort.reason)}">Fahrtabbruch</span>` : ''}</span>
             <b>${r.role === 'rider' ? '−' + euro(r.final.totalCents) : '+' + euro(r.final.driverCents)}</b></div>
-          <div class="muted small">${new Date(r.completedAt).toLocaleDateString('de-DE')} · ${km(r.final.km)} · 🌱 ${kg(r.final.co2SavedKg)} kg CO₂ ${info(`<table><tr><td>Abgerechnet</td><td>${km(r.final.km)}</td></tr><tr><td>Grundlage</td><td>${esc(BASIS[r.final.billing] || r.final.billing)}</td></tr>${r.final.plannedKm ? `<tr><td>Geplante Route</td><td>${km(r.final.plannedKm)}</td></tr><tr><td>Gefahren (GPS)</td><td>${r.final.trackedKm > 0.2 ? km(r.final.trackedKm) : '–'}</td></tr>` : ''}${r.final.detourCents ? `<tr><td>Anfahrt zum Treffpunkt</td><td>${km(r.final.detourKm)} · ${euro(r.final.detourCents)} (ohne Provision)</td></tr>` : ''}<tr><td>CO₂ gespart</td><td>${kg(r.final.co2SavedKg)} kg</td></tr><tr><td>🌱 Umweltspende</td><td>${euro(r.final.donationCents)}</td></tr></table><p style="margin-top:6px">${new Date(r.completedAt).toLocaleString('de-DE')}</p>`, 'Details zur Abrechnung')}</div>
+          <div class="muted small">${new Date(r.completedAt).toLocaleDateString('de-DE')} · ${km(r.final.km)} · ${kg(r.final.co2SavedKg)} kg CO₂ ${info(`<table><tr><td>Abgerechnet</td><td>${km(r.final.km)}</td></tr><tr><td>Grundlage</td><td>${esc(BASIS[r.final.billing] || r.final.billing)}</td></tr>${r.final.plannedKm ? `<tr><td>Geplante Route</td><td>${km(r.final.plannedKm)}</td></tr><tr><td>Gefahren (GPS)</td><td>${r.final.trackedKm > 0.2 ? km(r.final.trackedKm) : '–'}</td></tr>` : ''}${r.final.detourCents ? `<tr><td>Anfahrt zum Treffpunkt</td><td>${km(r.final.detourKm)} · ${euro(r.final.detourCents)} (ohne Provision)</td></tr>` : ''}<tr><td>CO₂ gespart</td><td>${kg(r.final.co2SavedKg)} kg</td></tr><tr><td>Umweltspende</td><td>${euro(r.final.donationCents)}</td></tr></table><p style="margin-top:6px">${new Date(r.completedAt).toLocaleString('de-DE')}</p>`, 'Details zur Abrechnung')}</div>
           <div class="small">${ridePointsLine(r.myPoints)}</div>
           ${r.role === 'rider' ? riderGuestbookLine(r) : ''}
           ${r.myRating ? `<div class="muted small">Deine Bewertung: <b>${r.myRating.score}</b>/10${r.myRating.aspects && r.myRating.aspects.length ? ` · Gründe: ${r.myRating.aspects.map((id) => esc(((state.config.aspects[r.role === 'rider' ? 'driver' : 'rider'] || []).find((a) => a.id === id) || { label: id }).label)).join(', ')}` : ''}</div>` : `<form class="nps-form" data-rate-form="${r.id}">${npsWidget(`Wie wahrscheinlich ist es, dass du ${r.role === 'rider' ? r.driverName : r.riderName} weiterempfiehlst?`, r.role === 'rider' ? 'driver' : 'rider')}<div class="btn-row"><button data-submit disabled>Bewertung senden</button></div></form>`}
@@ -1160,7 +1198,7 @@ async function renderAdmin(panel) {
       </div>
     </div>
     <div class="card">
-      <h2>📖 Gästebuch-Einträge (${gbEntries.length}) ${info('Neueste Einträge zur Moderation. Verfasser sind auch für dich nicht sichtbar.')}</h2>
+      <h2>Gästebuch-Einträge (${gbEntries.length}) ${info('Neueste Einträge zur Moderation. Verfasser sind auch für dich nicht sichtbar.')}</h2>
       ${gbEntries.length ? gbEntries.map((e) => `<blockquote class="gb-entry ${e.hidden ? 'is-hidden' : ''}"><p>„${esc(e.text)}“</p><footer>bei ${esc(e.driverName)} · ${esc(e.when)} · ${esc(e.kind)}${e.hidden ? ' · vom Fahrer ausgeblendet' : ''} · <button class="linkish" data-gb-delete="${e.id}">löschen</button></footer></blockquote>`).join('') : '<p class="muted">Keine Einträge.</p>'}
     </div>
     <div class="card">
@@ -1189,8 +1227,8 @@ async function renderAdmin(panel) {
           </div>
           <input placeholder="Notiz (bei Ablehnung)" data-note="${l.userId}">
           <div class="btn-row">
-            <button data-decide="verified" data-user="${l.userId}">✔ Bestätigen</button>
-            <button class="danger" data-decide="rejected" data-user="${l.userId}">✖ Ablehnen</button>
+            <button data-decide="verified" data-user="${l.userId}">Bestätigen</button>
+            <button class="danger" data-decide="rejected" data-user="${l.userId}">Ablehnen</button>
           </div>
         </div>`).join('') : '<p class="muted">Keine offenen Anträge.</p>'}
     </div>`;
@@ -1223,22 +1261,24 @@ function avatar(p, cls = '') {
     : `<span class="avatar ${cls}">${esc((p.name || '?')[0].toUpperCase())}</span>`;
 }
 
-const PREF_LABELS = { smoking: '🚬 Rauchen', pets: '🐾 Tiere', music: '🎵 Musik', chat: '💬 Unterhaltung' };
+const PREF_LABELS = { smoking: 'Rauchen', pets: 'Tiere', music: 'Musik', chat: 'Unterhaltung' };
 
 function profileHtml(p) {
   return `
     <div class="profile-head">${avatar(p)}
       <div><h2 style="margin:0">${esc(p.name)}</h2>
         <div class="chips">
-          ${p.verifiedDriver ? '<span class="badge ok">✔ Führerschein geprüft</span>' : ''}
-          ${p.mfaEnabled ? '<span class="badge ok">🔐 2FA gesichert</span>' : ''}
+          ${p.verifiedDriver ? '<span class="badge ok">Führerschein geprüft</span>' : ''}
+          ${p.mfaEnabled ? '<span class="badge ok">2FA gesichert</span>' : ''}
           ${npsBadge(p.nps)}
+          ${p.abortStats && (p.verifiedDriver || p.abortStats.asDriver.rides) ? abortBadge(p.abortStats.asDriver, 'als Fahrer', ' (Fahrer)') : ''}
+          ${p.abortStats && p.abortStats.asRider.rides ? abortBadge(p.abortStats.asRider, 'als Mitfahrer', ' (Mitfahrer)') : ''}
         </div>
       </div>
     </div>
     ${p.bio ? `<p>${esc(p.bio)}</p>` : ''}
-    ${p.phone ? `<p>📞 <a href="tel:${esc(p.phone.replace(/[^+0-9]/g, ''))}">${esc(p.phone)}</a></p>` : ''}
-    ${p.vehicle && (p.vehicle.model || p.vehicle.brand) ? `<p class="muted">🚗 ${esc([p.vehicle.color, p.vehicle.brand, p.vehicle.model].filter(Boolean).join(' '))}${p.vehicle.plateRegion ? ` · <span class="plate"><span class="eu">D</span>${esc(p.vehicle.plateRegion)}</span> ${esc(p.vehicle.regionName)}` : ''}</p>` : ''}
+    ${p.phone ? `<p>Telefon: <a href="tel:${esc(p.phone.replace(/[^+0-9]/g, ''))}">${esc(p.phone)}</a></p>` : ''}
+    ${p.vehicle && (p.vehicle.model || p.vehicle.brand) ? `<p class="muted">Fahrzeug: ${esc([p.vehicle.color, p.vehicle.brand, p.vehicle.model].filter(Boolean).join(' '))}${p.vehicle.plateRegion ? ` · <span class="plate"><span class="eu">D</span>${esc(p.vehicle.plateRegion)}</span> ${esc(p.vehicle.regionName)}` : ''}</p>` : ''}
     <div class="chips">${Object.entries(p.preferences).map(([k, v]) => `<span class="badge">${PREF_LABELS[k]}: ${esc(v)}</span>`).join('')}</div>
     ${p.languages.length ? `<p class="muted small">Spricht: ${esc(p.languages.join(', '))}</p>` : ''}
     ${p.stats ? `<div class="stats" style="margin-top:10px">
@@ -1246,15 +1286,15 @@ function profileHtml(p) {
       <div class="stat"><b>${p.stats.ridesAsRider}</b><span>Fahrten als Mitfahrer</span></div>
       <div class="stat"><b>${kg(p.stats.co2SavedKg)} kg</b><span>CO₂ gespart</span></div>
       <div class="stat"><b>${esc(p.stats.memberSince.split('-').reverse().join('/'))}</b><span>Mitglied seit</span></div>
-      ${p.stats.level ? `<div class="stat"><b>${p.stats.level.icon} ${esc(p.stats.level.name)}</b><span>Level</span></div><div class="stat"><b>${Number(p.stats.points).toLocaleString('de-DE')}</b><span>Punkte</span></div>` : ''}
+      ${p.stats.level ? `<div class="stat"><b>${esc(p.stats.level.name)}</b><span>Level</span></div><div class="stat"><b>${Number(p.stats.points).toLocaleString('de-DE')}</b><span>Punkte</span></div>` : ''}
     </div>
-    ${p.stats.badges && p.stats.badges.length ? `<div class="chips">${p.stats.badges.map((b) => `<span class="badge">${b.icon} ${esc(b.name)}</span>`).join('')}</div>` : ''}` : ''}
+    ${p.stats.badges && p.stats.badges.length ? `<div class="chips">${p.stats.badges.map((b) => `<span class="badge">${esc(b.name)}</span>`).join('')}</div>` : ''}` : ''}
     ${guestbookHtml(p.guestbook)}`;
 }
 
 async function showProfile(userId, preview) {
   const { profile } = await api(`/api/users/${encodeURIComponent(userId)}/profile${preview ? '?preview=' + preview : ''}`);
-  openModal(profileHtml(profile) + (preview ? `<p class="muted small" style="margin-top:12px">👁 Vorschau: ${preview === 'booked' ? 'Sicht eines bestätigten Fahrtpartners' : 'Sicht anderer Mitglieder'}</p>` : ''));
+  openModal(profileHtml(profile) + (preview ? `<p class="muted small" style="margin-top:12px">Vorschau: ${preview === 'booked' ? 'Sicht eines bestätigten Fahrtpartners' : 'Sicht anderer Mitglieder'}</p>` : ''));
 }
 
 document.addEventListener('click', (e) => {
@@ -1304,7 +1344,7 @@ function askCredentials(title, text, confirmLabel = 'Bestätigen', danger = fals
 
 function mfaHint(text) {
   if (!state.me || state.me.mfaEnabled) return '';
-  return `<div class="card notice" style="margin:10px 0"><b>🔐 Konto absichern</b><p class="small" style="margin:4px 0 8px">${esc(text || 'Du teilst deinen Standort und erhältst Auszahlungen – schütze dein Konto mit der Zwei-Faktor-Anmeldung.')}</p><a class="btn" href="#/profil">2FA aktivieren</a></div>`;
+  return `<div class="card notice" style="margin:10px 0"><b>Konto absichern</b><p class="small" style="margin:4px 0 8px">${esc(text || 'Du teilst deinen Standort und erhältst Auszahlungen – schütze dein Konto mit der Zwei-Faktor-Anmeldung.')}</p><a class="btn" href="#/profil">2FA aktivieren</a></div>`;
 }
 
 // ---------- Eigenes Profil, Privatsphäre, Sicherheit, Daten ----------
@@ -1326,7 +1366,7 @@ async function renderProfile(panel) {
       <div class="profile-head">
         ${avatar({ id: me.id, name: me.name, hasPhoto: me.hasPhoto })}
         <div class="btn-row" style="margin:0">
-          <label class="btn secondary" style="margin:0;color:var(--text)">📷 Foto wählen<input type="file" id="p-photo" accept="image/*" hidden></label>
+          <label class="btn secondary" style="margin:0;color:var(--text)">Foto wählen<input type="file" id="p-photo" accept="image/*" hidden></label>
           ${me.hasPhoto ? '<button class="secondary" id="p-photo-del">Entfernen</button>' : ''}
         </div>
       </div>
@@ -1338,7 +1378,7 @@ async function renderProfile(panel) {
         <div class="checks">${LANGS.map((l) => `<label class="check"><input type="checkbox" name="lang" value="${l}" ${p.languages.includes(l) ? 'checked' : ''}>${l}</label>`).join('')}</div>
         <div class="row">${sel('smoking')}${sel('pets')}</div>
         <div class="row">${sel('music')}${sel('chat')}</div>
-        <h3 style="margin:16px 0 0">🚗 Fahrzeug (für Fahrer)</h3>
+        <h3 style="margin:16px 0 0">Fahrzeug (für Fahrer)</h3>
         <div class="row">
           <div><label for="p-brand">Automarke</label><select id="p-brand"><option value="">–</option>${(state.config.brands || []).map((b) => `<option ${p.vehicle.brand === b ? 'selected' : ''}>${esc(b)}</option>`).join('')}</select></div>
           <div><label for="p-model">Modell</label><input id="p-model" value="${esc(p.vehicle.model)}" placeholder="Golf"></div>
@@ -1347,7 +1387,7 @@ async function renderProfile(panel) {
           <div><label for="p-color">Farbe</label><input id="p-color" value="${esc(p.vehicle.color)}" placeholder="blau"></div>
           <div><label for="p-plate">Ortskürzel ${info('Nur das Ortskürzel deines Kennzeichens (z. B. HH). Das vollständige Kennzeichen speichern wir nicht. Marke und Kürzel erscheinen in deinem Profil und fließen anonym in die Funfacts ein.')}</label><input id="p-plate" value="${esc(p.vehicle.plateRegion || '')}" maxlength="3" placeholder="z. B. HH" style="text-transform:uppercase"></div>
         </div>
-        <p class="muted small" id="p-plate-name">${p.vehicle.plateRegion ? `📍 ${esc((state.config.plateRegions || {})[p.vehicle.plateRegion] || 'Kennzeichen ' + p.vehicle.plateRegion)}` : ''}</p>
+        <p class="muted small" id="p-plate-name">${p.vehicle.plateRegion ? `Ort: ${esc((state.config.plateRegions || {})[p.vehicle.plateRegion] || 'Kennzeichen ' + p.vehicle.plateRegion)}` : ''}</p>
         <div class="btn-row">
           <button id="p-save">Profil speichern</button>
           <button type="button" class="secondary" data-preview="stranger">So sehen mich andere</button>
@@ -1371,7 +1411,7 @@ async function renderProfile(panel) {
     </div>
 
     <div class="card" id="rider-filters-card">
-      <h2>🎯 Meine Wünsche an Fahrer ${info('<p>Diese Kriterien muss ein Fahrer erfüllen, damit er dir bei der Suche angezeigt wird.</p><p>Sie gelten automatisch bei jeder Suche – auf allen deinen Geräten. In der Suche siehst du nur, wie viele Fahrer deswegen ausgeblendet wurden.</p>')}</h2>
+      <h2>Meine Wünsche an Fahrer ${info('<p>Diese Kriterien muss ein Fahrer erfüllen, damit er dir bei der Suche angezeigt wird.</p><p>Sie gelten automatisch bei jeder Suche – auf allen deinen Geräten. In der Suche siehst du nur, wie viele Fahrer deswegen ausgeblendet wurden.</p>')}</h2>
       ${filterPanel()}
     </div>
 
@@ -1382,7 +1422,7 @@ async function renderProfile(panel) {
     <div class="card" id="security">
       <h2>Sicherheit & Anmeldung ${info('<p><b>Zwei-Faktor-Anmeldung (2FA)</b></p><p>Beim Anmelden brauchst du zusätzlich einen 6-stelligen Code aus einer Authenticator-App (z. B. Google oder Microsoft Authenticator, Authy, 1Password). Selbst wer dein Passwort kennt, kommt so nicht in dein Konto.</p><p>Backup-Codes helfen, wenn das Handy weg ist – jeder gilt einmal.</p>')}</h2>
       ${me.mfaEnabled
-        ? `<p><span class="badge ok">🔐 Zwei-Faktor-Anmeldung aktiv</span></p>
+        ? `<p><span class="badge ok">Zwei-Faktor-Anmeldung aktiv</span></p>
            <p class="muted small">${me.backupCodesLeft} Backup-Codes übrig${me.backupCodesLeft < 3 ? ' – <b>bitte neue erzeugen</b>' : ''}</p>
            <div class="btn-row"><button class="secondary" id="mfa-codes">Neue Backup-Codes</button><button class="secondary" id="mfa-off">2FA deaktivieren</button></div>`
         : `<p><span class="badge warn">Zwei-Faktor-Anmeldung aus</span></p>
@@ -1396,7 +1436,7 @@ async function renderProfile(panel) {
     <div class="card">
       <h2>Meine Daten ${info(`<p>Einwilligung zur Datenschutzerklärung erteilt am ${me.consentAt ? new Date(me.consentAt).toLocaleString('de-DE') : '–'}.</p><p>Der Download enthält alle deine Daten (Auskunft und Datenübertragbarkeit nach Art. 15 und 20 DSGVO).</p>`)}</h2>
       <div class="btn-row">
-        <a class="btn secondary" style="color:var(--text)" href="/api/me/export" download>⬇ Alle meine Daten herunterladen (JSON)</a>
+        <a class="btn secondary" style="color:var(--text)" href="/api/me/export" download>Alle meine Daten herunterladen (JSON)</a>
       </div>
       <h3 style="margin-top:16px">Konto löschen ${info('<p>Profil, Fotos, Telefonnummer, Führerscheindaten, Gästebucheinträge und Anmeldedaten werden sofort gelöscht.</p><p>Abrechnungsbelege müssen wir 10 Jahre aufbewahren – sie bleiben anonymisiert („Gelöschtes Konto“) erhalten. Restguthaben wird ausgezahlt.</p>')}</h3>
       <button class="danger" id="acc-delete">Konto endgültig löschen</button>
@@ -1411,7 +1451,7 @@ async function renderProfile(panel) {
   $('#p-plate').addEventListener('input', (e) => {
     const code = e.target.value.trim().toUpperCase();
     const name = (state.config.plateRegions || {})[code];
-    $('#p-plate-name').textContent = code ? (name ? `📍 ${name}` : /^[A-ZÄÖÜ]{1,3}$/.test(code) ? `📍 Kennzeichen ${code}` : '⚠ 1–3 Buchstaben, z. B. B, HH oder MÜ') : '';
+    $('#p-plate-name').textContent = code ? (name ? `Ort: ${name}` : /^[A-ZÄÖÜ]{1,3}$/.test(code) ? `Kennzeichen ${code}` : 'Bitte 1–3 Buchstaben, z. B. B, HH oder MÜ') : '';
   });
   bindGuestbookButtons(panel);
 
@@ -1528,10 +1568,10 @@ async function startMfaSetup() {
 function showBackupCodes(codes) {
   const text = `joinmyride.com – Backup-Codes für ${state.me.email}\nJeder Code funktioniert nur einmal.\n\n${codes.join('\n')}\n`;
   const href = URL.createObjectURL(new Blob([text], { type: 'text/plain' }));
-  openModal(`<h2>🔐 Deine Backup-Codes</h2>
+  openModal(`<h2>Deine Backup-Codes</h2>
     <p class="muted">Bewahre diese Codes sicher auf (z. B. ausgedruckt oder im Passwortmanager). Wenn du dein Handy verlierst, kommst du nur damit in dein Konto. Jeder Code gilt einmal. <b>Sie werden nur jetzt angezeigt.</b></p>
     <div class="codes">${codes.map((c) => `<span>${esc(c)}</span>`).join('')}</div>
-    <div class="btn-row"><a class="btn secondary" style="color:var(--text)" href="${href}" download="joinmyride-backup-codes.txt">⬇ Als Datei speichern</a><button id="codes-done">Ich habe die Codes gespeichert</button></div>`);
+    <div class="btn-row"><a class="btn secondary" style="color:var(--text)" href="${href}" download="joinmyride-backup-codes.txt">Als Datei speichern</a><button id="codes-done">Ich habe die Codes gespeichert</button></div>`);
   $('#codes-done').onclick = () => { closeModal(); URL.revokeObjectURL(href); render(); };
 }
 
@@ -1623,27 +1663,27 @@ async function renderPoints(panel) {
   panel.innerHTML = `
     <div class="card level-card">
       <div class="level-head">
-        <span class="level-icon">${lvl.icon}</span>
+        <span class="level-icon" aria-hidden="true">${lvl.rank}</span>
         <div><div class="muted small">Level ${lvl.rank}</div><h2 style="margin:0">${esc(lvl.name)}</h2><div class="points-big">${pts(g.points)}</div></div>
       </div>
       <div class="progress"><div style="width:${Math.round(lvl.progress * 100)}%"></div></div>
-      <p class="muted small">${lvl.next ? `Noch ${pts(lvl.next.missing)} bis ${lvl.next.icon} ${esc(lvl.next.name)}` : 'Höchstes Level erreicht – danke! 🌍'} · diesen Monat ${pts(g.monthPoints)}</p>
+      <p class="muted small">${lvl.next ? `Noch ${pts(lvl.next.missing)} bis ${esc(lvl.next.name)}` : 'Höchstes Level erreicht – danke!'} · diesen Monat ${pts(g.monthPoints)}</p>
     </div>
 
     <div class="card">
       <h2>So sammelst du Punkte ${info(`<p>Dein Faktor ist die Bewertung (0–10), die du vom jeweils anderen bekommst: Fahrer werden vom Mitfahrer bewertet, Mitfahrer vom Fahrer.</p><p>Ohne Bewertung zählt vorläufig ×${g.unratedFactor}.</p><p><b>Beispiel:</b> 20 km geteilt ≈ 3 kg CO₂ → mit 10 bewertet 30 Punkte, mit 7 → 21, mit 5 → 3, mit 2 → 0.</p>`)}</h2>
       <p class="formula">Punkte = <b>Faktor</b> × <b>eingesparte kg CO₂</b></p>
       <table class="breakdown">
-        <tr><td>😊 Promotor: 10 · 9</td><td><b>×10 · ×9</b></td></tr>
-        <tr><td>😐 Passiv: 8 · 7</td><td><b>×8 · ×7</b></td></tr>
-        <tr><td>🙁 Kritiker: 6 · 5 · 4</td><td><b>×1</b></td></tr>
-        <tr><td>🙁 Kritiker: 3 · 2 · 1 · 0</td><td><b>×0</b> <span class="muted small">(keine Punkte)</span></td></tr>
+        <tr><td>Promotor: 10 · 9</td><td><b>×10 · ×9</b></td></tr>
+        <tr><td>Passiv: 8 · 7</td><td><b>×8 · ×7</b></td></tr>
+        <tr><td>Kritiker: 6 · 5 · 4</td><td><b>×1</b></td></tr>
+        <tr><td>Kritiker: 3 · 2 · 1 · 0</td><td><b>×0</b> <span class="muted small">(keine Punkte)</span></td></tr>
       </table>
     </div>
 
     <div class="card">
       <h2>Abzeichen (${g.badges.filter((b) => b.earned).length}/${g.badges.length})</h2>
-      <div class="badges">${g.badges.map((b) => `<div class="badge-tile ${b.earned ? 'earned' : ''}" tabindex="0" data-tip="${esc(b.desc)}${b.earned ? ' ✔' : ''}"><span>${b.icon}</span><b>${esc(b.name)}</b></div>`).join('')}</div>
+      <div class="badges">${g.badges.map((b) => `<div class="badge-tile ${b.earned ? 'earned' : ''}" tabindex="0" data-tip="${esc(b.desc)}${b.earned ? ' (erreicht)' : ''}"><b>${esc(b.name)}</b></div>`).join('')}</div>
     </div>
 
     <div class="card">
@@ -1655,14 +1695,14 @@ async function renderPoints(panel) {
 
     <div class="card">
       <h2>Punkte-Verlauf</h2>
-      ${g.history.length ? `<table class="breakdown">${g.history.map((h) => `<tr><td>${h.role === 'driver' ? '🚗 Mitgenommen' : '🧍 Mitgefahren bei'} ${esc(h.partner)}<br><span class="muted small">${new Date(h.at).toLocaleDateString('de-DE')} · ${km(h.km)} · ${h.rated ? `bewertet mit ${h.score} (${CAT_LABEL[h.category]})` : 'noch nicht bewertet'}</span></td><td><b>+${h.points}</b><br><span class="muted small">×${h.factor} · ${kg(h.co2Kg)} kg</span></td></tr>`).join('')}</table>` : '<p class="muted">Noch keine Punkte – teile deine erste Fahrt! 🌱</p>'}
+      ${g.history.length ? `<table class="breakdown">${g.history.map((h) => `<tr><td>${h.role === 'driver' ? 'Mitgenommen' : 'Mitgefahren bei'} ${esc(h.partner)}<br><span class="muted small">${new Date(h.at).toLocaleDateString('de-DE')} · ${km(h.km)} · ${h.rated ? `bewertet mit ${h.score} (${CAT_LABEL[h.category]})` : 'noch nicht bewertet'}</span></td><td><b>+${h.points}</b><br><span class="muted small">×${h.factor} · ${kg(h.co2Kg)} kg</span></td></tr>`).join('')}</table>` : '<p class="muted">Noch keine Punkte – teile deine erste Fahrt! </p>'}
     </div>`;
 
   const loadBoard = async (period) => {
     panel.querySelectorAll('[data-period]').forEach((b) => (b.className = b.dataset.period === period ? '' : 'secondary'));
     const lb = await api('/api/leaderboard?period=' + period);
     $('#leaderboard').innerHTML = lb.entries.length
-      ? `<table class="breakdown leaderboard">${lb.entries.map((e) => `<tr class="${e.isMe ? 'me' : ''}"><td>${e.rank <= 3 ? ['🥇', '🥈', '🥉'][e.rank - 1] : e.rank + '.'} ${e.level.icon} ${esc(e.name)}${e.isMe ? ' <span class="badge ok">du</span>' : ''}</td><td><b>${pts(e.points)}</b></td></tr>`).join('')}</table>
+      ? `<table class="breakdown leaderboard">${lb.entries.map((e) => `<tr class="${e.isMe ? 'me' : ''}"><td>${e.rank}. ${esc(e.name)}${e.isMe ? ' <span class="badge ok">du</span>' : ''}</td><td><b>${pts(e.points)}</b></td></tr>`).join('')}</table>
          ${lb.me.rank && !lb.entries.some((e) => e.isMe) ? `<p class="small">Dein Platz: <b>${lb.me.rank}</b> mit ${pts(lb.me.points)}</p>` : ''}`
       : '<p class="muted">Noch keine Punkte in diesem Zeitraum.</p>';
   };
@@ -1679,7 +1719,7 @@ async function renderPoints(panel) {
 function guestbookHtml(gb) {
   if (!gb || !gb.enabled) return '';
   return `<div class="guestbook">
-    <h3>📖 Gästebuch ${gb.count ? `<span class="muted small">(${gb.count})</span>` : ''} ${info('Mitfahrer können nach Fahrten über 1 Stunde oder 100 km freiwillig und anonym ein positives Erlebnis teilen.')}</h3>
+    <h3>Gästebuch ${gb.count ? `<span class="muted small">(${gb.count})</span>` : ''} ${info('Mitfahrer können nach Fahrten über 1 Stunde oder 100 km freiwillig und anonym ein positives Erlebnis teilen.')}</h3>
     ${gb.count
       ? gb.entries.map((e) => `<blockquote class="gb-entry"><p>„${esc(e.text)}“</p><footer>Anonym · ${esc(e.when)} · ${esc(e.kind)}</footer></blockquote>`).join('')
       : '<p class="muted small">Noch keine Einträge.</p>'}
@@ -1688,9 +1728,9 @@ function guestbookHtml(gb) {
 
 /** Freiwilliges Angebot nach langer Fahrt: anonym ins Gästebuch des Fahrers schreiben. */
 function openGuestbookForm(ride, { afterRide } = {}) {
-  openModal(`<h2>📖 Gästebuch von ${esc(ride.driverName)}</h2>
+  openModal(`<h2>Gästebuch von ${esc(ride.driverName)}</h2>
     <p>${afterRide ? 'Schön, dass die lange Fahrt gut war! ' : ''}Magst du ein positives Erlebnis teilen? Ganz <b>freiwillig</b> – du kannst das auch überspringen.</p>
-    <p class="small">🕶️ Erscheint <b>anonym</b> im Profil des Fahrers ${info('<p>Ohne deinen Namen und ohne Datum – nur mit Monat und „Fahrt über 1 Stunde / 100 km“.</p><p>Bitte keine Namen, Telefonnummern, E-Mail-Adressen oder Links. Du kannst den Eintrag jederzeit im Konto löschen.</p>')}</p>
+    <p class="small">Erscheint <b>anonym</b> im Profil des Fahrers ${info('<p>Ohne deinen Namen und ohne Datum – nur mit Monat und „Fahrt über 1 Stunde / 100 km“.</p><p>Bitte keine Namen, Telefonnummern, E-Mail-Adressen oder Links. Du kannst den Eintrag jederzeit im Konto löschen.</p>')}</p>
     <form id="gb-form">
       <label for="gb-text">Was war schön an der Fahrt?</label>
       <textarea id="gb-text" maxlength="500" placeholder="z. B. Super entspannte Fahrt, tolle Musik und spannende Gespräche über Elektroautos!" required></textarea>
@@ -1718,7 +1758,7 @@ function openGuestbookForm(ride, { afterRide } = {}) {
         return;
       }
       closeModal();
-      toast('Danke! Dein Eintrag steht jetzt anonym im Gästebuch. 📖');
+      toast('Danke! Dein Eintrag steht jetzt anonym im Gästebuch.');
       if (currentView() === 'konto') render();
     }, $('#gb-submit'));
   };
@@ -1727,15 +1767,15 @@ function openGuestbookForm(ride, { afterRide } = {}) {
 function riderGuestbookLine(r) {
   const g = r.guestbook;
   if (!g) return '';
-  if (g.entry) return `<div class="small gb-mine">📖 Dein anonymer Gästebucheintrag${g.entry.hidden ? ' <span class="badge">vom Fahrer ausgeblendet</span>' : ''}: „${esc(g.entry.text)}“ <button class="linkish" data-gb-delete="${g.entry.id}">löschen</button></div>`;
-  if (g.eligible) return `<button class="secondary" style="margin-top:6px" data-gb-write="${r.id}">📖 Ins Gästebuch von ${esc(r.driverName)} schreiben (anonym, freiwillig)</button>`;
+  if (g.entry) return `<div class="small gb-mine">Dein anonymer Gästebucheintrag${g.entry.hidden ? ' <span class="badge">vom Fahrer ausgeblendet</span>' : ''}: „${esc(g.entry.text)}“ <button class="linkish" data-gb-delete="${g.entry.id}">löschen</button></div>`;
+  if (g.eligible) return `<button class="secondary" style="margin-top:6px" data-gb-write="${r.id}">Ins Gästebuch von ${esc(r.driverName)} schreiben (anonym, freiwillig)</button>`;
   return '';
 }
 
 async function myGuestbookCard() {
   const gb = await api('/api/me/guestbook');
   return `<div class="card" id="my-guestbook">
-    <h2>📖 Mein Gästebuch ${info('<p>Mitfahrer können nach Fahrten über 1 Stunde oder 100 km, die sie mit 7–10 bewertet haben, freiwillig und anonym ein positives Erlebnis teilen.</p><p>Du kannst Einträge ausblenden, aber nicht bearbeiten.</p>')}</h2>
+    <h2>Mein Gästebuch ${info('<p>Mitfahrer können nach Fahrten über 1 Stunde oder 100 km, die sie mit 7–10 bewertet haben, freiwillig und anonym ein positives Erlebnis teilen.</p><p>Du kannst Einträge ausblenden, aber nicht bearbeiten.</p>')}</h2>
     ${gb.entries.length
       ? gb.entries.map((e) => `<blockquote class="gb-entry ${e.hidden ? 'is-hidden' : ''}"><p>„${esc(e.text)}“</p><footer>Anonym · ${esc(e.when)} · ${esc(e.kind)} · <button class="linkish" data-gb-hide="${e.id}" data-hidden="${e.hidden ? '0' : '1'}">${e.hidden ? 'wieder anzeigen' : 'ausblenden'}</button></footer></blockquote>`).join('')
       : '<p class="muted">Noch keine Einträge.</p>'}
@@ -1767,12 +1807,12 @@ function npsBar(nps) {
 }
 
 function funfactList(list, labelOf) {
-  if (!list.ranked.length) return '<p class="muted">Noch nicht genug Bewertungen – wir brauchen mehr Fahrten! 🚗💨</p>';
+  if (!list.ranked.length) return '<p class="muted">Noch nicht genug Bewertungen – wir brauchen mehr Fahrten.</p>';
   return `<ol class="funfact-list">${list.ranked.map((g, i) => `
     <li>
-      <div class="ff-row"><span class="ff-rank">${['🥇', '🥈', '🥉'][i] || i + 1 + '.'}</span><span class="ff-name">${labelOf(g)}</span><b class="ff-nps ${g.nps >= 50 ? 'good' : g.nps >= 0 ? 'mid' : 'bad'}">${g.nps > 0 ? '+' : ''}${g.nps}</b></div>
+      <div class="ff-row"><span class="ff-rank">${i + 1}.</span><span class="ff-name">${labelOf(g)}</span><b class="ff-nps ${g.nps >= 50 ? 'good' : g.nps >= 0 ? 'mid' : 'bad'}">${g.nps > 0 ? '+' : ''}${g.nps}</b></div>
       ${npsBar(g.nps)}
-      <div class="muted small">${bewertungen(g.count)} · ${g.drivers} Fahrer · 😊 ${g.promoters} · 😐 ${g.passives} · 🙁 ${g.detractors}</div>
+      <div class="muted small">${bewertungen(g.count)} · ${g.drivers} Fahrer · ${g.promoters} Promotoren · ${g.passives} Passive · ${g.detractors} Kritiker</div>
     </li>`).join('')}</ol>`;
 }
 
@@ -1791,26 +1831,26 @@ async function renderFunfacts(panel) {
   const quip = FUN_QUIPS[(topRegion ? topRegion.code.length : 0) % FUN_QUIPS.length]();
   panel.innerHTML = `
     <div class="card hero funfacts-hero">
-      <h2>🎉 Funfacts</h2>
+      <h2>Funfacts</h2>
       <p>Wo fahren die nettesten Fahrer – und in welchen Autos? ${info(TIP.nps())}</p>
-      ${topRegion ? `<p class="ff-headline">🏆 Die nettesten Fahrer kommen aus <b>${esc(topRegion.name)}</b> (${esc(topRegion.code)}) – NPS ${topRegion.nps > 0 ? '+' : ''}${topRegion.nps}. ${quip}</p>` : ''}
-      ${topBrand ? `<p class="ff-headline">🚘 Am nettesten unterwegs: <b>${esc(topBrand.name)}</b>-Fahrer – NPS ${topBrand.nps > 0 ? '+' : ''}${topBrand.nps}.</p>` : ''}
+      ${topRegion ? `<p class="ff-headline">Die nettesten Fahrer kommen aus <b>${esc(topRegion.name)}</b> (${esc(topRegion.code)}) – NPS ${topRegion.nps > 0 ? '+' : ''}${topRegion.nps}. ${quip}</p>` : ''}
+      ${topBrand ? `<p class="ff-headline">Am nettesten unterwegs: <b>${esc(topBrand.name)}</b>-Fahrer – NPS ${topBrand.nps > 0 ? '+' : ''}${topBrand.nps}.</p>` : ''}
     </div>
 
     <div class="card">
-      <h2>📍 Nach Stadt / Kennzeichen</h2>
+      <h2>Nach Stadt / Kennzeichen</h2>
       ${funfactList(f.regions, (g) => `<span class="plate"><span class="eu">D</span>${esc(g.code)}</span> ${esc(g.name)}`)}
     </div>
 
     <div class="card">
-      <h2>🚘 Nach Automarke</h2>
+      <h2>Nach Automarke</h2>
       ${funfactList(f.brands, (g) => esc(g.name))}
     </div>
 
     <div class="card">
       <h3>So wird gezählt ${info(`<p>Grundlage sind alle ${bewertungen(f.totalRatings)} von Mitfahrern (0–10). Stadt und Marke kommen aus dem Fahrerprofil.</p><p>Damit niemand einzeln erkennbar ist, erscheint eine Stadt oder Marke erst ab <b>${f.minDrivers} Fahrern</b> und <b>${bewertungen(f.minRatings)}</b>${f.regions.hiddenGroups + f.brands.hiddenGroups ? ` – ${f.regions.hiddenGroups + f.brands.hiddenGroups} weitere warten noch darauf` : ''}.</p>`)} ${info(TIP.nps(), 'Was ist der NPS?')}</h3>
-      ${state.me ? '<p class="small">Deine Stadt fehlt? Trag im <a href="#/profil">Profil</a> Automarke und Ortskürzel deines Kennzeichens ein. 🚗</p>' : ''}
-      <p class="muted small">Alles nur zum Spaß 😉</p>
+      ${state.me ? '<p class="small">Deine Stadt fehlt? Trag im <a href="#/profil">Profil</a> Automarke und Ortskürzel deines Kennzeichens ein. </p>' : ''}
+      <p class="muted small">Alles nur zum Spaß.</p>
     </div>`;
 }
 
@@ -1835,10 +1875,10 @@ function filterPanel() {
     </div>
     <label class="check"><input type="checkbox" id="flt-new" ${f.includeNew === false ? '' : 'checked'}><span>Neue Fahrer einbeziehen ${info('Fahrer ohne Bewertung bleiben in der Liste, auch wenn ein Mindest-NPS gesetzt ist.')}</span></label>
     <div class="checks">
-      <label class="check"><input type="checkbox" id="flt-smoke" ${f.nonSmoker ? 'checked' : ''}><span>🚭 Nichtraucher</span></label>
-      <label class="check"><input type="checkbox" id="flt-pets" ${f.pets ? 'checked' : ''}><span>🐾 Tiere erlaubt</span></label>
-      <label class="check"><input type="checkbox" id="flt-mfa" ${f.mfa ? 'checked' : ''}><span>🔐 2FA-gesichert</span></label>
-      <label class="check"><input type="checkbox" id="flt-safe" ${f.safeDriving ? 'checked' : ''}><span>🛣️ Sichere Fahrweise ${info('Höchstens 10 % der Bewertungen des Fahrers nennen „Fahrweise“ als Grund (ab 3 Bewertungen).')}</span></label>
+      <label class="check"><input type="checkbox" id="flt-smoke" ${f.nonSmoker ? 'checked' : ''}><span>Nichtraucher</span></label>
+      <label class="check"><input type="checkbox" id="flt-pets" ${f.pets ? 'checked' : ''}><span>Tiere erlaubt</span></label>
+      <label class="check"><input type="checkbox" id="flt-mfa" ${f.mfa ? 'checked' : ''}><span>2FA-gesichert</span></label>
+      <label class="check"><input type="checkbox" id="flt-safe" ${f.safeDriving ? 'checked' : ''}><span>Sichere Fahrweise ${info('Höchstens 10 % der Bewertungen des Fahrers nennen „Fahrweise“ als Grund (ab 3 Bewertungen).')}</span></label>
     </div>
     <div class="row">
       <div><label for="flt-chat">Unterhaltung</label><select id="flt-chat">${opt('', 'egal', f.chat)}${opt('quiet', 'lieber ruhig', f.chat)}${opt('talkative', 'gerne gesprächig', f.chat)}</select></div>
@@ -1886,34 +1926,34 @@ function bindFilterPanel(root) {
 function filterSummary(res) {
   if (!res.hiddenByFilters) return '';
   const n = res.hiddenByFilters;
-  return `<p class="muted small">🔎 ${n} ${n === 1 ? 'Fahrer wird' : 'Fahrer werden'} dir wegen deiner Filter nicht angezeigt. <a href="#/profil" data-goto-filters>Filter ändern</a></p>`;
+  return `<p class="muted small">${n} ${n === 1 ? 'Fahrer wird' : 'Fahrer werden'} dir wegen deiner Filter nicht angezeigt. <a href="#/profil" data-goto-filters>Filter ändern</a></p>`;
 }
 
 function prefIcons(m) {
   const p = m.driverPrefs || {};
-  const icons = [];
-  if (p.smoking === 'nein') icons.push('<span tabindex="0" data-tip="Nichtraucher">🚭</span>');
-  if (p.pets && p.pets !== 'nein') icons.push(`<span tabindex="0" data-tip="Tiere: ${esc(p.pets)}">🐾</span>`);
-  if (p.chat === 'lieber ruhig') icons.push('<span tabindex="0" data-tip="Lieber ruhige Fahrt">🤫</span>');
-  if (p.chat === 'gerne') icons.push('<span tabindex="0" data-tip="Unterhält sich gerne">💬</span>');
-  if (p.music === 'gerne') icons.push('<span tabindex="0" data-tip="Musik gerne">🎵</span>');
-  if (m.driverMfa) icons.push('<span tabindex="0" data-tip="Konto mit 2FA gesichert">🔐</span>');
-  if (p.languages && p.languages.length > 1) icons.push(`<span tabindex="0" data-tip="Spricht ${esc(p.languages.join(', '))}">🗣️</span>`);
-  return icons.length ? `<span class="pref-icons">${icons.join('')}</span>` : '';
+  const chips = [];
+  if (p.smoking === 'nein') chips.push('Nichtraucher');
+  if (p.pets && p.pets !== 'nein') chips.push(`Tiere ${p.pets === 'ja' ? 'ok' : 'nach Absprache'}`);
+  if (p.chat === 'lieber ruhig') chips.push('ruhige Fahrt');
+  if (p.chat === 'gerne') chips.push('gesprächig');
+  if (p.music === 'gerne') chips.push('Musik');
+  if (m.driverMfa) chips.push('2FA');
+  if (p.languages && p.languages.length > 1) chips.push(esc(p.languages.join(', ')));
+  return chips.length ? `<span class="pref-chips">${chips.map((c) => `<span class="pref">${c}</span>`).join('')}</span>` : '';
 }
 
 // ---------- Feedback zum Lernen (gesammelt & anonym) ----------
 function feedbackSection(title, f) {
   if (!f.entries && !f.ratingsTotal) return '';
   if (!f.ready) {
-    return `<h3>${title}</h3><p class="muted small">${f.entries ? `${f.entries} von ${f.minEntries} Rückmeldungen gesammelt` : 'Noch keine Hinweise – weiter so! 😊'} ${info(`Hinweise werden erst ab ${f.minEntries} Rückmeldungen gesammelt angezeigt, damit niemand einzeln erkennbar ist.`)}</p>`;
+    return `<h3>${title}</h3><p class="muted small">${f.entries ? `${f.entries} von ${f.minEntries} Rückmeldungen gesammelt` : 'Noch keine Hinweise – weiter so!'} ${info(`Hinweise werden erst ab ${f.minEntries} Rückmeldungen gesammelt angezeigt, damit niemand einzeln erkennbar ist.`)}</p>`;
   }
   const max = Math.max(...f.aspects.map((a) => a.count), 1);
   return `<h3>${title}</h3>
     <p class="muted small">${f.entries} Rückmeldungen ${info(`${f.entries} Rückmeldungen mit Hinweisen aus ${bewertungen(f.ratingsTotal)} insgesamt.`)}</p>
     ${f.aspects.length ? f.aspects.map((a) => `
       <div class="fb-aspect">
-        <div class="fb-row"><span>${a.icon} ${esc(a.label)} ${info(`<p><b>💡 Tipp</b></p><p>${esc(a.tip)}</p>`, 'Tipp')}</span><b>${a.count}×</b></div>
+        <div class="fb-row"><span>${esc(a.label)} ${info(`<p><b>Tipp</b></p><p>${esc(a.tip)}</p>`, 'Tipp')}</span><b>${a.count}×</b></div>
         <div class="fb-bar"><div style="width:${Math.round((a.count / max) * 100)}%"></div></div>
       </div>`).join('') : ''}
     ${f.comments.length ? `<details><summary class="small">Anonyme Kommentare (${f.comments.length})</summary>${f.comments.map((c) => `<blockquote class="gb-entry"><p>„${esc(c)}“</p></blockquote>`).join('')}</details>` : ''}`;
@@ -1921,10 +1961,10 @@ function feedbackSection(title, f) {
 
 async function feedbackCard() {
   const fb = await api('/api/me/feedback');
-  const driver = feedbackSection('🚗 Als Fahrer', fb.asDriver);
-  const rider = feedbackSection('🧍 Als Mitfahrer', fb.asRider);
+  const driver = feedbackSection('Als Fahrer', fb.asDriver);
+  const rider = feedbackSection('Als Mitfahrer', fb.asRider);
   return `<div class="card" id="my-feedback">
-    <h2>💡 Feedback zum Lernen ${info('<p>Bei Bewertungen bis 8 können deine Fahrtpartner freiwillig Gründe nennen.</p><p>Du siehst sie hier gesammelt und anonym – ohne Namen, Datum oder Fahrt. Fahre mit der Maus über ⓘ für Tipps.</p>')}</h2>
+    <h2>Feedback zum Lernen ${info('<p>Bei Bewertungen bis 8 können deine Fahrtpartner freiwillig Gründe nennen.</p><p>Du siehst sie hier gesammelt und anonym – ohne Namen, Datum oder Fahrt. Fahre mit der Maus über ⓘ für Tipps.</p>')}</h2>
     ${driver || rider ? driver + rider : '<p class="muted">Noch keine Bewertungen.</p>'}
   </div>`;
 }

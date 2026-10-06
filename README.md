@@ -1,4 +1,4 @@
-# 🌿 joinmyride.com – Teilen statt Leerfahren
+# joinmyride.com – Teilen statt Leerfahren
 
 **joinmyride.com** ist eine Ad-hoc-Mitfahrzentrale: Wer ohnehin fährt, wird mit seiner Route (eingegeben oder als **Google-Maps-Link**) spontan zum Fahrtenanbieter. Mitfahrer geben ihr Ziel ein, die App findet den **besten Fahrer** auf dem Weg. Abgerechnet werden die **gefahrenen Kilometer** – der Großteil geht an den Fahrer, eine Provision an den Betreiber und **1 Cent pro Fahrt an den Umweltschutz**.
 
@@ -62,11 +62,12 @@ Für jede aktive Fahrt (`src/matching.js`):
 
 ## Bestätigung der Fahrt durch Fahrer und Mitfahrer
 
-Grundlage ist die **schnellste Route laut Plan** vom Abholort zum Ziel (Google Directions bzw. OSRM). Sie wird beiden Seiten angezeigt (auf der Karte lila gestrichelt) und muss von beiden bestätigt werden:
+Grundlage ist die **schnellste Route laut Plan** vom Abholort zum Ziel (Google Directions bzw. OSRM). Sie wird beiden Seiten angezeigt (auf der Karte dunkelgrün gestrichelt) und muss von beiden bestätigt werden:
 
 | Schritt | Mitfahrer | Fahrer |
 |---|---|---|
 | **Vor der Fahrt** | sieht geplante Route, km, Dauer und Höchstpreis → „Route bestätigen & anfragen“ | sieht dieselbe Route und seinen Anteil → „Route bestätigen & annehmen“ |
+| **Während der Fahrt** | „Fahrt abbrechen“ (mit Begründung) | „Fahrt abbrechen“ (mit Begründung) |
 | **Nach der Fahrt** | **bewertet** die Fahrt (NPS 0–10) → „Bewerten & bezahlen“ – oder „Problem melden“ | „Mitfahrer abgesetzt“ (Mitfahrer optional bewerten) – oder „Problem melden“ |
 
 * **Gezahlt wird mit dem Absetzen durch den Fahrer und der Bewertung durch den Mitfahrer** – Reihenfolge egal. Ohne Bewertung keine Zahlung (außer nach Ablauf der Frist, s. u.).
@@ -78,28 +79,28 @@ Grundlage ist die **schnellste Route laut Plan** vom Abholort zum Ziel (Google D
 
 ## Wünsche an den Fahrer (Filter für Mitfahrer)
 
-Im **Profil** unter „🎯 Meine Wünsche an Fahrer“ legt der Mitfahrer fest, welche Kriterien der Fahrer erfüllen muss. Die Wünsche werden im Konto gespeichert und gelten automatisch bei jeder Suche (auf allen Geräten):
+Im **Profil** unter „Meine Wünsche an Fahrer“ legt der Mitfahrer fest, welche Kriterien der Fahrer erfüllen muss. Die Wünsche werden im Konto gespeichert und gelten automatisch bei jeder Suche (auf allen Geräten):
 
 | Kriterium | Bedeutung |
 |---|---|
 | Mindest-NPS | ≥ 0 / +30 / +50 / +70; neue Fahrer ohne Bewertung wahlweise einbeziehen |
-| 🚭 Nichtraucher · 🐾 Tiere erlaubt | aus den Vorlieben im Fahrerprofil |
+| Nichtraucher · Tiere erlaubt | aus den Vorlieben im Fahrerprofil |
 | Unterhaltung · Musik | „lieber ruhig“ / „gerne gesprächig“, „lieber leise“ |
 | Sprache | Fahrer spricht z. B. Englisch |
-| 🔐 2FA-gesichert | Konto des Fahrers mit Zwei-Faktor-Anmeldung |
-| 🛣️ Sichere Fahrweise | höchstens 10 % der Bewertungen nennen „Fahrweise“ als Grund (ab 3 Bewertungen) |
+| 2FA-gesichert | Konto des Fahrers mit Zwei-Faktor-Anmeldung |
+| Sichere Fahrweise | höchstens 10 % der Bewertungen nennen „Fahrweise“ als Grund (ab 3 Bewertungen) |
 | Max. Wartezeit | Abholung in höchstens 5 / 10 / 15 / 30 min |
 
-Die Suche zeigt dazu nur einen Satz: „X Fahrer werden dir wegen deiner Filter nicht angezeigt.“ – mit Link zu den Wünschen im Profil. Die Vorlieben der Fahrer erscheinen als Symbole (🚭 🐾 🤫 💬 🎵 🔐 🗣️).
+Die Suche zeigt dazu nur einen Satz: „X Fahrer werden dir wegen deiner Filter nicht angezeigt.“ – mit Link zu den Wünschen im Profil. Die Vorlieben der Fahrer erscheinen als Symbole ().
 
 ## Gründe bei kritischen Bewertungen & Feedback zum Lernen
 
 Bei Bewertungen **0–6** (und optional 7–8) können **freiwillig Gründe** gewählt werden (Mehrfachauswahl) – plus optionaler Freitext:
 
-* **Fahrer bewertet durch Mitfahrer:** 🧽 Sauberkeit des Autos · 🔧 Zustand des Autos · 🛣️ Fahrweise · 🤝 Zwischenmenschliches · ⏰ Pünktlichkeit · 🗺️ Route/Umwege · 💬 Kommunikation/Treffpunkt · 👃 Gerüche/Rauchen · 🔊 Musik/Lautstärke · 🌡️ Platz/Komfort/Temperatur
+* **Fahrer bewertet durch Mitfahrer:** Sauberkeit des Autos · Zustand des Autos · Fahrweise · Zwischenmenschliches · Pünktlichkeit · Route/Umwege · Kommunikation/Treffpunkt · Gerüche/Rauchen · Musik/Lautstärke · Platz/Komfort/Temperatur
 * **Mitfahrer bewertet durch Fahrer:** Pünktlichkeit · Zwischenmenschliches · Sauberkeit/Verhalten im Auto · Kommunikation/Treffpunkt · Gepäck
 
-Unter **Profil → 💡 Feedback zum Lernen** sieht der Bewertete die Gründe **gesammelt** (Häufigkeit, Balken) mit einem **konkreten Tipp** je Aspekt und die Kommentare. Damit niemand einzeln erkennbar ist und es keine Gegenbewertungen gibt:
+Unter **Profil → Feedback zum Lernen** sieht der Bewertete die Gründe **gesammelt** (Häufigkeit, Balken) mit einem **konkreten Tipp** je Aspekt und die Kommentare. Damit niemand einzeln erkennbar ist und es keine Gegenbewertungen gibt:
 
 * Anzeige erst ab **3 Rückmeldungen** mit Hinweisen,
 * Kommentare **ohne Datum** und in gemischter Reihenfolge,
@@ -113,9 +114,9 @@ Statt Sternen fragt joinmyride.com: **„Wie wahrscheinlich ist es, dass du *Nam
 
 | Wert | Kategorie |
 |---|---|
-| 9–10 | Promotor 😊 |
-| 7–8 | Passiver 😐 |
-| 0–6 | Kritiker 🙁 |
+| 9–10 | Promotor |
+| 7–8 | Passiver |
+| 0–6 | Kritiker |
 
 **NPS = % Promotoren − % Kritiker** (−100 bis +100). Er wird in Profilen, in der Trefferliste und im Konto angezeigt; der Betreiber sieht den NPS aller Fahrer.
 
@@ -131,14 +132,14 @@ Statt Sternen fragt joinmyride.com: **„Wie wahrscheinlich ist es, dass du *Nam
 
 | Erhaltene Bewertung | Faktor |
 |---|---|
-| 😊 Promotor 10 / 9 | ×10 / ×9 |
-| 😐 Passiv 8 / 7 | ×8 / ×7 |
-| 🙁 Kritiker 4–6 | ×1 |
-| 🙁 Kritiker 0–3 | ×0 (keine Punkte) |
+| Promotor 10 / 9 | ×10 / ×9 |
+| Passiv 8 / 7 | ×8 / ×7 |
+| Kritiker 4–6 | ×1 |
+| Kritiker 0–3 | ×0 (keine Punkte) |
 
 * Fahrer werden vom Mitfahrer bewertet (Pflicht), Mitfahrer vom Fahrer (optional). Ohne Bewertung zählt vorläufig ×7 (`POINTS_FACTOR_UNRATED`); kommt die Bewertung später, wird neu berechnet.
 * Beispiel: 20 km geteilt → 3 kg CO₂ → mit 10 bewertet 30 Punkte, mit 8 → 24, mit 5 → 3, mit 2 → 0.
-* **Level:** 🌱 Setzling (0) → 🌿 Sprössling (50) → 🪴 Jungbaum (200) → 🌳 Baum (500) → 🌲 Wald (1.500) → 🌍 Klimaheld (5.000).
+* **Level:** Setzling (0) → Sprössling (50) → Jungbaum (200) → Baum (500) → Wald (1.500) → Klimaheld (5.000).
 * **Abzeichen:** Erste Fahrt, Stammgast (10), Vielteiler (50), Beide Seiten, 10 kg / 100 kg CO₂, Empfehlenswert (5 Promotoren), Promotor-Serie (5 in Folge).
 * **Bestenliste** (Monat / gesamt): nur Mitglieder, die zugestimmt haben (Standard: aus), mit Anzeigenamen gemäß Privatsphäre. Den eigenen Platz sieht man immer.
 * Punkte erscheinen im Header, auf der Seite **Punkte** (Level, Fortschritt, Abzeichen, Bestenliste, Verlauf), in der Fahrten-Historie, beim Abschluss und im Profil.
@@ -154,7 +155,7 @@ Mitfahrer können nach **Fahrten über 1 Stunde oder über 100 km** **freiwillig
 * **Kontrolle:** Verfasser können ihren Eintrag jederzeit löschen. Fahrer können Einträge ausblenden (nicht bearbeiten) oder das Gästebuch in den Privatsphäre-Einstellungen abschalten. Der Betreiber kann Einträge löschen.
 * Sichtbar im Fahrerprofil (Popup über den Namen) für alle, die das Profil sehen dürfen. Bei Kontolöschung werden die eigenen Einträge und das eigene Gästebuch gelöscht.
 
-## Funfacts 🎉
+## Funfacts
 
 Eigenes Menü **Funfacts** (auch ohne Anmeldung): Wo und in welchen Autos sitzen die nettesten Fahrer, gemessen am **NPS** aus den Bewertungen der Mitfahrer?
 
@@ -163,10 +164,17 @@ Eigenes Menü **Funfacts** (auch ohne Anmeldung): Wo und in welchen Autos sitzen
 * Ranglisten mit NPS-Balken, Promotoren/Passive/Kritiker und einer augenzwinkernden Schlagzeile („Die nettesten Fahrer kommen aus …“).
 * **Datenschutz:** Eine Stadt oder Marke erscheint erst ab `FUNFACTS_MIN_DRIVERS` (Standard 2) verschiedenen Fahrern und `FUNFACTS_MIN_RATINGS` (Standard 3) Bewertungen, damit sich kein einzelner Fahrer ablesen lässt. Die Funfacts haben keinen Einfluss auf das Matching.
 
+## Fahrtabbruch und Fahrtabbruchsquote
+
+* Während der Fahrt (nach „Eingestiegen“) können Fahrer **und** Mitfahrer die Fahrt **abbrechen** – mit Pflicht-Begründung: Grund (Sicherheitsbedenken, Verhalten des Fahrtpartners, Panne/Fahrzeugproblem, Gesundheit/Notfall, geänderte Pläne, Sonstiges) plus Text (mind. 10 Zeichen).
+* Dann wird **nur die bis dahin gefahrene Strecke** (GPS) berechnet, höchstens die geplante Route. Die Anfahrt zum Treffpunkt bleibt fällig. Die Fahrt wird sofort abgerechnet; bewerten lässt sie sich danach im Konto.
+* **Fahrtabbruchsquote** = abgebrochene Fahrten / alle abgeschlossenen Fahrten in der jeweiligen Rolle (Fahrer bzw. Mitfahrer). Ein Abbruch zählt für **beide** Beteiligten – sonst könnte man sich absprechen, wer abbricht. Wer selbst abgebrochen hat, steht im Info-Menü.
+* Sichtbar in der Trefferliste (Quote des Fahrers), bei Anfragen (Quote des Mitfahrers), im Profil und im eigenen Konto. Farbe: bis 5 % grün, bis 15 % gelb, darüber rot.
+
 ## Abrechnung
 
 ```
-abgerechnete km = geplante Route – oder die gefahrene Strecke (GPS), sofern diese kürzer ist
+abgerechnete km = geplante Route (fällig mit dem Einsteigen) – bei Fahrtabbruch: gefahrene Strecke (GPS), höchstens die geplante Route
 Fahrpreis       = abgerechnete km × Kilometersatz (Standard 0,25 €/km) × Personen
 Provision       = Fahrpreis × 10 %                       → Betreiber
 Anfahrt         = Umweg zum Treffpunkt (km) × Kilometersatz → zu 100 % Fahrer, KEINE Provision
@@ -177,7 +185,8 @@ Mitfahrer zahlt = Fahrpreis + Anfahrt + Spende
 
 * **Anfahrt zum Treffpunkt:** der Weg von der Route des Fahrers zum Abholort (Abstand × Straßenfaktor 1,3). Sie wird bei der Buchung festgelegt und von beiden bestätigt, einmal pro Fahrt berechnet (nicht pro Person), im Journal als eigene Buchung („Anfahrt zum Treffpunkt … (ohne Provision)“) geführt und zählt nicht zur CO₂-Ersparnis.
 
-* **Umwege zahlt der Mitfahrer nie**: Ist die gefahrene Strecke länger als geplant, gilt die geplante Route. Ohne GPS-Daten gilt ebenfalls die geplante Route.
+* **Fällig mit dem Fahrtantritt:** Mit „Eingestiegen“ wird der Preis der geplanten Route fällig – auch wenn die Fahrt früher endet. So lohnt es sich nicht, dass Fahrer und Mitfahrer sich absprechen und die Fahrt vorzeitig beenden, um Provision oder Kosten zu sparen.
+* **Umwege zahlt der Mitfahrer nie**: Ist die gefahrene Strecke länger als geplant, gilt die geplante Route.
 * Der Preis der geplanten Route ist damit der **Höchstbetrag**. Er wird bei der Annahme durch den Fahrer auf dem Guthaben reserviert; abgebucht wird erst nach beiden Bestätigungen.
 * Alle Beträge in ganzen Cent; jede Buchung landet im Journal (`ledger`). Mitfahrer-Zahlung = Fahrer + Provision + Spende (durch Tests abgesichert).
 * CO₂-Ersparnis: 150 g pro geteiltem Personen-km (eine ersetzte Pkw-Fahrt).

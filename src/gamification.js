@@ -18,23 +18,23 @@
 const { category } = require('./nps');
 
 const LEVELS = [
-  { min: 0, name: 'Setzling', icon: '🌱' },
-  { min: 50, name: 'Sprössling', icon: '🌿' },
-  { min: 200, name: 'Jungbaum', icon: '🪴' },
-  { min: 500, name: 'Baum', icon: '🌳' },
-  { min: 1500, name: 'Wald', icon: '🌲' },
-  { min: 5000, name: 'Klimaheld', icon: '🌍' },
+  { min: 0, name: 'Setzling' },
+  { min: 50, name: 'Sprössling' },
+  { min: 200, name: 'Jungbaum' },
+  { min: 500, name: 'Baum' },
+  { min: 1500, name: 'Wald' },
+  { min: 5000, name: 'Klimaheld' },
 ];
 
 const BADGES = [
-  { id: 'first', icon: '🚗', name: 'Erste Fahrt', desc: 'Die erste geteilte Fahrt abgeschlossen', test: (s) => s.rides >= 1 },
-  { id: 'ten', icon: '🔟', name: 'Stammgast', desc: '10 geteilte Fahrten', test: (s) => s.rides >= 10 },
-  { id: 'fifty', icon: '🏅', name: 'Vielteiler', desc: '50 geteilte Fahrten', test: (s) => s.rides >= 50 },
-  { id: 'both', icon: '🔄', name: 'Beide Seiten', desc: 'Als Fahrer und als Mitfahrer unterwegs', test: (s) => s.asDriver >= 1 && s.asRider >= 1 },
-  { id: 'co2-10', icon: '🍃', name: '10 kg CO₂', desc: '10 kg CO₂ gemeinsam eingespart', test: (s) => s.co2Kg >= 10 },
-  { id: 'co2-100', icon: '🌳', name: '100 kg CO₂', desc: '100 kg CO₂ gemeinsam eingespart', test: (s) => s.co2Kg >= 100 },
-  { id: 'promoter-5', icon: '⭐', name: 'Empfehlenswert', desc: '5 Promotor-Bewertungen erhalten', test: (s) => s.promoters >= 5 },
-  { id: 'streak-5', icon: '🔥', name: 'Promotor-Serie', desc: '5 Promotor-Bewertungen in Folge', test: (s) => s.bestStreak >= 5 },
+  { id: 'first', name: 'Erste Fahrt', desc: 'Die erste geteilte Fahrt abgeschlossen', test: (s) => s.rides >= 1 },
+  { id: 'ten', name: 'Stammgast', desc: '10 geteilte Fahrten', test: (s) => s.rides >= 10 },
+  { id: 'fifty', name: 'Vielteiler', desc: '50 geteilte Fahrten', test: (s) => s.rides >= 50 },
+  { id: 'both', name: 'Beide Seiten', desc: 'Als Fahrer und als Mitfahrer unterwegs', test: (s) => s.asDriver >= 1 && s.asRider >= 1 },
+  { id: 'co2-10', name: '10 kg CO₂', desc: '10 kg CO₂ gemeinsam eingespart', test: (s) => s.co2Kg >= 10 },
+  { id: 'co2-100', name: '100 kg CO₂', desc: '100 kg CO₂ gemeinsam eingespart', test: (s) => s.co2Kg >= 100 },
+  { id: 'promoter-5', name: 'Empfehlenswert', desc: '5 Promotor-Bewertungen erhalten', test: (s) => s.promoters >= 5 },
+  { id: 'streak-5', name: 'Promotor-Serie', desc: '5 Promotor-Bewertungen in Folge', test: (s) => s.bestStreak >= 5 },
 ];
 
 /** Faktor aus dem NPS-Wert: 7–10 → Wert selbst, 4–6 → 1, 0–3 → 0. */

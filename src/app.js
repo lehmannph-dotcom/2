@@ -20,6 +20,14 @@ const { REGIONS } = require('./plates');
 const { displayName, publicProfile, privacyOf, profileOf, sanitizeProfile, sanitizePrivacy } = require('./profile');
 
 const PRIVACY_POLICY_VERSION = '2026-10';
+const ABORT_REASONS = [
+  { id: 'safety', label: 'Sicherheitsbedenken' },
+  { id: 'behavior', label: 'Verhalten des Fahrtpartners' },
+  { id: 'vehicle', label: 'Panne oder Problem am Fahrzeug' },
+  { id: 'health', label: 'Gesundheit oder Notfall' },
+  { id: 'plans', label: 'Geänderte Pläne' },
+  { id: 'other', label: 'Sonstiges' },
+];
 const MFA_LOGIN_TTL_MS = 5 * 60 * 1000;
 const MFA_MAX_ATTEMPTS = 5;
 
@@ -72,7 +80,7 @@ function createApp({ store, config, routing }) {
     reservedCents: u.reservedCents,
     nps: nps.summary(u),
     points: gameOf(u.id).points,
-    level: (({ name, icon }) => ({ name, icon }))(gameOf(u.id).level),
+    level: (({ name, rank }) => ({ name, rank }))(gameOf(u.id).level),
     co2SavedKg: Math.round((u.co2SavedKg || 0) * 100) / 100,
     canDrive: canDrive(u),
     mfaEnabled: Boolean(u.mfa && u.mfa.enabled),
@@ -81,6 +89,7 @@ function createApp({ store, config, routing }) {
     profile: { ...profileOf(u), photo: undefined },
     privacy: privacyOf(u),
     riderFilters: u.riderFilters || {},
+    abortStats: { asDriver: abortStats(u.id, 'driver'), asRider: abortStats(u.id, 'rider') },
     consentAt: u.consentAt || null,
     license: u.license
       ? {
@@ -96,6 +105,20 @@ function createApp({ store, config, routing }) {
   const gameOf = (userId) => game.summaryFor(gameAll().get(userId));
   // Kilometer im deutschen Format, gleich gerundet wie in der Oberfläche (z. B. „0,9“)
   const fmtKm = (n) => Number(n).toLocaleString('de-DE', { maximumFractionDigits: 1 });
+  /**
+   * Fahrtabbruchsquote: abgebrochene Fahrten im Verhältnis zu allen abgeschlossenen Fahrten
+   * in einer Rolle – egal, wer abgebrochen hat (beide waren beteiligt). initiated = selbst abgebrochen.
+   */
+  const abortStats = (userId, role) => {
+    const rides = Object.values(db.rides).filter((r) => r.status === 'completed' && (role === 'driver' ? r.driverId === userId : r.riderId === userId));
+    const aborted = rides.filter((r) => r.abort);
+    return {
+      rides: rides.length,
+      aborted: aborted.length,
+      initiated: aborted.filter((r) => r.abort.by === role).length,
+      quote: rides.length ? Math.round((aborted.length / rides.length) * 100) : null,
+    };
+  };
   const book = (account, amountCents, type, rideId, note) => {
     db.ledger.push({ id: store.id('tx'), at: now(), account, amountCents, type, rideId, note });
   };
@@ -112,7 +135,7 @@ function createApp({ store, config, routing }) {
     const c = ride.confirmations || {};
     let settlementPreview = null;
     if (['picked_up', 'confirming', 'disputed'].includes(ride.status)) {
-      const b = billableKm(ride.plannedKm, ride.trackedKm);
+      const b = billableKm(ride.plannedKm, ride.trackedKm, { aborted: Boolean(ride.abort) });
       settlementPreview = { plannedKm: ride.plannedKm, trackedKm: ride.trackedKm, billedKm: b.km, basis: b.basis, price: computeFare(b.km, config.pricing, ride.seats, { pickupDetourKm: ride.pickupDetourKm || 0 }) };
     }
     return {
@@ -127,6 +150,8 @@ function createApp({ store, config, routing }) {
       npsByDriver: role === 'driver' ? ride.npsByDriver : undefined,
       myRating: (role === 'rider' ? ride.npsByRider : ride.npsByDriver) || null,
       myPoints: game.ridePoints(ride, viewer.id, config.points),
+      // Fahrtabbruchsquote des Fahrtpartners in seiner Rolle
+      partnerAbort: role === 'driver' ? abortStats(ride.riderId, 'rider') : abortStats(ride.driverId, 'driver'),
       guestbook: role === 'rider' && ride.status === 'completed'
         ? (() => {
             const entry = db.guestbook.find((g) => g.rideId === ride.id);
@@ -195,6 +220,7 @@ function createApp({ store, config, routing }) {
     plateRegions: REGIONS,
     aspects: { driver: feedback.DRIVER_ASPECTS, rider: feedback.RIDER_ASPECTS, maxScore: feedback.MAX_ASPECT_SCORE },
     filterLabels: filters.LABELS,
+    abortReasons: ABORT_REASONS,
   }), { public: true });
 
   // ---------- Funfacts (öffentlich, nur zusammengefasste Daten) ----------
@@ -407,7 +433,11 @@ function createApp({ store, config, routing }) {
     need(target && !target.deleted && canSeeProfile(user, target), 404, 'Profil nicht gefunden.');
     // Vorschau des eigenen Profils aus Sicht eines Fremden bzw. eines bestätigten Fahrtpartners
     const preview = target.id === user.id && query.get('preview');
-    const withGuestbook = (profile) => ({ ...profile, guestbook: guestbookOf(target) });
+    const withGuestbook = (profile) => ({
+      ...profile,
+      guestbook: guestbookOf(target),
+      abortStats: { asDriver: abortStats(target.id, 'driver'), asRider: abortStats(target.id, 'rider') },
+    });
     if (preview) {
       return { profile: withGuestbook(publicProfile(target, { id: 'preview' }, { hasBooking: preview === 'booked', stats: rideStats(target.id), game: gameOf(target.id) })) };
     }
@@ -510,7 +540,7 @@ function createApp({ store, config, routing }) {
     const visible = ranked.filter((e) => e.id === user.id || privacyOf(db.users[e.id]).showOnLeaderboard);
     const entries = visible.slice(0, 20).map((e, i) => {
       const lvl = game.levelFor(e.total);
-      return { rank: i + 1, name: displayName(db.users[e.id], user), points: e.points, level: { name: lvl.name, icon: lvl.icon }, isMe: e.id === user.id };
+      return { rank: i + 1, name: displayName(db.users[e.id], user), points: e.points, level: { name: lvl.name, rank: lvl.rank }, isMe: e.id === user.id };
     });
     const myIndex = visible.findIndex((e) => e.id === user.id);
     return {
@@ -786,6 +816,7 @@ function createApp({ store, config, routing }) {
       matches: matches.map((m) => ({
         driverPrefs: (({ preferences, languages }) => ({ ...preferences, languages }))(profileOf(db.users[m.driverId])),
         driverMfa: Boolean(db.users[m.driverId].mfa && db.users[m.driverId].mfa.enabled),
+        driverAbort: abortStats(m.driverId, 'driver'),
         ...m,
         plannedKm: plannedRoute.distanceKm,
         plannedDurationMin: plannedRoute.durationMin,
@@ -918,7 +949,7 @@ function createApp({ store, config, routing }) {
    * kmOverride nur durch den Betreiber bei Reklamationen (höchstens geplante km).
    */
   const settle = (ride, confirmedBy, kmOverride) => {
-    const basis = kmOverride !== undefined ? { km: kmOverride, basis: 'betreiber' } : billableKm(ride.plannedKm, ride.trackedKm);
+    const basis = kmOverride !== undefined ? { km: kmOverride, basis: 'betreiber' } : billableKm(ride.plannedKm, ride.trackedKm, { aborted: Boolean(ride.abort) });
     const fare = computeFare(basis.km, config.pricing, ride.seats, { pickupDetourKm: ride.pickupDetourKm || 0 });
     const rider = db.users[ride.riderId];
     const driver = db.users[ride.driverId];
@@ -927,7 +958,8 @@ function createApp({ store, config, routing }) {
 
     rider.walletCents -= fare.totalCents;
     driver.walletCents += fare.driverCents;
-    book(`user:${rider.id}`, -fare.totalCents, 'ride_payment', ride.id, `Mitfahrt ${fmtKm(fare.km)} km`);
+    const abortNote = ride.abort ? ' (Fahrtabbruch)' : '';
+    book(`user:${rider.id}`, -fare.totalCents, 'ride_payment', ride.id, `Mitfahrt ${fmtKm(fare.km)} km${abortNote}`);
     book(`user:${driver.id}`, fare.driverCents - fare.detourCents, 'ride_earning', ride.id, `Fahreranteil ${fmtKm(fare.km)} km`);
     if (fare.detourCents) book(`user:${driver.id}`, fare.detourCents, 'pickup_detour', ride.id, `Anfahrt zum Treffpunkt ${fmtKm(fare.detourKm)} km (ohne Provision)`);
     book('platform', fare.commissionCents, 'commission', ride.id, `Provision ${config.pricing.commissionPercent} %`);
@@ -985,6 +1017,20 @@ function createApp({ store, config, routing }) {
     }
     ride.confirmations[role + 'End'] = now();
     if (ride.confirmations.driverEnd && ride.confirmations.riderEnd) settle(ride, 'beide');
+  });
+
+  // Fahrtabbruch: nur die bis dahin gefahrene Strecke wird berechnet. Muss begründet werden und
+  // fließt in die Fahrtabbruchsquote beider Beteiligten ein.
+  rideAction('abort', (ride, { user, body }) => {
+    inStatus(ride, 'picked_up');
+    const category = String(body.category || '');
+    need(ABORT_REASONS.some((r) => r.id === category), 400, 'Bitte einen Grund für den Abbruch auswählen.');
+    const reason = String(body.reason || '').trim().slice(0, 500);
+    need(reason.length >= 10, 400, 'Bitte den Fahrtabbruch kurz begründen (mindestens 10 Zeichen).');
+    freeSeats(ride);
+    ride.droppedOffAt = now();
+    ride.abort = { by: roleOf(ride, user), category, reason, at: now(), trackedKm: ride.trackedKm };
+    settle(ride, 'abbruch');
   });
 
   // Reklamation statt Bestätigung: keine Abrechnung, der Betreiber entscheidet.
