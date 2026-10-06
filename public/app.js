@@ -459,6 +459,12 @@ function bindConfirmButtons(root) {
   bindNpsForms(root, '[data-confirm-form]', async (form, body) => {
     const { ride } = await api(`/api/rides/${form.dataset.confirmForm}/confirm`, body);
     if (ride.status === 'completed') toast(`Bezahlt: ${km(ride.final.km)} · ${euro(ride.role === 'driver' ? ride.final.driverCents : ride.final.totalCents)} · +${pts(ride.myPoints.points)} 🌱`);
+    if (ride.guestbook && ride.guestbook.eligible) {
+      await refreshMe();
+      render();
+      openGuestbookForm(ride, { afterRide: true });
+      return;
+    }
     else toast(ride.role === 'rider' ? 'Danke für deine Bewertung! Gezahlt wird, sobald der Fahrer das Absetzen bestätigt.' : 'Abgesetzt – gezahlt wird, sobald der Mitfahrer bewertet hat.');
     await refreshMe();
     render();
@@ -962,6 +968,7 @@ async function renderAccount(panel) {
             <b>${r.role === 'rider' ? '−' + euro(r.final.totalCents) : '+' + euro(r.final.driverCents)}</b></div>
           <div class="muted small">${new Date(r.completedAt).toLocaleString('de-DE')} · abgerechnet ${km(r.final.km)} (${BASIS[r.final.billing] || r.final.billing}${r.final.plannedKm ? `; geplant ${km(r.final.plannedKm)}, gefahren ${r.final.trackedKm > 0.2 ? km(r.final.trackedKm) : '–'}` : ''}) · ${r.final.co2SavedKg.toLocaleString('de-DE')} kg CO₂ gespart · ${euro(r.final.donationCents)} gespendet</div>
           <div class="small">${ridePointsLine(r.myPoints)}</div>
+          ${r.role === 'rider' ? riderGuestbookLine(r) : ''}
           ${r.myRating ? `<div class="muted small">Deine Bewertung: <b>${r.myRating.score}</b>/10</div>` : `<form class="nps-form" data-rate-form="${r.id}">${npsWidget(`Wie wahrscheinlich ist es, dass du ${r.role === 'rider' ? r.driverName : r.riderName} weiterempfiehlst?`)}<div class="btn-row"><button data-submit disabled>Bewertung senden</button></div></form>`}
         </div>`).join('') : '<p class="muted">Noch keine abgeschlossenen Fahrten.</p>'}
     </div>
@@ -972,6 +979,7 @@ async function renderAccount(panel) {
   panel.querySelectorAll('[data-topup]').forEach((b) =>
     (b.onclick = () => guard(async () => { await api('/api/wallet/topup', { amountCents: Number(b.dataset.topup) }); toast('Guthaben aufgeladen.'); render(); }, b)),
   );
+  bindGuestbookButtons(panel);
   bindNpsForms(panel, '[data-rate-form]', async (form, body) => {
     await api(`/api/rides/${form.dataset.rateForm}/rate`, body);
     toast('Danke für deine Bewertung!');
@@ -982,7 +990,7 @@ async function renderAccount(panel) {
 // ---------- Betreiber ----------
 async function renderAdmin(panel) {
   drawMap();
-  const [stats, { licenses }, { disputes }] = await Promise.all([api('/api/admin/stats'), api('/api/admin/licenses'), api('/api/admin/disputes')]);
+  const [stats, { licenses }, { disputes }, { entries: gbEntries }] = await Promise.all([api('/api/admin/stats'), api('/api/admin/licenses'), api('/api/admin/disputes'), api('/api/admin/guestbook')]);
   panel.innerHTML = `
     <div class="card">
       <h2>Betreiber-Übersicht</h2>
@@ -997,6 +1005,11 @@ async function renderAdmin(panel) {
         <div class="stat"><b>${stats.openDisputes}</b><span>offene Reklamationen</span></div>
         <div class="stat"><b>${stats.activeTrips} / ${stats.verifiedDrivers}</b><span>Fahrer online / verifiziert</span></div>
       </div>
+    </div>
+    <div class="card">
+      <h2>📖 Gästebuch-Einträge (${gbEntries.length})</h2>
+      <p class="muted small">Neueste Einträge zur Moderation. Verfasser sind auch für dich nicht sichtbar.</p>
+      ${gbEntries.length ? gbEntries.map((e) => `<blockquote class="gb-entry ${e.hidden ? 'is-hidden' : ''}"><p>„${esc(e.text)}“</p><footer>bei ${esc(e.driverName)} · ${esc(e.when)} · ${esc(e.kind)}${e.hidden ? ' · vom Fahrer ausgeblendet' : ''} · <button class="linkish" data-gb-delete="${e.id}">löschen</button></footer></blockquote>`).join('') : '<p class="muted">Keine Einträge.</p>'}
     </div>
     <div class="card">
       <h2>Reklamationen (${disputes.length})</h2>
@@ -1029,6 +1042,7 @@ async function renderAdmin(panel) {
           </div>
         </div>`).join('') : '<p class="muted">Keine offenen Anträge.</p>'}
     </div>`;
+  bindGuestbookButtons(panel);
   panel.querySelectorAll('[data-resolve]').forEach((b) =>
     (b.onclick = () => guard(async () => {
       await api(`/api/admin/rides/${b.dataset.ride}/resolve`, { decision: b.dataset.resolve, km: $('#km-' + b.dataset.ride).value });
@@ -1082,7 +1096,8 @@ function profileHtml(p) {
       <div class="stat"><b>${esc(p.stats.memberSince.split('-').reverse().join('/'))}</b><span>Mitglied seit</span></div>
       ${p.stats.level ? `<div class="stat"><b>${p.stats.level.icon} ${esc(p.stats.level.name)}</b><span>Level</span></div><div class="stat"><b>${Number(p.stats.points).toLocaleString('de-DE')}</b><span>Punkte</span></div>` : ''}
     </div>
-    ${p.stats.badges && p.stats.badges.length ? `<div class="chips">${p.stats.badges.map((b) => `<span class="badge" title="${esc(b.name)}">${b.icon} ${esc(b.name)}</span>`).join('')}</div>` : ''}` : ''}`;
+    ${p.stats.badges && p.stats.badges.length ? `<div class="chips">${p.stats.badges.map((b) => `<span class="badge" title="${esc(b.name)}">${b.icon} ${esc(b.name)}</span>`).join('')}</div>` : ''}` : ''}
+    ${guestbookHtml(p.guestbook)}`;
 }
 
 async function showProfile(userId, preview) {
@@ -1183,6 +1198,7 @@ async function renderProfile(panel) {
       <label class="check"><input type="checkbox" id="pv-fullname" ${pv.showFullName ? 'checked' : ''}><span>Vollständigen Nachnamen zeigen <span class="muted">(sonst „${esc(me.name.split(/\s+/)[0])} ${esc((me.name.split(/\s+/).slice(-1)[0] || '')[0] || '')}.“)</span></span></label>
       <label class="check"><input type="checkbox" id="pv-photo" ${pv.showPhoto ? 'checked' : ''}><span>Profilfoto zeigen</span></label>
       <label class="check"><input type="checkbox" id="pv-stats" ${pv.showStats ? 'checked' : ''}><span>Statistik zeigen (Anzahl Fahrten, CO₂, Mitglied seit, Level & Punkte)</span></label>
+      <label class="check"><input type="checkbox" id="pv-guestbook" ${pv.showGuestbook ? 'checked' : ''}><span>Gästebuch in meinem Profil zeigen (anonyme Einträge von Mitfahrern)</span></label>
       <label class="check"><input type="checkbox" id="pv-leaderboard" ${pv.showOnLeaderboard ? 'checked' : ''}><span>In der Bestenliste erscheinen (Anzeigename, Level, Punkte)</span></label>
       <label for="pv-phone">Telefonnummer sichtbar für</label>
       <select id="pv-phone">
@@ -1192,6 +1208,8 @@ async function renderProfile(panel) {
       <p class="muted small">Start und Ziel deiner Fahrten sehen andere nur ungefähr (Ort statt Straße, Route ohne die ersten und letzten 500 m). Deinen Live-Standort sehen nur bestätigte Mitfahrer – und nur, solange du online bist.</p>
       <div class="btn-row"><button id="pv-save">Privatsphäre speichern</button><button type="button" class="secondary" data-preview="booked">Vorschau für Fahrtpartner</button></div>
     </div>
+
+    ${await myGuestbookCard()}
 
     <div class="card" id="security">
       <h2>Sicherheit & Anmeldung</h2>
@@ -1221,6 +1239,7 @@ async function renderProfile(panel) {
     </div>`;
 
   panel.querySelectorAll('[data-preview]').forEach((b) => (b.onclick = () => guard(() => showProfile(me.id, b.dataset.preview))));
+  bindGuestbookButtons(panel);
 
   $('#p-photo').onchange = (e) => guard(async () => {
     const image = await resizeImage(e.target.files[0], 512);
@@ -1257,7 +1276,7 @@ async function renderProfile(panel) {
 
   $('#pv-save').onclick = (e) => guard(async () => {
     await api('/api/me/profile', {
-      privacy: { showFullName: $('#pv-fullname').checked, showPhoto: $('#pv-photo').checked, showStats: $('#pv-stats').checked, showOnLeaderboard: $('#pv-leaderboard').checked, phoneVisibility: $('#pv-phone').value },
+      privacy: { showFullName: $('#pv-fullname').checked, showPhoto: $('#pv-photo').checked, showStats: $('#pv-stats').checked, showOnLeaderboard: $('#pv-leaderboard').checked, showGuestbook: $('#pv-guestbook').checked, phoneVisibility: $('#pv-phone').value },
     }, 'PUT');
     toast('Privatsphäre-Einstellungen gespeichert.');
     await refreshMe();
@@ -1362,6 +1381,7 @@ function renderPrivacyPolicy(panel) {
         <li><b>Führerschein (nur Fahrer):</b> Name, Geburtsdatum, Führerscheinnummer, Klassen, Ablaufdatum, Fotos von Vorder- und Rückseite. Zweck: Sicherheit der Mitfahrer, Prüfung der Fahrberechtigung (Art. 6 Abs. 1 lit. b und f DSGVO). <b>Die Fotos werden direkt nach der Prüfung gelöscht</b>; gespeichert bleiben nur Nummer (anderen nie sichtbar), Klassen, Ablaufdatum und Prüfergebnis.</li>
         <li><b>Standortdaten:</b> Abholort und Ziel von Mitfahrern; Route und – nur während einer aktiv angebotenen Fahrt und nur nach deinem Start der Standortfreigabe – der GPS-Standort von Fahrern. Zweck: Vermittlung und Abrechnung nach gefahrenen Kilometern (Art. 6 Abs. 1 lit. b DSGVO). Andere Mitglieder sehen Start und Ziel eines Fahrers nur vergröbert; den Live-Standort sehen nur bestätigte Mitfahrer.</li>
         <li><b>Fahrten und Zahlungen:</b> Buchungen, gefahrene km, Preise, Provision (${cfg.commissionPercent} %), Umweltspende (${(cfg.donationCentsPerRide / 100).toFixed(2).replace('.', ',')} € pro Fahrt), Bewertungen. Zweck: Abrechnung und gesetzliche Aufbewahrung (Art. 6 Abs. 1 lit. b und c DSGVO).</li>
+        <li><b>Gästebuch (freiwillig):</b> Nach Fahrten über 1 Stunde oder 100 km können Mitfahrer ein positives Erlebnis teilen. Veröffentlicht werden nur Text, Monat und Art der Fahrt – ohne Namen. Intern speichern wir, wer den Eintrag verfasst hat, damit du ihn löschen kannst und Missbrauch verhindert wird (Art. 6 Abs. 1 lit. a DSGVO, Einwilligung; jederzeit widerrufbar durch Löschen). Fahrer können Einträge ausblenden oder das Gästebuch abschalten.</li>
         <li><b>Bewertungen und Punkte:</b> Bewertungen (0–10, optionaler Kommentar), daraus berechneter NPS, Punkte, Level und Abzeichen. Zweck: Vertrauen zwischen Fahrtpartnern, Qualität, Motivation zum Teilen von Fahrten (Art. 6 Abs. 1 lit. b und f DSGVO). Einzelbewertungen sieht nur, wer sie abgegeben hat; andere sehen nur Zusammenfassungen. In der <b>Bestenliste</b> erscheinst du nur mit deiner Einwilligung (Art. 6 Abs. 1 lit. a DSGVO), die du jederzeit widerrufen kannst.</li>
         <li><b>Sicherheit:</b> Angemeldete Geräte (Browser-Kennung, Zeitpunkt), Daten der Zwei-Faktor-Anmeldung (Schlüssel verschlüsselt, Backup-Codes nur als Hash), Schutz vor Passwort-Ausprobieren. Zweck: Schutz deines Kontos (Art. 6 Abs. 1 lit. f, Art. 32 DSGVO).</li>
       </ul>
@@ -1483,6 +1503,91 @@ async function renderPoints(panel) {
     await loadBoard('month');
   });
   await loadBoard('month');
+}
+
+// ---------- Gästebuch ----------
+function guestbookHtml(gb) {
+  if (!gb || !gb.enabled) return '';
+  return `<div class="guestbook">
+    <h3>📖 Gästebuch ${gb.count ? `<span class="muted small">(${gb.count})</span>` : ''}</h3>
+    ${gb.count
+      ? gb.entries.map((e) => `<blockquote class="gb-entry"><p>„${esc(e.text)}“</p><footer>Anonym · ${esc(e.when)} · ${esc(e.kind)}</footer></blockquote>`).join('')
+      : '<p class="muted small">Noch keine Einträge. Mitfahrer können nach Fahrten über 1 Stunde oder 100 km anonym ein positives Erlebnis teilen.</p>'}
+  </div>`;
+}
+
+/** Freiwilliges Angebot nach langer Fahrt: anonym ins Gästebuch des Fahrers schreiben. */
+function openGuestbookForm(ride, { afterRide } = {}) {
+  openModal(`<h2>📖 Gästebuch von ${esc(ride.driverName)}</h2>
+    <p>${afterRide ? 'Schön, dass die lange Fahrt gut war! ' : ''}Magst du ein positives Erlebnis teilen? Ganz <b>freiwillig</b> – du kannst das auch überspringen.</p>
+    <p class="muted small">Dein Eintrag erscheint <b>anonym</b> im Profil des Fahrers: ohne deinen Namen, ohne Datum – nur mit Monat und „Fahrt über 1 Stunde / 100 km“. Bitte keine Namen, Telefonnummern, E-Mail-Adressen oder Links. Du kannst den Eintrag jederzeit im Konto löschen.</p>
+    <form id="gb-form">
+      <label for="gb-text">Was war schön an der Fahrt?</label>
+      <textarea id="gb-text" maxlength="500" placeholder="z. B. Super entspannte Fahrt, tolle Musik und spannende Gespräche über Elektroautos!" required></textarea>
+      <div class="muted small" style="text-align:right"><span id="gb-count">0</span>/500</div>
+      <label class="check"><input type="checkbox" id="gb-consent"><span>Ich bin einverstanden, dass dieser Text anonym im Profil von ${esc(ride.driverName)} veröffentlicht wird.</span></label>
+      <ul class="errors" id="gb-errors"></ul>
+      <div class="btn-row"><button id="gb-submit" disabled>Anonym teilen</button><button type="button" class="secondary" id="gb-skip">Überspringen</button></div>
+    </form>`);
+  const update = () => {
+    $('#gb-count').textContent = $('#gb-text').value.length;
+    $('#gb-errors').innerHTML = '';
+    $('#gb-submit').disabled = !($('#gb-consent').checked && $('#gb-text').value.trim().length >= 10);
+  };
+  $('#gb-text').addEventListener('input', update);
+  $('#gb-consent').addEventListener('change', update);
+  $('#gb-skip').onclick = closeModal;
+  $('#gb-form').onsubmit = (e) => {
+    e.preventDefault();
+    guard(async () => {
+      try {
+        await api(`/api/rides/${ride.id}/guestbook`, { text: $('#gb-text').value, consent: $('#gb-consent').checked });
+      } catch (err) {
+        if (!err.details) throw err;
+        $('#gb-errors').innerHTML = err.details.map((d) => `<li>${esc(d)}</li>`).join('');
+        return;
+      }
+      closeModal();
+      toast('Danke! Dein Eintrag steht jetzt anonym im Gästebuch. 📖');
+      if (currentView() === 'konto') render();
+    }, $('#gb-submit'));
+  };
+}
+
+function riderGuestbookLine(r) {
+  const g = r.guestbook;
+  if (!g) return '';
+  if (g.entry) return `<div class="small gb-mine">📖 Dein anonymer Gästebucheintrag${g.entry.hidden ? ' <span class="badge">vom Fahrer ausgeblendet</span>' : ''}: „${esc(g.entry.text)}“ <button class="linkish" data-gb-delete="${g.entry.id}">löschen</button></div>`;
+  if (g.eligible) return `<button class="secondary" style="margin-top:6px" data-gb-write="${r.id}">📖 Ins Gästebuch von ${esc(r.driverName)} schreiben (anonym, freiwillig)</button>`;
+  return '';
+}
+
+async function myGuestbookCard() {
+  const gb = await api('/api/me/guestbook');
+  return `<div class="card" id="my-guestbook">
+    <h2>📖 Mein Gästebuch</h2>
+    <p class="muted small">Mitfahrer können nach Fahrten über 1 Stunde oder 100 km, die sie mit 7–10 bewertet haben, freiwillig und anonym ein positives Erlebnis teilen. Du kannst Einträge ausblenden; bearbeiten kannst du sie nicht.</p>
+    ${gb.entries.length
+      ? gb.entries.map((e) => `<blockquote class="gb-entry ${e.hidden ? 'is-hidden' : ''}"><p>„${esc(e.text)}“</p><footer>Anonym · ${esc(e.when)} · ${esc(e.kind)} · <button class="linkish" data-gb-hide="${e.id}" data-hidden="${e.hidden ? '0' : '1'}">${e.hidden ? 'wieder anzeigen' : 'ausblenden'}</button></footer></blockquote>`).join('')
+      : '<p class="muted">Noch keine Einträge.</p>'}
+  </div>`;
+}
+
+function bindGuestbookButtons(root) {
+  root.querySelectorAll('[data-gb-write]').forEach((b) => (b.onclick = () => {
+    const ride = state.rides.find((r) => r.id === b.dataset.gbWrite);
+    if (ride) openGuestbookForm(ride);
+  }));
+  root.querySelectorAll('[data-gb-delete]').forEach((b) => (b.onclick = () => guard(async () => {
+    if (!confirm('Gästebucheintrag wirklich löschen?')) return;
+    await api(`/api/guestbook/${b.dataset.gbDelete}`, {}, 'DELETE');
+    toast('Eintrag gelöscht.');
+    render();
+  }, b)));
+  root.querySelectorAll('[data-gb-hide]').forEach((b) => (b.onclick = () => guard(async () => {
+    await api(`/api/guestbook/${b.dataset.gbHide}/hide`, { hidden: b.dataset.hidden === '1' });
+    render();
+  }, b)));
 }
 
 // ---------- Start ----------

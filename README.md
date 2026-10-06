@@ -107,6 +107,16 @@ Statt Sternen fragt joinmyride.com: **„Wie wahrscheinlich ist es, dass du *Nam
 * Punkte erscheinen im Header, auf der Seite **Punkte** (Level, Fortschritt, Abzeichen, Bestenliste, Verlauf), in der Fahrten-Historie, beim Abschluss und im Profil.
 * Punkte haben keinen Geldwert. Sie werden aus den Fahrten berechnet und nicht separat gespeichert.
 
+## Gästebuch bei Fahrern
+
+Mitfahrer können nach **Fahrten über 1 Stunde oder über 100 km** **freiwillig und anonym** ein **positives Erlebnis** im Gästebuch des Fahrers teilen.
+
+* **Wann:** abgeschlossene Fahrt, die länger als 60 Minuten gedauert hat (Einsteigen bis Absetzen oder laut geplanter Route) oder mehr als 100 km lang war (geplant oder gefahren), und die der Mitfahrer mit **7–10** bewertet hat. Für schlechte Erfahrungen gibt es „Problem melden“ und die Bewertung.
+* **Freiwillig:** Nach dem Bezahlen erscheint ein Angebot, das man überspringen kann. Später geht es über das Konto. Veröffentlicht wird nur mit ausdrücklicher Einwilligung (Häkchen).
+* **Anonym:** Öffentlich sind nur Text, Monat und „Fahrt über 1 Stunde / 100 km“, ohne Namen, Datum oder Strecke. Links, E-Mail-Adressen und Telefonnummern werden abgelehnt. Intern wird der Verfasser gespeichert (ein Eintrag pro Fahrt, Löschen durch den Verfasser).
+* **Kontrolle:** Verfasser können ihren Eintrag jederzeit löschen. Fahrer können Einträge ausblenden (nicht bearbeiten) oder das Gästebuch in den Privatsphäre-Einstellungen abschalten. Der Betreiber kann Einträge löschen.
+* Sichtbar im Fahrerprofil (Popup über den Namen) für alle, die das Profil sehen dürfen. Bei Kontolöschung werden die eigenen Einträge und das eigene Gästebuch gelöscht.
+
 ## Abrechnung
 
 ```
@@ -144,6 +154,7 @@ src/profile.js       Profile, Anzeigenamen, Privatsphäre-Regeln
 src/mfa.js           TOTP, Backup-Codes, Verschlüsselung der 2FA-Schlüssel
 src/nps.js           Bewertung nach NPS-Logik
 src/gamification.js  Punkte, Level, Abzeichen, Bestenliste
+src/guestbook.js     Gästebuch: Berechtigung, Textprüfung, anonyme Anzeige
 src/routing.js       Google Maps / OSM, Google-Maps-Link-Parser
 src/geo.js           Distanzen, Polylines, Projektion auf Routen
 src/db.js            JSON-Dateispeicher (data/db.json)

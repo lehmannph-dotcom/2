@@ -11,6 +11,7 @@ const { haversineKm, projectOntoRoute, cumulativeKm, isLatLng, simplify } = requ
 const mfa = require('./mfa');
 const nps = require('./nps');
 const game = require('./gamification');
+const guestbook = require('./guestbook');
 const { displayName, publicProfile, privacyOf, profileOf, sanitizeProfile, sanitizePrivacy } = require('./profile');
 
 const PRIVACY_POLICY_VERSION = '2026-10';
@@ -118,6 +119,13 @@ function createApp({ store, config, routing }) {
       npsByDriver: role === 'driver' ? ride.npsByDriver : undefined,
       myRating: (role === 'rider' ? ride.npsByRider : ride.npsByDriver) || null,
       myPoints: game.ridePoints(ride, viewer.id, config.points),
+      guestbook: role === 'rider' && ride.status === 'completed'
+        ? (() => {
+            const entry = db.guestbook.find((g) => g.rideId === ride.id);
+            const reason = guestbook.eligibility(ride, viewer.id);
+            return { eligible: !reason && !entry, longRide: Boolean(guestbook.longRideKind(ride)), entry: entry ? { id: entry.id, text: entry.text, hidden: entry.hidden } : null };
+          })()
+        : null,
       autoConfirmAt: ride.status === 'confirming' ? new Date(new Date(ride.droppedOffAt).getTime() + config.rides.autoConfirmHours * 3600 * 1000).toISOString() : null,
       settlementPreview,
       riderName: displayName(rider, viewer),
@@ -379,10 +387,11 @@ function createApp({ store, config, routing }) {
     need(target && !target.deleted && canSeeProfile(user, target), 404, 'Profil nicht gefunden.');
     // Vorschau des eigenen Profils aus Sicht eines Fremden bzw. eines bestätigten Fahrtpartners
     const preview = target.id === user.id && query.get('preview');
+    const withGuestbook = (profile) => ({ ...profile, guestbook: guestbookOf(target) });
     if (preview) {
-      return { profile: publicProfile(target, { id: 'preview' }, { hasBooking: preview === 'booked', stats: rideStats(target.id), game: gameOf(target.id) }) };
+      return { profile: withGuestbook(publicProfile(target, { id: 'preview' }, { hasBooking: preview === 'booked', stats: rideStats(target.id), game: gameOf(target.id) })) };
     }
-    return { profile: publicProfile(target, user, { hasBooking: sharesBooking(user.id, target.id), stats: rideStats(target.id), game: gameOf(target.id) }) };
+    return { profile: withGuestbook(publicProfile(target, user, { hasBooking: sharesBooking(user.id, target.id), stats: rideStats(target.id), game: gameOf(target.id) })) };
   });
 
   on('GET', '/api/users/:id/photo', ({ user, params, res }) => {
@@ -394,6 +403,62 @@ function createApp({ store, config, routing }) {
     res.writeHead(200, { 'Content-Type': `image/${ext === 'jpg' ? 'jpeg' : ext}`, 'Cache-Control': 'private, max-age=300', 'X-Content-Type-Options': 'nosniff' });
     res.end(fs.readFileSync(store.uploadPath(photo)));
     return undefined;
+  });
+
+  // ---------- Gästebuch ----------
+  const guestbookOf = (driver) => {
+    if (!privacyOf(driver).showGuestbook) return { enabled: false, count: 0, entries: [] };
+    const visible = db.guestbook.filter((g) => g.driverId === driver.id && !g.hidden).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    return { enabled: true, count: visible.length, entries: visible.slice(0, 20).map(guestbook.publicEntry) };
+  };
+
+  // Mitfahrer schreibt – freiwillig, anonym, nur nach langer Fahrt mit positiver Bewertung.
+  on('POST', '/api/rides/:id/guestbook', ({ user, params, body }) => {
+    const ride = db.rides[params.id];
+    need(ride && ride.riderId === user.id, 404, 'Fahrt nicht gefunden.');
+    const reason = guestbook.eligibility(ride, user.id);
+    need(!reason, 403, reason);
+    need(!db.guestbook.some((g) => g.rideId === ride.id), 409, 'Zu dieser Fahrt gibt es bereits einen Eintrag.');
+    need(body.consent === true, 400, 'Bitte bestätige, dass dein Eintrag anonym im Profil des Fahrers erscheinen darf.');
+    const { text, errors } = guestbook.validateText(body.text);
+    if (errors.length) throw new HttpError(400, 'Eintrag nicht möglich.', errors);
+    const entry = {
+      id: store.id('gb'),
+      driverId: ride.driverId,
+      riderId: user.id, // intern – nie öffentlich
+      rideId: ride.id,
+      text,
+      kind: guestbook.longRideKind(ride),
+      period: (ride.completedAt || now()).slice(0, 7),
+      hidden: false,
+      createdAt: now(),
+    };
+    db.guestbook.push(entry);
+    return { entry: guestbook.publicEntry(entry) };
+  });
+
+  // Verfasser löscht seinen Eintrag.
+  on('DELETE', '/api/guestbook/:id', ({ user, params }) => {
+    const i = db.guestbook.findIndex((g) => g.id === params.id && (g.riderId === user.id || user.isAdmin));
+    need(i >= 0, 404, 'Eintrag nicht gefunden.');
+    db.guestbook.splice(i, 1);
+    return { ok: true };
+  });
+
+  // Fahrer: eigenes Gästebuch inkl. ausgeblendeter Einträge, Einträge aus-/einblenden.
+  on('GET', '/api/me/guestbook', ({ user }) => ({
+    enabled: privacyOf(user).showGuestbook,
+    entries: db.guestbook
+      .filter((g) => g.driverId === user.id)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      .map((g) => ({ ...guestbook.publicEntry(g), hidden: g.hidden })),
+  }));
+
+  on('POST', '/api/guestbook/:id/hide', ({ user, params, body }) => {
+    const entry = db.guestbook.find((g) => g.id === params.id && g.driverId === user.id);
+    need(entry, 404, 'Eintrag nicht gefunden.');
+    entry.hidden = Boolean(body.hidden);
+    return { entry: { ...guestbook.publicEntry(entry), hidden: entry.hidden } };
   });
 
   // ---------- Gamification ----------
@@ -470,6 +535,8 @@ function createApp({ store, config, routing }) {
         .filter((r) => r.riderId === user.id || r.driverId === user.id)
         .map((r) => ({ ...r, partner: displayName(db.users[r.riderId === user.id ? r.driverId : r.riderId], user) })),
       transactions: db.ledger.filter((t) => t.account === `user:${user.id}`),
+      guestbookWritten: db.guestbook.filter((g) => g.riderId === user.id).map((g) => ({ ...guestbook.publicEntry(g), rideId: g.rideId })),
+      guestbookReceived: db.guestbook.filter((g) => g.driverId === user.id).map((g) => ({ ...guestbook.publicEntry(g), hidden: g.hidden })),
       sessions: Object.values(db.sessions).filter((s) => s.userId === user.id).map((s) => ({ createdAt: s.createdAt, userAgent: s.userAgent })),
     };
     res.writeHead(200, {
@@ -491,6 +558,8 @@ function createApp({ store, config, routing }) {
     need(!Object.values(db.trips).some((t) => t.driverId === user.id && t.status === 'active'), 409, 'Bitte zuerst deine aktive Fahrt beenden.');
     need(user.walletCents >= 0, 409, 'Bitte zuerst den offenen Betrag ausgleichen.');
     store.removeUpload(profileOf(user).photo);
+    // Gästebuch: eigene Einträge und Einträge im eigenen Gästebuch werden gelöscht.
+    db.guestbook = db.guestbook.filter((g) => g.riderId !== user.id && g.driverId !== user.id);
     if (user.license && user.license.files) Object.values(user.license.files).forEach((f) => store.removeUpload(f));
     for (const [token, s] of Object.entries(db.sessions)) if (s.userId === user.id) delete db.sessions[token];
     for (const t of Object.values(db.trips)) {
@@ -953,6 +1022,17 @@ function createApp({ store, config, routing }) {
     }
     settle(ride, 'betreiber', km);
     return { ride };
+  });
+
+  on('GET', '/api/admin/guestbook', ({ user }) => {
+    adminOnly(user);
+    return {
+      entries: db.guestbook
+        .slice()
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+        .slice(0, 50)
+        .map((g) => ({ ...guestbook.publicEntry(g), driverName: db.users[g.driverId] ? db.users[g.driverId].name : '?', hidden: g.hidden })),
+    };
   });
 
   on('GET', '/api/admin/licenses', ({ user }) => {

@@ -10,7 +10,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 
-const EMPTY = () => ({ users: {}, sessions: {}, trips: {}, rides: {}, ledger: [] });
+const EMPTY = () => ({ users: {}, sessions: {}, trips: {}, rides: {}, ledger: [], guestbook: [] });
 
 class Store {
   constructor(dir) {

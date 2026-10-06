@@ -23,6 +23,7 @@ const DEFAULT_PRIVACY = Object.freeze({
   phoneVisibility: 'never',
   showStats: true,       // Anzahl Fahrten, CO₂, Mitglied seit, Punkte/Level
   showOnLeaderboard: false, // Bestenliste nur mit ausdrücklicher Einwilligung
+  showGuestbook: true,   // Gästebuch (anonyme positive Einträge von Mitfahrern) im Profil zeigen
 });
 
 const DEFAULT_PROFILE = Object.freeze({
@@ -79,7 +80,7 @@ function sanitizeProfile(input, current) {
 
 function sanitizePrivacy(input, current) {
   const out = { ...DEFAULT_PRIVACY, ...(current || {}) };
-  for (const k of ['showFullName', 'showPhoto', 'showStats', 'showOnLeaderboard']) if (input[k] !== undefined) out[k] = Boolean(input[k]);
+  for (const k of ['showFullName', 'showPhoto', 'showStats', 'showOnLeaderboard', 'showGuestbook']) if (input[k] !== undefined) out[k] = Boolean(input[k]);
   if (input.phoneVisibility !== undefined) out.phoneVisibility = PHONE_VISIBILITY.includes(input.phoneVisibility) ? input.phoneVisibility : 'never';
   return out;
 }

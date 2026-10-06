@@ -312,3 +312,45 @@ test('Punkte nach der Fahrt und Bestenliste nur mit Einwilligung', async (t) => 
   assert.equal(lb.entries[0].points, dp.points);
   assert.equal(lb.me.rank, 2);
 });
+
+test('Gästebuch: anonym, freiwillig, nur lange Fahrten mit positiver Bewertung', async (t) => {
+  const { admin, driver, rider, ride, store } = await bookedRide(t, { kmDriven: 4 });
+  await driver('POST', `/api/rides/${ride.id}/confirm`, {});
+  await rider('POST', `/api/rides/${ride.id}/confirm`, { nps: 9 });
+  // Kurze Fahrt → kein Gästebuch
+  let view = (await rider('GET', '/api/rides')).rides[0];
+  assert.equal(view.guestbook.eligible, false);
+  assert.equal((await rider('POST', `/api/rides/${ride.id}/guestbook`, { text: 'Sehr angenehme Fahrt!', consent: true })).status, 403);
+
+  // Fahrt hat 70 Minuten gedauert → berechtigt
+  const r = store.data.rides[ride.id];
+  r.droppedOffAt = new Date(new Date(r.pickedUpAt).getTime() + 70 * 60000).toISOString();
+  view = (await rider('GET', '/api/rides')).rides[0];
+  assert.equal(view.guestbook.eligible, true);
+  assert.equal((await driver('GET', '/api/rides')).rides[0].guestbook, null, 'Fahrer kann nicht schreiben');
+  assert.equal((await rider('POST', `/api/rides/${ride.id}/guestbook`, { text: 'Sehr angenehme Fahrt!' })).status, 400, 'Einwilligung nötig');
+  assert.equal((await rider('POST', `/api/rides/${ride.id}/guestbook`, { text: 'Ruf an: 0170 1234567', consent: true })).status, 400);
+  const { entry } = await rider('POST', `/api/rides/${ride.id}/guestbook`, { text: 'Sehr angenehme Fahrt, gute Gespräche und pünktlich!', consent: true });
+  assert.equal(entry.kind, 'Fahrt über 1 Stunde');
+  assert.equal((await rider('POST', `/api/rides/${ride.id}/guestbook`, { text: 'Noch ein Eintrag bitte', consent: true })).status, 409);
+
+  // Im Fahrerprofil sichtbar – ohne Hinweis auf den Verfasser
+  const prof = (await rider('GET', `/api/users/${ride.driverId}/profile`)).profile;
+  assert.equal(prof.guestbook.count, 1);
+  const raw = JSON.stringify(prof.guestbook);
+  assert.ok(!raw.includes(ride.riderId) && !raw.includes('Rudi') && !raw.includes(ride.id));
+
+  // Fahrer blendet aus → nicht mehr öffentlich, aber im eigenen Gästebuch
+  const mine = await driver('GET', '/api/me/guestbook');
+  assert.equal(mine.entries.length, 1);
+  await driver('POST', `/api/guestbook/${entry.id}/hide`, { hidden: true });
+  assert.equal((await rider('GET', `/api/users/${ride.driverId}/profile`)).profile.guestbook.count, 0);
+  await driver('POST', `/api/guestbook/${entry.id}/hide`, { hidden: false });
+  // Fahrer kann fremde Einträge nicht löschen, Verfasser schon
+  assert.equal((await driver('DELETE', `/api/guestbook/${entry.id}`, {})).status, 404);
+  assert.equal((await admin('GET', '/api/admin/guestbook')).entries.length, 1);
+  assert.equal((await rider('DELETE', `/api/guestbook/${entry.id}`, {})).status, 200);
+  assert.equal((await rider('GET', `/api/users/${ride.driverId}/profile`)).profile.guestbook.count, 0);
+  // Danach wieder möglich
+  assert.equal((await rider('GET', '/api/rides')).rides[0].guestbook.eligible, true);
+});

@@ -186,3 +186,12 @@ details summary { cursor: pointer; color: var(--brand); margin-top: 8px; }
 .badge-tile.earned { opacity: 1; filter: none; border-style: solid; border-color: var(--brand); }
 .leaderboard tr.me td { font-weight: 700; color: var(--brand); }
 @media (max-width: 520px) { #userbox .points-pill { order: -1; } }
+
+/* ---------- Gästebuch ---------- */
+.guestbook { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 10px; }
+.guestbook h3 { margin: 0 0 8px; }
+.gb-entry { margin: 0 0 10px; padding: 10px 12px; background: var(--bg); border-left: 4px solid var(--brand); border-radius: 6px; }
+.gb-entry p { margin: 0 0 4px; font-style: italic; line-height: 1.45; }
+.gb-entry footer { font-size: .78rem; color: var(--muted); }
+.gb-entry.is-hidden { opacity: .55; border-left-color: var(--line); }
+.gb-mine { margin-top: 6px; }
