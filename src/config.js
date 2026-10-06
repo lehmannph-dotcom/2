@@ -30,6 +30,12 @@ module.exports = {
     // Durchschnittliche CO2-Emission eines Pkw in g pro km (Umweltbundesamt, gerundet).
     co2GramsPerCarKm: num('CO2_GRAMS_PER_CAR_KM', 150),
   },
+  // Gamification: Punkte = Faktor (Bewertung durch den anderen) × CO₂-Ersparnis in kg
+  points: {
+    promoter: num('POINTS_FACTOR_PROMOTER', 10),
+    passive: num('POINTS_FACTOR_NEUTRAL', 5),
+    detractor: num('POINTS_FACTOR_DETRACTOR', 1),
+  },
   rides: {
     // Bestätigt nur eine Seite das Fahrtende, gilt die Fahrt nach dieser Frist als bestätigt.
     autoConfirmHours: num('AUTO_CONFIRM_HOURS', 24),

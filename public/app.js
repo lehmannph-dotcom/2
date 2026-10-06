@@ -216,7 +216,7 @@ function renderHeader() {
   $('#nav-admin').hidden = !(state.me && state.me.isAdmin);
   nav.querySelectorAll('a').forEach((a) => a.classList.toggle('active', a.dataset.view === currentView()));
   $('#userbox').innerHTML = state.me
-    ? `<span>${esc(state.me.name)} · <b>${euro(state.me.walletCents - state.me.reservedCents)}</b></span><button class="secondary" id="logout">Abmelden</button>`
+    ? `<a class="points-pill" href="#/punkte" title="Level ${esc(state.me.level.name)}">${state.me.level.icon} ${Number(state.me.points).toLocaleString('de-DE')} P</a><span>${esc(state.me.name)} · <b>${euro(state.me.walletCents - state.me.reservedCents)}</b></span><button class="secondary" id="logout">Abmelden</button>`
     : '';
   const lo = $('#logout');
   if (lo) lo.onclick = () => guard(async () => { await api('/api/logout', {}); state.me = null; stopDriving(); render(); });
@@ -234,6 +234,7 @@ function render() {
   if (view === 'fahren') guard(() => renderDriver(panel));
   else if (view === 'konto') guard(() => renderAccount(panel));
   else if (view === 'profil') guard(() => renderProfile(panel));
+  else if (view === 'punkte') guard(() => renderPoints(panel));
   else if (view === 'admin' && state.me.isAdmin) guard(() => renderAdmin(panel));
   else guard(() => renderRider(panel));
 }
@@ -439,6 +440,7 @@ function confirmationCard(r) {
     </table>
     <p class="muted small">${isRider ? BILLING_RULE : BILLING_RULE.replace('zahlst du', 'zahlt der Mitfahrer')}<br>
       <b>Gezahlt wird, sobald der Fahrer ${isRider ? 'dich' : 'den Mitfahrer'} abgesetzt und ${isRider ? 'du die Fahrt' : 'der Mitfahrer die Fahrt'} bewertet ${isRider ? 'hast' : 'hat'}.</b> Die Bewertung ändert den Preis nicht.</p>
+    ${pointsHint(isRider ? r.driverName : r.riderName)}
     <p class="small">${mine}<br>${theirs}
       ${r.autoConfirmAt && !(r.myEndConfirmed && r.partnerEndConfirmed) ? `<br><span class="muted">Ohne Rückmeldung gilt die Fahrt am ${new Date(r.autoConfirmAt).toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' })} als bestätigt.</span>` : ''}</p>
     ${r.status === 'disputed' ? `<p class="small"><span class="badge bad">Reklamation</span> ${esc(r.dispute.reason)}</p>` : ''}
@@ -456,7 +458,7 @@ function confirmationCard(r) {
 function bindConfirmButtons(root) {
   bindNpsForms(root, '[data-confirm-form]', async (form, body) => {
     const { ride } = await api(`/api/rides/${form.dataset.confirmForm}/confirm`, body);
-    if (ride.status === 'completed') toast(`Bezahlt: ${km(ride.final.km)} · ${euro(ride.role === 'driver' ? ride.final.driverCents : ride.final.totalCents)} – danke! 🌱`);
+    if (ride.status === 'completed') toast(`Bezahlt: ${km(ride.final.km)} · ${euro(ride.role === 'driver' ? ride.final.driverCents : ride.final.totalCents)} · +${pts(ride.myPoints.points)} 🌱`);
     else toast(ride.role === 'rider' ? 'Danke für deine Bewertung! Gezahlt wird, sobald der Fahrer das Absetzen bestätigt.' : 'Abgesetzt – gezahlt wird, sobald der Mitfahrer bewertet hat.');
     await refreshMe();
     render();
@@ -959,6 +961,7 @@ async function renderAccount(panel) {
           <div class="top"><span>${r.role === 'rider' ? 'Mitgefahren bei' : 'Mitgenommen:'} <b>${esc(r.role === 'rider' ? r.driverName : r.riderName)}</b></span>
             <b>${r.role === 'rider' ? '−' + euro(r.final.totalCents) : '+' + euro(r.final.driverCents)}</b></div>
           <div class="muted small">${new Date(r.completedAt).toLocaleString('de-DE')} · abgerechnet ${km(r.final.km)} (${BASIS[r.final.billing] || r.final.billing}${r.final.plannedKm ? `; geplant ${km(r.final.plannedKm)}, gefahren ${r.final.trackedKm > 0.2 ? km(r.final.trackedKm) : '–'}` : ''}) · ${r.final.co2SavedKg.toLocaleString('de-DE')} kg CO₂ gespart · ${euro(r.final.donationCents)} gespendet</div>
+          <div class="small">${ridePointsLine(r.myPoints)}</div>
           ${r.myRating ? `<div class="muted small">Deine Bewertung: <b>${r.myRating.score}</b>/10</div>` : `<form class="nps-form" data-rate-form="${r.id}">${npsWidget(`Wie wahrscheinlich ist es, dass du ${r.role === 'rider' ? r.driverName : r.riderName} weiterempfiehlst?`)}<div class="btn-row"><button data-submit disabled>Bewertung senden</button></div></form>`}
         </div>`).join('') : '<p class="muted">Noch keine abgeschlossenen Fahrten.</p>'}
     </div>
@@ -1077,7 +1080,9 @@ function profileHtml(p) {
       <div class="stat"><b>${p.stats.ridesAsRider}</b><span>Fahrten als Mitfahrer</span></div>
       <div class="stat"><b>${p.stats.co2SavedKg.toLocaleString('de-DE')} kg</b><span>CO₂ gespart</span></div>
       <div class="stat"><b>${esc(p.stats.memberSince.split('-').reverse().join('/'))}</b><span>Mitglied seit</span></div>
-    </div>` : ''}`;
+      ${p.stats.level ? `<div class="stat"><b>${p.stats.level.icon} ${esc(p.stats.level.name)}</b><span>Level</span></div><div class="stat"><b>${Number(p.stats.points).toLocaleString('de-DE')}</b><span>Punkte</span></div>` : ''}
+    </div>
+    ${p.stats.badges && p.stats.badges.length ? `<div class="chips">${p.stats.badges.map((b) => `<span class="badge" title="${esc(b.name)}">${b.icon} ${esc(b.name)}</span>`).join('')}</div>` : ''}` : ''}`;
 }
 
 async function showProfile(userId, preview) {
@@ -1177,7 +1182,8 @@ async function renderProfile(panel) {
       <p class="muted small">Andere Mitglieder sehen dein Profil nur, wenn du gerade als Fahrer online bist oder ihr gemeinsam fahrt. Deine E-Mail-Adresse ist nie sichtbar.</p>
       <label class="check"><input type="checkbox" id="pv-fullname" ${pv.showFullName ? 'checked' : ''}><span>Vollständigen Nachnamen zeigen <span class="muted">(sonst „${esc(me.name.split(/\s+/)[0])} ${esc((me.name.split(/\s+/).slice(-1)[0] || '')[0] || '')}.“)</span></span></label>
       <label class="check"><input type="checkbox" id="pv-photo" ${pv.showPhoto ? 'checked' : ''}><span>Profilfoto zeigen</span></label>
-      <label class="check"><input type="checkbox" id="pv-stats" ${pv.showStats ? 'checked' : ''}><span>Statistik zeigen (Anzahl Fahrten, CO₂, Mitglied seit)</span></label>
+      <label class="check"><input type="checkbox" id="pv-stats" ${pv.showStats ? 'checked' : ''}><span>Statistik zeigen (Anzahl Fahrten, CO₂, Mitglied seit, Level & Punkte)</span></label>
+      <label class="check"><input type="checkbox" id="pv-leaderboard" ${pv.showOnLeaderboard ? 'checked' : ''}><span>In der Bestenliste erscheinen (Anzeigename, Level, Punkte)</span></label>
       <label for="pv-phone">Telefonnummer sichtbar für</label>
       <select id="pv-phone">
         <option value="never" ${pv.phoneVisibility === 'never' ? 'selected' : ''}>niemanden</option>
@@ -1251,7 +1257,7 @@ async function renderProfile(panel) {
 
   $('#pv-save').onclick = (e) => guard(async () => {
     await api('/api/me/profile', {
-      privacy: { showFullName: $('#pv-fullname').checked, showPhoto: $('#pv-photo').checked, showStats: $('#pv-stats').checked, phoneVisibility: $('#pv-phone').value },
+      privacy: { showFullName: $('#pv-fullname').checked, showPhoto: $('#pv-photo').checked, showStats: $('#pv-stats').checked, showOnLeaderboard: $('#pv-leaderboard').checked, phoneVisibility: $('#pv-phone').value },
     }, 'PUT');
     toast('Privatsphäre-Einstellungen gespeichert.');
     await refreshMe();
@@ -1356,6 +1362,7 @@ function renderPrivacyPolicy(panel) {
         <li><b>Führerschein (nur Fahrer):</b> Name, Geburtsdatum, Führerscheinnummer, Klassen, Ablaufdatum, Fotos von Vorder- und Rückseite. Zweck: Sicherheit der Mitfahrer, Prüfung der Fahrberechtigung (Art. 6 Abs. 1 lit. b und f DSGVO). <b>Die Fotos werden direkt nach der Prüfung gelöscht</b>; gespeichert bleiben nur Nummer (anderen nie sichtbar), Klassen, Ablaufdatum und Prüfergebnis.</li>
         <li><b>Standortdaten:</b> Abholort und Ziel von Mitfahrern; Route und – nur während einer aktiv angebotenen Fahrt und nur nach deinem Start der Standortfreigabe – der GPS-Standort von Fahrern. Zweck: Vermittlung und Abrechnung nach gefahrenen Kilometern (Art. 6 Abs. 1 lit. b DSGVO). Andere Mitglieder sehen Start und Ziel eines Fahrers nur vergröbert; den Live-Standort sehen nur bestätigte Mitfahrer.</li>
         <li><b>Fahrten und Zahlungen:</b> Buchungen, gefahrene km, Preise, Provision (${cfg.commissionPercent} %), Umweltspende (${(cfg.donationCentsPerRide / 100).toFixed(2).replace('.', ',')} € pro Fahrt), Bewertungen. Zweck: Abrechnung und gesetzliche Aufbewahrung (Art. 6 Abs. 1 lit. b und c DSGVO).</li>
+        <li><b>Bewertungen und Punkte:</b> Bewertungen (0–10, optionaler Kommentar), daraus berechneter NPS, Punkte, Level und Abzeichen. Zweck: Vertrauen zwischen Fahrtpartnern, Qualität, Motivation zum Teilen von Fahrten (Art. 6 Abs. 1 lit. b und f DSGVO). Einzelbewertungen sieht nur, wer sie abgegeben hat; andere sehen nur Zusammenfassungen. In der <b>Bestenliste</b> erscheinst du nur mit deiner Einwilligung (Art. 6 Abs. 1 lit. a DSGVO), die du jederzeit widerrufen kannst.</li>
         <li><b>Sicherheit:</b> Angemeldete Geräte (Browser-Kennung, Zeitpunkt), Daten der Zwei-Faktor-Anmeldung (Schlüssel verschlüsselt, Backup-Codes nur als Hash), Schutz vor Passwort-Ausprobieren. Zweck: Schutz deines Kontos (Art. 6 Abs. 1 lit. f, Art. 32 DSGVO).</li>
       </ul>
 
@@ -1402,6 +1409,81 @@ function renderImprint(panel) {
       <p>Verantwortlich für den Inhalt nach § 18 Abs. 2 MStV: [Name, Anschrift]</p>
       <p class="muted small">Plattform der EU-Kommission zur Online-Streitbeilegung: https://ec.europa.eu/consumers/odr/ – wir sind nicht verpflichtet und nicht bereit, an Streitbeilegungsverfahren vor einer Verbraucherschlichtungsstelle teilzunehmen. [anpassen]</p>
     </div>`;
+}
+
+// ---------- Gamification: Punkte, Level, Abzeichen, Bestenliste ----------
+const CAT_LABEL = { promoter: 'Promotor', passive: 'Neutral', detractor: 'Kritiker' };
+const pts = (n) => `${Number(n).toLocaleString('de-DE')} ${n === 1 ? 'Punkt' : 'Punkte'}`;
+
+function pointsHint(partnerName) {
+  const f = state.config && state.config.points;
+  if (!f) return '';
+  return `<p class="muted small">🎯 Punkte: Je besser dich ${esc(partnerName)} bewertet, desto mehr Punkte gibt es – Promotor ×${f.promoter}, neutral ×${f.passive}, Kritiker ×${f.detractor}, jeweils × eingesparte kg CO₂.</p>`;
+}
+
+function ridePointsLine(p) {
+  if (!p) return '';
+  return `<span class="points-chip" title="${p.rated ? `Bewertung: ${CAT_LABEL[p.category]}` : 'Noch nicht bewertet – neutraler Faktor'}">+${pts(p.points)} <span class="muted">(×${p.factor} · ${p.co2Kg.toLocaleString('de-DE')} kg CO₂${p.rated ? '' : ' · vorläufig'})</span></span>`;
+}
+
+async function renderPoints(panel) {
+  drawMap();
+  const g = await api('/api/me/points');
+  const lvl = g.level;
+  panel.innerHTML = `
+    <div class="card level-card">
+      <div class="level-head">
+        <span class="level-icon">${lvl.icon}</span>
+        <div><div class="muted small">Level ${lvl.rank}</div><h2 style="margin:0">${esc(lvl.name)}</h2><div class="points-big">${pts(g.points)}</div></div>
+      </div>
+      <div class="progress"><div style="width:${Math.round(lvl.progress * 100)}%"></div></div>
+      <p class="muted small">${lvl.next ? `Noch ${pts(lvl.next.missing)} bis ${lvl.next.icon} ${esc(lvl.next.name)}` : 'Höchstes Level erreicht – danke! 🌍'} · diesen Monat ${pts(g.monthPoints)}</p>
+    </div>
+
+    <div class="card">
+      <h2>So sammelst du Punkte</h2>
+      <p class="formula">Punkte = <b>Faktor</b> × <b>eingesparte kg CO₂</b></p>
+      <table class="breakdown">
+        <tr><td>😊 Promotor (9–10)</td><td><b>×${g.factors.promoter}</b></td></tr>
+        <tr><td>😐 Neutral (7–8)</td><td><b>×${g.factors.passive}</b></td></tr>
+        <tr><td>🙁 Kritiker (0–6)</td><td><b>×${g.factors.detractor}</b></td></tr>
+      </table>
+      <p class="muted small">Der Faktor richtet sich nach der Bewertung, die du vom jeweils anderen bekommst: Fahrer werden vom Mitfahrer bewertet, Mitfahrer vom Fahrer. Solange keine Bewertung vorliegt, zählt der neutrale Faktor. Längere geteilte Strecken und mehr Mitfahrer sparen mehr CO₂ – und bringen mehr Punkte.</p>
+    </div>
+
+    <div class="card">
+      <h2>Abzeichen (${g.badges.filter((b) => b.earned).length}/${g.badges.length})</h2>
+      <div class="badges">${g.badges.map((b) => `<div class="badge-tile ${b.earned ? 'earned' : ''}" title="${esc(b.desc)}"><span>${b.icon}</span><b>${esc(b.name)}</b><small>${esc(b.desc)}</small></div>`).join('')}</div>
+    </div>
+
+    <div class="card">
+      <h2>Bestenliste</h2>
+      <div class="tabs"><button data-period="month">Dieser Monat</button><button class="secondary" data-period="all">Gesamt</button></div>
+      <div id="leaderboard"><p class="muted">Lädt …</p></div>
+      <label class="check"><input type="checkbox" id="lb-optin" ${g.leaderboardOptIn ? 'checked' : ''}><span>Mich in der Bestenliste für andere anzeigen (mit Anzeigename und Level, ohne weitere Daten). Jederzeit widerrufbar.</span></label>
+    </div>
+
+    <div class="card">
+      <h2>Punkte-Verlauf</h2>
+      ${g.history.length ? `<table class="breakdown">${g.history.map((h) => `<tr><td>${h.role === 'driver' ? '🚗 Mitgenommen' : '🧍 Mitgefahren bei'} ${esc(h.partner)}<br><span class="muted small">${new Date(h.at).toLocaleDateString('de-DE')} · ${km(h.km)} · ${h.rated ? `bewertet als ${CAT_LABEL[h.category]}` : 'noch nicht bewertet'}</span></td><td><b>+${h.points}</b><br><span class="muted small">×${h.factor} · ${h.co2Kg.toLocaleString('de-DE')} kg</span></td></tr>`).join('')}</table>` : '<p class="muted">Noch keine Punkte – teile deine erste Fahrt! 🌱</p>'}
+    </div>`;
+
+  const loadBoard = async (period) => {
+    panel.querySelectorAll('[data-period]').forEach((b) => (b.className = b.dataset.period === period ? '' : 'secondary'));
+    const lb = await api('/api/leaderboard?period=' + period);
+    $('#leaderboard').innerHTML = lb.entries.length
+      ? `<table class="breakdown leaderboard">${lb.entries.map((e) => `<tr class="${e.isMe ? 'me' : ''}"><td>${e.rank <= 3 ? ['🥇', '🥈', '🥉'][e.rank - 1] : e.rank + '.'} ${e.level.icon} ${esc(e.name)}${e.isMe ? ' <span class="badge ok">du</span>' : ''}</td><td><b>${pts(e.points)}</b></td></tr>`).join('')}</table>
+         ${lb.me.rank && !lb.entries.some((e) => e.isMe) ? `<p class="small">Dein Platz: <b>${lb.me.rank}</b> mit ${pts(lb.me.points)}</p>` : ''}`
+      : '<p class="muted">Noch keine Punkte in diesem Zeitraum.</p>';
+    if (!lb.optedIn) $('#leaderboard').insertAdjacentHTML('beforeend', '<p class="muted small">Du siehst dich selbst, andere sehen dich erst nach deiner Zustimmung.</p>');
+  };
+  panel.querySelectorAll('[data-period]').forEach((b) => (b.onclick = () => guard(() => loadBoard(b.dataset.period))));
+  $('#lb-optin').onchange = (e) => guard(async () => {
+    await api('/api/me/profile', { privacy: { showOnLeaderboard: e.target.checked } }, 'PUT');
+    toast(e.target.checked ? 'Du erscheinst jetzt in der Bestenliste.' : 'Du wirst anderen nicht mehr in der Bestenliste angezeigt.');
+    await loadBoard('month');
+  });
+  await loadBoard('month');
 }
 
 // ---------- Start ----------

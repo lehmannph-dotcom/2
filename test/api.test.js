@@ -30,6 +30,7 @@ const config = {
   adminEmail: 'chef@example.org',
   pricing: { ratePerKmCents: 25, commissionPercent: 10, donationCentsPerRide: 1, co2GramsPerCarKm: 150 },
   rides: { autoConfirmHours: 24 },
+  points: { promoter: 10, passive: 5, detractor: 1 },
   matching: { maxDetourKm: 3, maxResults: 10 },
 };
 
@@ -281,4 +282,33 @@ test('Nach automatischer Bestätigung kann der Mitfahrer noch bewerten', async (
   assert.equal((await rider('GET', '/api/rides')).rides[0].status, 'completed');
   await rider('POST', `/api/rides/${ride.id}/rate`, { nps: 7 });
   assert.equal((await driver('GET', '/api/me')).user.nps.passives, 1);
+});
+
+test('Punkte nach der Fahrt und Bestenliste nur mit Einwilligung', async (t) => {
+  const { driver, rider, ride } = await bookedRide(t, { kmDriven: 4 });
+  await driver('POST', `/api/rides/${ride.id}/confirm`, {});
+  const done = (await rider('POST', `/api/rides/${ride.id}/confirm`, { nps: 10 })).ride;
+  const co2 = done.final.co2SavedKg;
+  // Fahrer: Promotor-Bewertung → ×10
+  const dp = await driver('GET', '/api/me/points');
+  assert.equal(dp.points, Math.round(10 * co2));
+  assert.equal(dp.history[0].factor, 10);
+  // Mitfahrer: (noch) nicht bewertet → neutral ×5
+  assert.equal((await rider('GET', '/api/me/points')).points, Math.round(5 * co2));
+  // Fahrer bewertet Mitfahrer als Kritiker → ×1
+  await driver('POST', `/api/rides/${ride.id}/rate`, { nps: 5 });
+  const rp = await rider('GET', '/api/me/points');
+  assert.equal(rp.points, Math.round(1 * co2));
+  assert.equal((await rider('GET', '/api/rides')).rides[0].myPoints.factor, 1);
+  assert.equal((await driver('GET', '/api/me')).user.points, dp.points);
+
+  // Bestenliste: ohne Einwilligung sieht der Mitfahrer den Fahrer nicht
+  let lb = await rider('GET', '/api/leaderboard?period=month');
+  assert.deepEqual(lb.entries.map((e) => e.isMe), [true]);
+  assert.equal(lb.optedIn, false);
+  await driver('PUT', '/api/me/profile', { privacy: { showOnLeaderboard: true } });
+  lb = await rider('GET', '/api/leaderboard?period=all');
+  assert.equal(lb.entries[0].name, 'Doris F.');
+  assert.equal(lb.entries[0].points, dp.points);
+  assert.equal(lb.me.rank, 2);
 });

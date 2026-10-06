@@ -10,6 +10,7 @@ const { computeFare, billableKm } = require('./pricing');
 const { haversineKm, projectOntoRoute, cumulativeKm, isLatLng, simplify } = require('./geo');
 const mfa = require('./mfa');
 const nps = require('./nps');
+const game = require('./gamification');
 const { displayName, publicProfile, privacyOf, profileOf, sanitizeProfile, sanitizePrivacy } = require('./profile');
 
 const PRIVACY_POLICY_VERSION = '2026-10';
@@ -64,6 +65,8 @@ function createApp({ store, config, routing }) {
     walletCents: u.walletCents,
     reservedCents: u.reservedCents,
     nps: nps.summary(u),
+    points: gameOf(u.id).points,
+    level: (({ name, icon }) => ({ name, icon }))(gameOf(u.id).level),
     co2SavedKg: Math.round((u.co2SavedKg || 0) * 100) / 100,
     canDrive: canDrive(u),
     mfaEnabled: Boolean(u.mfa && u.mfa.enabled),
@@ -82,6 +85,8 @@ function createApp({ store, config, routing }) {
         }
       : null,
   });
+  const gameAll = () => game.computeAll(Object.values(db.rides), config.points, { month: game.monthKey(now()) });
+  const gameOf = (userId) => game.summaryFor(gameAll().get(userId));
   const book = (account, amountCents, type, rideId, note) => {
     db.ledger.push({ id: store.id('tx'), at: now(), account, amountCents, type, rideId, note });
   };
@@ -112,6 +117,7 @@ function createApp({ store, config, routing }) {
       npsByRider: role === 'rider' ? ride.npsByRider : undefined,
       npsByDriver: role === 'driver' ? ride.npsByDriver : undefined,
       myRating: (role === 'rider' ? ride.npsByRider : ride.npsByDriver) || null,
+      myPoints: game.ridePoints(ride, viewer.id, config.points),
       autoConfirmAt: ride.status === 'confirming' ? new Date(new Date(ride.droppedOffAt).getTime() + config.rides.autoConfirmHours * 3600 * 1000).toISOString() : null,
       settlementPreview,
       riderName: displayName(rider, viewer),
@@ -168,6 +174,7 @@ function createApp({ store, config, routing }) {
     pricing: config.pricing,
     routingProvider: config.googleMapsApiKey ? 'google' : 'openstreetmap',
     maxDetourKm: config.matching.maxDetourKm,
+    points: config.points,
   }), { public: true });
 
   // ---------- Konto ----------
@@ -373,9 +380,9 @@ function createApp({ store, config, routing }) {
     // Vorschau des eigenen Profils aus Sicht eines Fremden bzw. eines bestätigten Fahrtpartners
     const preview = target.id === user.id && query.get('preview');
     if (preview) {
-      return { profile: publicProfile(target, { id: 'preview' }, { hasBooking: preview === 'booked', stats: rideStats(target.id) }) };
+      return { profile: publicProfile(target, { id: 'preview' }, { hasBooking: preview === 'booked', stats: rideStats(target.id), game: gameOf(target.id) }) };
     }
-    return { profile: publicProfile(target, user, { hasBooking: sharesBooking(user.id, target.id), stats: rideStats(target.id) }) };
+    return { profile: publicProfile(target, user, { hasBooking: sharesBooking(user.id, target.id), stats: rideStats(target.id), game: gameOf(target.id) }) };
   });
 
   on('GET', '/api/users/:id/photo', ({ user, params, res }) => {
@@ -387,6 +394,48 @@ function createApp({ store, config, routing }) {
     res.writeHead(200, { 'Content-Type': `image/${ext === 'jpg' ? 'jpeg' : ext}`, 'Cache-Control': 'private, max-age=300', 'X-Content-Type-Options': 'nosniff' });
     res.end(fs.readFileSync(store.uploadPath(photo)));
     return undefined;
+  });
+
+  // ---------- Gamification ----------
+  on('GET', '/api/me/points', ({ user }) => {
+    const summary = gameOf(user.id);
+    const history = Object.values(db.rides)
+      .filter((r) => r.status === 'completed' && (r.riderId === user.id || r.driverId === user.id))
+      .sort((a, b) => b.completedAt.localeCompare(a.completedAt))
+      .slice(0, 30)
+      .map((r) => ({
+        rideId: r.id,
+        at: r.completedAt,
+        role: r.driverId === user.id ? 'driver' : 'rider',
+        partner: displayName(db.users[r.driverId === user.id ? r.riderId : r.driverId], user),
+        km: r.final.km,
+        ...game.ridePoints(r, user.id, config.points),
+      }));
+    return { ...summary, factors: config.points, levels: game.LEVELS, history, leaderboardOptIn: privacyOf(user).showOnLeaderboard };
+  });
+
+  // Bestenliste: nur Mitglieder, die zugestimmt haben (Privatsphäre-Einstellung), Anzeigename gemäß Privatsphäre.
+  on('GET', '/api/leaderboard', ({ user, query }) => {
+    const period = query.get('period') === 'all' ? 'all' : 'month';
+    const all = gameAll();
+    const ranked = [...all.entries()]
+      .map(([id, s]) => ({ id, points: period === 'all' ? s.total : s.month, total: s.total }))
+      .filter((e) => e.points > 0 && db.users[e.id] && !db.users[e.id].deleted)
+      .sort((a, b) => b.points - a.points);
+    const visible = ranked.filter((e) => e.id === user.id || privacyOf(db.users[e.id]).showOnLeaderboard);
+    const entries = visible.slice(0, 20).map((e, i) => {
+      const lvl = game.levelFor(e.total);
+      return { rank: i + 1, name: displayName(db.users[e.id], user), points: e.points, level: { name: lvl.name, icon: lvl.icon }, isMe: e.id === user.id };
+    });
+    const myIndex = visible.findIndex((e) => e.id === user.id);
+    return {
+      period,
+      month: game.monthKey(now()),
+      entries,
+      me: myIndex >= 0 ? { rank: myIndex + 1, points: visible[myIndex].points } : { rank: null, points: 0 },
+      optedIn: privacyOf(user).showOnLeaderboard,
+      participants: visible.length,
+    };
   });
 
   // ---------- Sitzungen ----------

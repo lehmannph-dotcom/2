@@ -21,7 +21,8 @@ const DEFAULT_PRIVACY = Object.freeze({
   showFullName: false,   // sonst „Vorname N.“
   showPhoto: true,
   phoneVisibility: 'never',
-  showStats: true,       // Anzahl Fahrten, CO₂, Mitglied seit
+  showStats: true,       // Anzahl Fahrten, CO₂, Mitglied seit, Punkte/Level
+  showOnLeaderboard: false, // Bestenliste nur mit ausdrücklicher Einwilligung
 });
 
 const DEFAULT_PROFILE = Object.freeze({
@@ -78,7 +79,7 @@ function sanitizeProfile(input, current) {
 
 function sanitizePrivacy(input, current) {
   const out = { ...DEFAULT_PRIVACY, ...(current || {}) };
-  for (const k of ['showFullName', 'showPhoto', 'showStats']) if (input[k] !== undefined) out[k] = Boolean(input[k]);
+  for (const k of ['showFullName', 'showPhoto', 'showStats', 'showOnLeaderboard']) if (input[k] !== undefined) out[k] = Boolean(input[k]);
   if (input.phoneVisibility !== undefined) out.phoneVisibility = PHONE_VISIBILITY.includes(input.phoneVisibility) ? input.phoneVisibility : 'never';
   return out;
 }
@@ -87,7 +88,7 @@ function sanitizePrivacy(input, current) {
  * Öffentliche Profilansicht für einen anderen Nutzer.
  * hasBooking: Betrachter und Profilinhaber haben eine bestätigte/laufende gemeinsame Fahrt.
  */
-function publicProfile(user, viewer, { hasBooking = false, stats = {} } = {}) {
+function publicProfile(user, viewer, { hasBooking = false, stats = {}, game = null } = {}) {
   const priv = privacyOf(user);
   const prof = profileOf(user);
   const self = viewer && viewer.id === user.id;
@@ -105,7 +106,15 @@ function publicProfile(user, viewer, { hasBooking = false, stats = {} } = {}) {
     verifiedDriver: Boolean(lic && lic.status === 'verified' && new Date(lic.expiry) > new Date()),
     mfaEnabled: Boolean(user.mfa && user.mfa.enabled),
     stats: priv.showStats || self
-      ? { memberSince: user.createdAt.slice(0, 7), ridesAsDriver: stats.asDriver || 0, ridesAsRider: stats.asRider || 0, co2SavedKg: Math.round((user.co2SavedKg || 0) * 10) / 10 }
+      ? {
+          memberSince: user.createdAt.slice(0, 7),
+          ridesAsDriver: stats.asDriver || 0,
+          ridesAsRider: stats.asRider || 0,
+          co2SavedKg: Math.round((user.co2SavedKg || 0) * 10) / 10,
+          points: game ? game.points : 0,
+          level: game ? { name: game.level.name, icon: game.level.icon } : null,
+          badges: game ? game.badges.filter((b) => b.earned).map((b) => ({ icon: b.icon, name: b.name })) : [],
+        }
       : null,
   };
 }
