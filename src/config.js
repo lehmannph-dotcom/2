@@ -35,6 +35,11 @@ module.exports = {
     // Faktor, solange (noch) keine Bewertung vorliegt – entspricht einer passiven 7.
     unratedFactor: num('POINTS_FACTOR_UNRATED', 7),
   },
+  // Funfacts: Gruppe erst ab so vielen Fahrern/Bewertungen anzeigen (kein Rückschluss auf Einzelne)
+  funfacts: {
+    minDrivers: num('FUNFACTS_MIN_DRIVERS', 2),
+    minRatings: num('FUNFACTS_MIN_RATINGS', 3),
+  },
   rides: {
     // Bestätigt nur eine Seite das Fahrtende, gilt die Fahrt nach dieser Frist als bestätigt.
     autoConfirmHours: num('AUTO_CONFIRM_HOURS', 24),

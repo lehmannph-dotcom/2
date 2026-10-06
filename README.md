@@ -117,6 +117,15 @@ Mitfahrer können nach **Fahrten über 1 Stunde oder über 100 km** **freiwillig
 * **Kontrolle:** Verfasser können ihren Eintrag jederzeit löschen. Fahrer können Einträge ausblenden (nicht bearbeiten) oder das Gästebuch in den Privatsphäre-Einstellungen abschalten. Der Betreiber kann Einträge löschen.
 * Sichtbar im Fahrerprofil (Popup über den Namen) für alle, die das Profil sehen dürfen. Bei Kontolöschung werden die eigenen Einträge und das eigene Gästebuch gelöscht.
 
+## Funfacts 🎉
+
+Eigenes Menü **Funfacts** (auch ohne Anmeldung): Wo und in welchen Autos sitzen die nettesten Fahrer, gemessen am **NPS** aus den Bewertungen der Mitfahrer?
+
+* **Nach Stadt / Kennzeichen:** Ortskürzel aus dem Fahrerprofil (z. B. „HH“ → Hamburg, ~190 Kürzel hinterlegt in `src/plates.js`; unbekannte erscheinen als „Kennzeichen XY“). Gespeichert wird nur das Ortskürzel, nie das ganze Kennzeichen.
+* **Nach Automarke:** Auswahlliste im Profil (Audi bis VW).
+* Ranglisten mit NPS-Balken, Promotoren/Passive/Kritiker und einer augenzwinkernden Schlagzeile („Die nettesten Fahrer kommen aus …“).
+* **Datenschutz:** Eine Stadt oder Marke erscheint erst ab `FUNFACTS_MIN_DRIVERS` (Standard 2) verschiedenen Fahrern und `FUNFACTS_MIN_RATINGS` (Standard 3) Bewertungen, damit sich kein einzelner Fahrer ablesen lässt. Die Funfacts haben keinen Einfluss auf das Matching.
+
 ## Abrechnung
 
 ```
@@ -155,6 +164,8 @@ src/mfa.js           TOTP, Backup-Codes, Verschlüsselung der 2FA-Schlüssel
 src/nps.js           Bewertung nach NPS-Logik
 src/gamification.js  Punkte, Level, Abzeichen, Bestenliste
 src/guestbook.js     Gästebuch: Berechtigung, Textprüfung, anonyme Anzeige
+src/funfacts.js      Funfacts: NPS nach Stadt/Kennzeichen und Automarke
+src/plates.js        Ortskürzel deutscher Kfz-Kennzeichen
 src/routing.js       Google Maps / OSM, Google-Maps-Link-Parser
 src/geo.js           Distanzen, Polylines, Projektion auf Routen
 src/db.js            JSON-Dateispeicher (data/db.json)

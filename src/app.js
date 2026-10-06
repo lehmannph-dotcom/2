@@ -12,6 +12,9 @@ const mfa = require('./mfa');
 const nps = require('./nps');
 const game = require('./gamification');
 const guestbook = require('./guestbook');
+const funfacts = require('./funfacts');
+const { BRANDS } = require('./profile');
+const { REGIONS } = require('./plates');
 const { displayName, publicProfile, privacyOf, profileOf, sanitizeProfile, sanitizePrivacy } = require('./profile');
 
 const PRIVACY_POLICY_VERSION = '2026-10';
@@ -183,6 +186,14 @@ function createApp({ store, config, routing }) {
     routingProvider: config.googleMapsApiKey ? 'google' : 'openstreetmap',
     maxDetourKm: config.matching.maxDetourKm,
     points: config.points,
+    brands: BRANDS,
+    plateRegions: REGIONS,
+  }), { public: true });
+
+  // ---------- Funfacts (öffentlich, nur zusammengefasste Daten) ----------
+  on('GET', '/api/funfacts', () => ({
+    ...funfacts.compute(Object.values(db.rides), db.users, config.funfacts),
+    totalRatings: Object.values(db.rides).filter((r) => r.npsByRider).length,
   }), { public: true });
 
   // ---------- Konto ----------
@@ -646,7 +657,7 @@ function createApp({ store, config, routing }) {
       route: { coords: r.coords, distanceKm: r.distanceKm, durationMin: r.durationMin, provider: r.provider },
       seats,
       seatsFree: seats,
-      vehicle: String(body.vehicle || [profileOf(user).vehicle.color, profileOf(user).vehicle.model].filter(Boolean).join(' ')).slice(0, 80),
+      vehicle: String(body.vehicle || (({ color, brand, model, plateRegion }) => [color, brand, model].filter(Boolean).join(' ') + (plateRegion ? ` (${plateRegion})` : ''))(profileOf(user).vehicle)).trim().slice(0, 80),
       position: r.origin,
       progressKm: 0,
       createdAt: now(),

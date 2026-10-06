@@ -7,6 +7,10 @@
  */
 
 const { summary: npsSummary } = require('./nps');
+const { normalizeRegion, regionName } = require('./plates');
+
+const BRANDS = ['Audi', 'BMW', 'BYD', 'Citroën', 'Cupra', 'Dacia', 'Fiat', 'Ford', 'Honda', 'Hyundai', 'Jeep', 'Kia', 'Mazda', 'Mercedes-Benz', 'MG', 'Mini', 'Mitsubishi',
+  'Nissan', 'Opel', 'Peugeot', 'Polestar', 'Porsche', 'Renault', 'Seat', 'Škoda', 'Smart', 'Subaru', 'Suzuki', 'Tesla', 'Toyota', 'Volvo', 'VW', 'Andere'];
 
 const LANGUAGES = ['Deutsch', 'Englisch', 'Französisch', 'Spanisch', 'Italienisch', 'Türkisch', 'Polnisch', 'Russisch', 'Arabisch', 'Ukrainisch'];
 const PREFERENCES = {
@@ -32,7 +36,7 @@ const DEFAULT_PROFILE = Object.freeze({
   photo: null,
   languages: ['Deutsch'],
   preferences: { smoking: 'nein', pets: 'nach Absprache', music: 'egal', chat: 'egal' },
-  vehicle: { model: '', color: '' },
+  vehicle: { brand: '', model: '', color: '', plateRegion: '' },
 });
 
 const privacyOf = (u) => ({ ...DEFAULT_PRIVACY, ...(u.privacy || {}) });
@@ -70,7 +74,13 @@ function sanitizeProfile(input, current) {
     }
   }
   if (input.vehicle) {
+    const brand = String(input.vehicle.brand || '');
+    if (brand && !BRANDS.includes(brand)) errors.push('Bitte eine Automarke aus der Liste wählen.');
+    const plateRegion = normalizeRegion(input.vehicle.plateRegion);
+    if (plateRegion === null) errors.push('Ortskürzel des Kennzeichens: 1–3 Buchstaben, z. B. B, HH oder MÜ.');
     out.vehicle = {
+      brand: BRANDS.includes(brand) ? brand : '',
+      plateRegion: plateRegion || '',
       model: String(input.vehicle.model || '').trim().slice(0, 60),
       color: String(input.vehicle.color || '').trim().slice(0, 30),
     };
@@ -100,7 +110,7 @@ function publicProfile(user, viewer, { hasBooking = false, stats = {}, game = nu
     bio: prof.bio,
     languages: prof.languages,
     preferences: prof.preferences,
-    vehicle: prof.vehicle,
+    vehicle: { ...prof.vehicle, regionName: regionName(prof.vehicle.plateRegion) },
     hasPhoto: Boolean(prof.photo && (priv.showPhoto || self)),
     phone: prof.phone && (self || (hasBooking && priv.phoneVisibility === 'booked')) ? prof.phone : null,
     nps: npsSummary(user),
@@ -121,6 +131,7 @@ function publicProfile(user, viewer, { hasBooking = false, stats = {}, game = nu
 }
 
 module.exports = {
+  BRANDS,
   LANGUAGES,
   PREFERENCES,
   DEFAULT_PRIVACY,

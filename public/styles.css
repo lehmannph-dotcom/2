@@ -195,3 +195,23 @@ details summary { cursor: pointer; color: var(--brand); margin-top: 8px; }
 .gb-entry footer { font-size: .78rem; color: var(--muted); }
 .gb-entry.is-hidden { opacity: .55; border-left-color: var(--line); }
 .gb-mine { margin-top: 6px; }
+
+/* ---------- Funfacts ---------- */
+.funfacts-hero { background: linear-gradient(135deg, #7c3aed, #db2777); }
+.ff-headline { background: rgba(255,255,255,.15); padding: 8px 10px; border-radius: 8px; margin-top: 10px !important; }
+.funfact-list { list-style: none; padding: 0; margin: 0; }
+.funfact-list li { padding: 10px 0; border-bottom: 1px solid var(--line); }
+.funfact-list li:last-child { border-bottom: 0; }
+.ff-row { display: flex; align-items: center; gap: 10px; }
+.ff-rank { width: 28px; font-size: 1.2rem; text-align: center; }
+.ff-name { flex: 1; font-weight: 600; }
+.ff-nps { font-size: 1.15rem; font-variant-numeric: tabular-nums; }
+.ff-nps.good { color: #16a34a; } .ff-nps.mid { color: #d97706; } .ff-nps.bad { color: #dc2626; }
+.nps-bar { position: relative; height: 8px; background: var(--line); border-radius: 999px; margin: 6px 0 4px 38px; overflow: hidden; }
+.nps-bar::after { content: ''; position: absolute; left: 50%; top: 0; bottom: 0; width: 2px; background: var(--muted); opacity: .5; }
+.nps-bar div { position: absolute; top: 0; bottom: 0; border-radius: 999px; }
+.nps-bar .pos { background: linear-gradient(90deg, #86efac, #16a34a); }
+.nps-bar .neg { background: linear-gradient(90deg, #dc2626, #fca5a5); }
+.plate { display: inline-flex; align-items: stretch; border: 2px solid #111; border-radius: 4px; background: #fff; color: #111; font-family: 'Arial Narrow', Arial, sans-serif; font-weight: 700; font-size: .85rem; line-height: 1.4; overflow: hidden; vertical-align: middle; }
+.plate .eu { background: #1d4ed8; color: #fde047; font-size: .6rem; padding: 0 3px; display: flex; align-items: flex-end; }
+.plate { padding-right: 5px; gap: 4px; }

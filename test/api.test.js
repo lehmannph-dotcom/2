@@ -31,6 +31,7 @@ const config = {
   pricing: { ratePerKmCents: 25, commissionPercent: 10, donationCentsPerRide: 1, co2GramsPerCarKm: 150 },
   rides: { autoConfirmHours: 24 },
   points: { unratedFactor: 7 },
+  funfacts: { minDrivers: 2, minRatings: 3 },
   matching: { maxDetourKm: 3, maxResults: 10 },
 };
 

@@ -25,6 +25,7 @@ const config = {
   pricing: { ratePerKmCents: 25, commissionPercent: 10, donationCentsPerRide: 1, co2GramsPerCarKm: 150 },
   rides: { autoConfirmHours: 24 },
   points: { unratedFactor: 7 },
+  funfacts: { minDrivers: 2, minRatings: 3 },
   matching: { maxDetourKm: 3, maxResults: 10 },
 };
 
@@ -237,4 +238,18 @@ test('Profilvorschau zeigt die Sicht anderer', async (t) => {
   const booked = (await c('GET', `/api/users/${me.id}/profile?preview=booked`)).profile;
   assert.equal(booked.phone, '+49 30 123456');
   assert.equal((await c('DELETE', '/api/me/photo', {})).status, 200);
+});
+
+test('Funfacts sind öffentlich und enthalten keine Personendaten', async (t) => {
+  const { base } = await setup(t);
+  const anon = client(base);
+  const f = await anon('GET', '/api/funfacts');
+  assert.equal(f.status, 200);
+  assert.deepEqual(f.regions.ranked, []);
+  assert.equal(f.minDrivers, 2);
+  const c = client(base);
+  await reg(c, 'Vera Volvo', 'vera@example.org');
+  assert.equal((await c('PUT', '/api/me/profile', { profile: { vehicle: { brand: 'Volvo', plateRegion: 'hh' } } })).user.profile.vehicle.plateRegion, 'HH');
+  assert.equal((await c('PUT', '/api/me/profile', { profile: { vehicle: { brand: 'Gibtsnicht' } } })).status, 400);
+  assert.ok((await anon('GET', '/api/config')).brands.includes('Volvo'));
 });

@@ -230,6 +230,7 @@ function render() {
   const view = currentView();
   if (view === 'datenschutz') return renderPrivacyPolicy(panel);
   if (view === 'impressum') return renderImprint(panel);
+  if (view === 'funfacts') return guard(() => renderFunfacts(panel));
   if (!state.me) return renderAuth(panel);
   if (view === 'fahren') guard(() => renderDriver(panel));
   else if (view === 'konto') guard(() => renderAccount(panel));
@@ -1086,7 +1087,7 @@ function profileHtml(p) {
     </div>
     ${p.bio ? `<p>${esc(p.bio)}</p>` : ''}
     ${p.phone ? `<p>📞 <a href="tel:${esc(p.phone.replace(/[^+0-9]/g, ''))}">${esc(p.phone)}</a></p>` : ''}
-    ${p.vehicle && p.vehicle.model ? `<p class="muted">🚗 ${esc([p.vehicle.color, p.vehicle.model].filter(Boolean).join(' '))}</p>` : ''}
+    ${p.vehicle && (p.vehicle.model || p.vehicle.brand) ? `<p class="muted">🚗 ${esc([p.vehicle.color, p.vehicle.brand, p.vehicle.model].filter(Boolean).join(' '))}${p.vehicle.plateRegion ? ` · <span class="plate"><span class="eu">D</span>${esc(p.vehicle.plateRegion)}</span> ${esc(p.vehicle.regionName)}` : ''}</p>` : ''}
     <div class="chips">${Object.entries(p.preferences).map(([k, v]) => `<span class="badge">${PREF_LABELS[k]}: ${esc(v)}</span>`).join('')}</div>
     ${p.languages.length ? `<p class="muted small">Spricht: ${esc(p.languages.join(', '))}</p>` : ''}
     ${p.stats ? `<div class="stats" style="margin-top:10px">
@@ -1181,10 +1182,16 @@ async function renderProfile(panel) {
         <div class="checks">${LANGS.map((l) => `<label class="check"><input type="checkbox" name="lang" value="${l}" ${p.languages.includes(l) ? 'checked' : ''}>${l}</label>`).join('')}</div>
         <div class="row">${sel('smoking')}${sel('pets')}</div>
         <div class="row">${sel('music')}${sel('chat')}</div>
+        <h3 style="margin:16px 0 0">🚗 Fahrzeug (für Fahrer)</h3>
         <div class="row">
-          <div><label for="p-model">Fahrzeug (Fahrer)</label><input id="p-model" value="${esc(p.vehicle.model)}" placeholder="VW Golf"></div>
-          <div><label for="p-color">Farbe</label><input id="p-color" value="${esc(p.vehicle.color)}" placeholder="blau"></div>
+          <div><label for="p-brand">Automarke</label><select id="p-brand"><option value="">–</option>${(state.config.brands || []).map((b) => `<option ${p.vehicle.brand === b ? 'selected' : ''}>${esc(b)}</option>`).join('')}</select></div>
+          <div><label for="p-model">Modell</label><input id="p-model" value="${esc(p.vehicle.model)}" placeholder="Golf"></div>
         </div>
+        <div class="row">
+          <div><label for="p-color">Farbe</label><input id="p-color" value="${esc(p.vehicle.color)}" placeholder="blau"></div>
+          <div><label for="p-plate">Kennzeichen – nur Ortskürzel</label><input id="p-plate" value="${esc(p.vehicle.plateRegion || '')}" maxlength="3" placeholder="z. B. HH" style="text-transform:uppercase"></div>
+        </div>
+        <p class="muted small" id="p-plate-name">${p.vehicle.plateRegion ? `📍 ${esc((state.config.plateRegions || {})[p.vehicle.plateRegion] || 'Kennzeichen ' + p.vehicle.plateRegion)}` : 'Marke und Ortskürzel erscheinen in deinem Profil und fließen anonym in die <a href="#/funfacts">Funfacts</a> ein. Das vollständige Kennzeichen speichern wir nicht.'}</p>
         <div class="btn-row">
           <button id="p-save">Profil speichern</button>
           <button type="button" class="secondary" data-preview="stranger">So sehen mich andere</button>
@@ -1239,6 +1246,11 @@ async function renderProfile(panel) {
     </div>`;
 
   panel.querySelectorAll('[data-preview]').forEach((b) => (b.onclick = () => guard(() => showProfile(me.id, b.dataset.preview))));
+  $('#p-plate').addEventListener('input', (e) => {
+    const code = e.target.value.trim().toUpperCase();
+    const name = (state.config.plateRegions || {})[code];
+    $('#p-plate-name').textContent = code ? (name ? `📍 ${name}` : /^[A-ZÄÖÜ]{1,3}$/.test(code) ? `📍 Kennzeichen ${code}` : '⚠ 1–3 Buchstaben, z. B. B, HH oder MÜ') : '';
+  });
   bindGuestbookButtons(panel);
 
   $('#p-photo').onchange = (e) => guard(async () => {
@@ -1261,7 +1273,7 @@ async function renderProfile(panel) {
             phone: $('#p-phone').value,
             languages: [...panel.querySelectorAll('input[name=lang]:checked')].map((i) => i.value),
             preferences: Object.fromEntries(Object.keys(PREFS).map((k) => [k, $('#p-' + k).value])),
-            vehicle: { model: $('#p-model').value, color: $('#p-color').value },
+            vehicle: { brand: $('#p-brand').value, model: $('#p-model').value, color: $('#p-color').value, plateRegion: $('#p-plate').value },
           },
         }, 'PUT');
         toast('Profil gespeichert.');
@@ -1382,6 +1394,7 @@ function renderPrivacyPolicy(panel) {
         <li><b>Standortdaten:</b> Abholort und Ziel von Mitfahrern; Route und – nur während einer aktiv angebotenen Fahrt und nur nach deinem Start der Standortfreigabe – der GPS-Standort von Fahrern. Zweck: Vermittlung und Abrechnung nach gefahrenen Kilometern (Art. 6 Abs. 1 lit. b DSGVO). Andere Mitglieder sehen Start und Ziel eines Fahrers nur vergröbert; den Live-Standort sehen nur bestätigte Mitfahrer.</li>
         <li><b>Fahrten und Zahlungen:</b> Buchungen, gefahrene km, Preise, Provision (${cfg.commissionPercent} %), Umweltspende (${(cfg.donationCentsPerRide / 100).toFixed(2).replace('.', ',')} € pro Fahrt), Bewertungen. Zweck: Abrechnung und gesetzliche Aufbewahrung (Art. 6 Abs. 1 lit. b und c DSGVO).</li>
         <li><b>Gästebuch (freiwillig):</b> Nach Fahrten über 1 Stunde oder 100 km können Mitfahrer ein positives Erlebnis teilen. Veröffentlicht werden nur Text, Monat und Art der Fahrt – ohne Namen. Intern speichern wir, wer den Eintrag verfasst hat, damit du ihn löschen kannst und Missbrauch verhindert wird (Art. 6 Abs. 1 lit. a DSGVO, Einwilligung; jederzeit widerrufbar durch Löschen). Fahrer können Einträge ausblenden oder das Gästebuch abschalten.</li>
+        <li><b>Funfacts:</b> Aus den Bewertungen erstellen wir zusammengefasste Statistiken nach Ortskürzel des Kennzeichens und Automarke (freiwillige Profilangaben; das vollständige Kennzeichen speichern wir nicht). Eine Stadt oder Marke wird erst ab mehreren Fahrern und Bewertungen angezeigt, sodass kein Rückschluss auf Einzelne möglich ist (Art. 6 Abs. 1 lit. f DSGVO).</li>
         <li><b>Bewertungen und Punkte:</b> Bewertungen (0–10, optionaler Kommentar), daraus berechneter NPS, Punkte, Level und Abzeichen. Zweck: Vertrauen zwischen Fahrtpartnern, Qualität, Motivation zum Teilen von Fahrten (Art. 6 Abs. 1 lit. b und f DSGVO). Einzelbewertungen sieht nur, wer sie abgegeben hat; andere sehen nur Zusammenfassungen. In der <b>Bestenliste</b> erscheinst du nur mit deiner Einwilligung (Art. 6 Abs. 1 lit. a DSGVO), die du jederzeit widerrufen kannst.</li>
         <li><b>Sicherheit:</b> Angemeldete Geräte (Browser-Kennung, Zeitpunkt), Daten der Zwei-Faktor-Anmeldung (Schlüssel verschlüsselt, Backup-Codes nur als Hash), Schutz vor Passwort-Ausprobieren. Zweck: Schutz deines Kontos (Art. 6 Abs. 1 lit. f, Art. 32 DSGVO).</li>
       </ul>
@@ -1588,6 +1601,63 @@ function bindGuestbookButtons(root) {
     await api(`/api/guestbook/${b.dataset.gbHide}/hide`, { hidden: b.dataset.hidden === '1' });
     render();
   }, b)));
+}
+
+// ---------- Funfacts: die nettesten Fahrer nach Stadt und Automarke ----------
+function npsBar(nps) {
+  // −100 … +100 als Balken um die Mitte
+  const width = Math.abs(nps) / 2;
+  return `<div class="nps-bar"><div class="${nps >= 0 ? 'pos' : 'neg'}" style="${nps >= 0 ? 'left:50%' : `left:${50 - width}%`};width:${width}%"></div></div>`;
+}
+
+function funfactList(list, labelOf) {
+  if (!list.ranked.length) return '<p class="muted">Noch nicht genug Bewertungen – wir brauchen mehr Fahrten! 🚗💨</p>';
+  return `<ol class="funfact-list">${list.ranked.map((g, i) => `
+    <li>
+      <div class="ff-row"><span class="ff-rank">${['🥇', '🥈', '🥉'][i] || i + 1 + '.'}</span><span class="ff-name">${labelOf(g)}</span><b class="ff-nps ${g.nps >= 50 ? 'good' : g.nps >= 0 ? 'mid' : 'bad'}">${g.nps > 0 ? '+' : ''}${g.nps}</b></div>
+      ${npsBar(g.nps)}
+      <div class="muted small">${bewertungen(g.count)} · ${g.drivers} Fahrer · 😊 ${g.promoters} · 😐 ${g.passives} · 🙁 ${g.detractors}</div>
+    </li>`).join('')}</ol>`;
+}
+
+const FUN_QUIPS = [
+  (n) => `Hier wird noch gewunken statt gehupt.`,
+  (n) => `Gerüchten zufolge gibt es hier Gummibärchen im Handschuhfach.`,
+  (n) => `Blinker werden hier noch benutzt. Freiwillig.`,
+  (n) => `Hier darf der Mitfahrer sogar die Musik aussuchen.`,
+];
+
+async function renderFunfacts(panel) {
+  drawMap();
+  const f = await api('/api/funfacts');
+  const topRegion = f.regions.ranked[0];
+  const topBrand = f.brands.ranked[0];
+  const quip = FUN_QUIPS[(topRegion ? topRegion.code.length : 0) % FUN_QUIPS.length]();
+  panel.innerHTML = `
+    <div class="card hero funfacts-hero">
+      <h2>🎉 Funfacts</h2>
+      <p>Wo fahren die nettesten Fahrer – und in welchen Autos? Ausgewertet nach NPS: Wie wahrscheinlich würden Mitfahrer ihren Fahrer weiterempfehlen?</p>
+      ${topRegion ? `<p class="ff-headline">🏆 Die nettesten Fahrer kommen aus <b>${esc(topRegion.name)}</b> (${esc(topRegion.code)}) – NPS ${topRegion.nps > 0 ? '+' : ''}${topRegion.nps}. ${quip}</p>` : ''}
+      ${topBrand ? `<p class="ff-headline">🚘 Am nettesten unterwegs: <b>${esc(topBrand.name)}</b>-Fahrer – NPS ${topBrand.nps > 0 ? '+' : ''}${topBrand.nps}.</p>` : ''}
+    </div>
+
+    <div class="card">
+      <h2>📍 Nach Stadt / Kennzeichen</h2>
+      ${funfactList(f.regions, (g) => `<span class="plate"><span class="eu">D</span>${esc(g.code)}</span> ${esc(g.name)}`)}
+    </div>
+
+    <div class="card">
+      <h2>🚘 Nach Automarke</h2>
+      ${funfactList(f.brands, (g) => esc(g.name))}
+    </div>
+
+    <div class="card">
+      <h3>So wird gezählt</h3>
+      <p class="muted small">Grundlage sind alle ${bewertungen(f.totalRatings)} von Mitfahrern (0–10). NPS = % Promotoren (9–10) − % Kritiker (0–6). Stadt und Marke kommen aus dem Fahrerprofil (Ortskürzel des Kennzeichens und Automarke).
+      Damit niemand einzeln erkennbar ist, erscheint eine Stadt oder Marke erst ab <b>${f.minDrivers} verschiedenen Fahrern</b> und <b>${bewertungen(f.minRatings)}</b>${f.regions.hiddenGroups + f.brands.hiddenGroups ? ` – ${f.regions.hiddenGroups + f.brands.hiddenGroups} weitere warten noch darauf` : ''}.</p>
+      ${state.me ? '<p class="small">Deine Stadt fehlt? Trag im <a href="#/profil">Profil</a> Automarke und Ortskürzel deines Kennzeichens ein. 🚗</p>' : ''}
+      <p class="muted small">Alles nur zum Spaß – ohne Gewähr und ohne Einfluss auf die Vermittlung. 😉</p>
+    </div>`;
 }
 
 // ---------- Start ----------
