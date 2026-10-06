@@ -13,6 +13,12 @@ npm test                  # Unit- und End-to-End-Tests
 Node.js ≥ 20, **keine npm-Abhängigkeiten**. Das erste registrierte Konto (oder `ADMIN_EMAIL`) ist der Betreiber.
 Für den Produktivbetrieb `APP_SECRET` setzen (verschlüsselt die 2FA-Schlüssel; ohne Wert wird `data/secret.key` erzeugt – diese Datei mitsichern!).
 
+## Oberfläche
+
+* **Farbwelt:** Weiß mit grünen Pastelltönen (Minze, Salbei) – passend zum ökologischen Ansatz. Alle Farben sind als CSS-Variablen in `public/styles.css` definiert; die Bewertungsampel (rot/gelb/grün) bleibt in Pastell erhalten. Kartenkacheln werden dezent entsättigt.
+* **Erklärungen im Info-Kontextmenü (ⓘ):** Definitionen und längere Erklärungen (Abrechnung, NPS, Punkte, Datenschutz, 2FA, Gästebuch, Filter …) erscheinen per **Mouseover**, **Tastatur-Fokus** oder **Antippen** (Handy) – die Oberfläche zeigt nur das Wesentliche. Escape schließt. Rechtlich nötige Texte (Einwilligung, Datenschutzerklärung) bleiben sichtbar.
+* Im Code: `info(html)` für ein ⓘ-Symbol, `withTip(text, html)` für unterstrichenen Text mit Erklärung, `data-tip="…"` für kurze Hinweise an Symbolen.
+
 ## Ablauf
 
 | Rolle | Schritte |
