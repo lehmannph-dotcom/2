@@ -29,8 +29,10 @@ module.exports = {
     donationCentsPerRide: num('DONATION_CENTS_PER_RIDE', 1),
     // Durchschnittliche CO2-Emission eines Pkw in g pro km (Umweltbundesamt, gerundet).
     co2GramsPerCarKm: num('CO2_GRAMS_PER_CAR_KM', 150),
-    // Obergrenze für die abgerechneten Kilometer relativ zur geplanten Strecke (Schutz vor Umwegen).
-    maxBilledKmFactor: num('MAX_BILLED_KM_FACTOR', 1.25),
+  },
+  rides: {
+    // Bestätigt nur eine Seite das Fahrtende, gilt die Fahrt nach dieser Frist als bestätigt.
+    autoConfirmHours: num('AUTO_CONFIRM_HOURS', 24),
   },
   matching: {
     maxDetourKm: num('MAX_DETOUR_KM', 3),

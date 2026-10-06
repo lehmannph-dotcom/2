@@ -54,18 +54,34 @@ Für jede aktive Fahrt (`src/matching.js`):
 3. Genug freie Plätze, Führerschein verifiziert und gültig.
 4. Bewertung (kleiner = besser): `2 × Umweg-km + 0,5 × Wartezeit-min + 10 × (1 − Streckenabdeckung) + 2 × (5 − Sterne)`.
 
+## Bestätigung der Fahrt durch Fahrer und Mitfahrer
+
+Grundlage ist die **schnellste Route laut Plan** vom Abholort zum Ziel (Google Directions bzw. OSRM). Sie wird beiden Seiten angezeigt (auf der Karte lila gestrichelt) und muss von beiden bestätigt werden:
+
+| Schritt | Mitfahrer | Fahrer |
+|---|---|---|
+| **Vor der Fahrt** | sieht geplante Route, km, Dauer und Höchstpreis → „Route bestätigen & anfragen“ | sieht dieselbe Route und seinen Anteil → „Route bestätigen & annehmen“ |
+| **Nach der Fahrt** | „Fahrt bestätigen“ oder „Problem melden“ | „Am Ziel – Fahrt bestätigen“ oder „Problem melden“ |
+
+* Beide sehen beim Abschluss: geplante Route · gefahrene km (GPS) · abgerechnete km · Betrag.
+* Mit der **ersten** Bestätigung endet die km-Messung, erst mit der **zweiten** wird abgerechnet.
+* Bestätigt nur eine Seite, gilt die Fahrt nach `AUTO_CONFIRM_HOURS` (Standard 24 h) als bestätigt – damit Fahrer nicht unbegrenzt auf ihr Geld warten.
+* **Problem melden** stoppt die Abrechnung; der Betreiber entscheidet im Bereich „Betreiber“ (abrechnen nach Regel, mit weniger km oder kostenlos stornieren).
+* Hat sich die geplante Route zwischen Anzeige und Buchung geändert (> 0,5 km), muss der Mitfahrer neu bestätigen.
+
 ## Abrechnung
 
 ```
-Fahrpreis    = gefahrene km × Kilometersatz (Standard 0,25 €/km) × Personen
-Provision    = Fahrpreis × 10 %         → Betreiber
-Fahreranteil = Fahrpreis − Provision    → Fahrer
-Spende       = 0,01 € pro Fahrt         → Umweltschutz
+abgerechnete km = geplante Route – oder die gefahrene Strecke (GPS), sofern diese kürzer ist
+Fahrpreis       = abgerechnete km × Kilometersatz (Standard 0,25 €/km) × Personen
+Provision       = Fahrpreis × 10 %         → Betreiber
+Fahreranteil    = Fahrpreis − Provision    → Fahrer
+Spende          = 0,01 € pro Fahrt         → Umweltschutz
 Mitfahrer zahlt = Fahrpreis + Spende
 ```
 
-* Gefahrene km werden aus dem **GPS-Standort des Fahrers** zwischen „Eingestiegen“ und „Abgesetzt“ gemessen. Ohne GPS gilt die geplante Strecke. Zum Schutz der Mitfahrer wird höchstens die geplante Strecke + 25 % berechnet (`MAX_BILLED_KM_FACTOR`).
-* Bei Annahme wird der Höchstbetrag auf dem Guthaben des Mitfahrers reserviert, bei Abschluss der tatsächliche Betrag gebucht.
+* **Umwege zahlt der Mitfahrer nie**: Ist die gefahrene Strecke länger als geplant, gilt die geplante Route. Ohne GPS-Daten gilt ebenfalls die geplante Route.
+* Der Preis der geplanten Route ist damit der **Höchstbetrag**. Er wird bei der Annahme durch den Fahrer auf dem Guthaben reserviert; abgebucht wird erst nach beiden Bestätigungen.
 * Alle Beträge in ganzen Cent; jede Buchung landet im Journal (`ledger`). Mitfahrer-Zahlung = Fahrer + Provision + Spende (durch Tests abgesichert).
 * CO₂-Ersparnis: 150 g pro geteiltem Personen-km (eine ersetzte Pkw-Fahrt).
 

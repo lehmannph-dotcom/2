@@ -7,7 +7,7 @@ const { hashPassword, verifyPassword, createSession, userFromRequest, sessionCoo
 const { validateLicense, canDrive } = require('./license');
 const { findMatches } = require('./matching');
 const { computeFare, billableKm } = require('./pricing');
-const { haversineKm, projectOntoRoute, cumulativeKm, isLatLng } = require('./geo');
+const { haversineKm, projectOntoRoute, cumulativeKm, isLatLng, simplify } = require('./geo');
 const mfa = require('./mfa');
 const { displayName, publicProfile, privacyOf, profileOf, sanitizeProfile, sanitizePrivacy } = require('./profile');
 
@@ -93,9 +93,23 @@ function createApp({ store, config, routing }) {
     const trip = db.trips[ride.tripId];
     const rider = db.users[ride.riderId];
     const driver = db.users[ride.driverId];
+    const role = viewer.id === ride.driverId ? 'driver' : 'rider';
+    const partner = role === 'driver' ? 'rider' : 'driver';
+    const c = ride.confirmations || {};
+    let settlementPreview = null;
+    if (['picked_up', 'confirming', 'disputed'].includes(ride.status)) {
+      const b = billableKm(ride.plannedKm, ride.trackedKm);
+      settlementPreview = { plannedKm: ride.plannedKm, trackedKm: ride.trackedKm, billedKm: b.km, basis: b.basis, price: computeFare(b.km, config.pricing, ride.seats) };
+    }
     return {
       ...ride,
-      role: viewer.id === ride.driverId ? 'driver' : 'rider',
+      role,
+      myRouteConfirmed: Boolean(c[role + 'Route']),
+      partnerRouteConfirmed: Boolean(c[partner + 'Route']),
+      myEndConfirmed: Boolean(c[role + 'End']),
+      partnerEndConfirmed: Boolean(c[partner + 'End']),
+      autoConfirmAt: ride.status === 'confirming' ? new Date(new Date(ride.droppedOffAt).getTime() + config.rides.autoConfirmHours * 3600 * 1000).toISOString() : null,
+      settlementPreview,
       riderName: displayName(rider, viewer),
       driverName: displayName(driver, viewer),
       vehicle: trip ? trip.vehicle : '',
@@ -113,7 +127,7 @@ function createApp({ store, config, routing }) {
     return { label, lat: Math.round(p.lat * 100) / 100, lng: Math.round(p.lng * 100) / 100 };
   };
   const isBookedOn = (trip, userId) =>
-    Object.values(db.rides).some((r) => r.tripId === trip.id && r.riderId === userId && ['accepted', 'picked_up'].includes(r.status));
+    Object.values(db.rides).some((r) => r.tripId === trip.id && r.riderId === userId && ['accepted', 'picked_up', 'confirming'].includes(r.status));
   const tripView = (trip, viewer) => {
     if (trip.driverId === viewer.id || isBookedOn(trip, viewer.id)) return trip;
     const cum = tripCum(trip);
@@ -308,7 +322,7 @@ function createApp({ store, config, routing }) {
   };
   const sharesBooking = (a, b) =>
     Object.values(db.rides).some(
-      (r) => ['accepted', 'picked_up'].includes(r.status) && ((r.driverId === a && r.riderId === b) || (r.driverId === b && r.riderId === a)),
+      (r) => ['accepted', 'picked_up', 'confirming'].includes(r.status) && ((r.driverId === a && r.riderId === b) || (r.driverId === b && r.riderId === a)),
     );
   const sharesAnyRide = (a, b) =>
     Object.values(db.rides).some((r) => (r.driverId === a && r.riderId === b) || (r.driverId === b && r.riderId === a));
@@ -420,7 +434,7 @@ function createApp({ store, config, routing }) {
   // weil Abrechnungsbelege gesetzlich aufbewahrt werden müssen (§ 147 AO, § 257 HGB).
   on('POST', '/api/me/delete', ({ user, body, req, res }) => {
     confirmIdentity(user, body);
-    const open = Object.values(db.rides).some((r) => (r.riderId === user.id || r.driverId === user.id) && ['requested', 'accepted', 'picked_up'].includes(r.status));
+    const open = Object.values(db.rides).some((r) => (r.riderId === user.id || r.driverId === user.id) && ['requested', 'accepted', 'picked_up', 'confirming', 'disputed'].includes(r.status));
     need(!open, 409, 'Bitte zuerst offene Fahrten abschließen oder stornieren.');
     need(!Object.values(db.trips).some((t) => t.driverId === user.id && t.status === 'active'), 409, 'Bitte zuerst deine aktive Fahrt beenden.');
     need(user.walletCents >= 0, 409, 'Bitte zuerst den offenen Betrag ausgleichen.');
@@ -571,8 +585,21 @@ function createApp({ store, config, routing }) {
     return { trip };
   });
 
+  // ---------- Geplante Route (Basis für Bestätigung und Abrechnung) ----------
+  // Die schnellste Route vom Abholort zum Ziel ist unabhängig vom Fahrer – sie wird einmal
+  // berechnet, beiden Seiten angezeigt und von beiden bestätigt. Abgerechnet wird höchstens diese Strecke.
+  const plannedRouteFor = async (pickup, dropoff) => {
+    const r = await routing.route(pickup, dropoff);
+    return {
+      coords: simplify(r.coords, 300),
+      distanceKm: Math.round(r.distanceKm * 100) / 100,
+      durationMin: Math.round(r.durationMin),
+      provider: r.provider,
+    };
+  };
+
   // ---------- Mitfahrer: besten Fahrer finden ----------
-  on('POST', '/api/match', ({ user, body }) => {
+  on('POST', '/api/match', async ({ user, body }) => {
     const pickup = point(body.pickup, 'Abholort');
     const dropoff = point(body.dropoff, 'Ziel');
     const seats = Math.max(1, Math.min(8, Math.round(Number(body.seats) || 1)));
@@ -585,21 +612,33 @@ function createApp({ store, config, routing }) {
       maxDetourKm: config.matching.maxDetourKm,
       maxResults: config.matching.maxResults,
       users: db.users,
-    }).map((m) => ({
-      ...m,
-      driverName: displayName(db.users[m.driverId], user),
-      origin: coarsePlace(m.origin),
-      destination: coarsePlace(m.destination),
-    }));
-    return { matches, activeDrivers: trips.length };
+    });
+    const plannedRoute = matches.length ? await plannedRouteFor(pickup, dropoff) : null;
+    return {
+      plannedRoute,
+      activeDrivers: trips.length,
+      matches: matches.map((m) => ({
+        ...m,
+        plannedKm: plannedRoute.distanceKm,
+        plannedDurationMin: plannedRoute.durationMin,
+        price: computeFare(plannedRoute.distanceKm, config.pricing, seats),
+        driverName: displayName(db.users[m.driverId], user),
+        origin: coarsePlace(m.origin),
+        destination: coarsePlace(m.destination),
+      })),
+    };
   });
 
   // ---------- Buchungen ----------
-  on('POST', '/api/rides', ({ user, body }) => {
+  const OPEN = ['requested', 'accepted', 'picked_up', 'confirming'];
+
+  // Anfrage = Bestätigung des Mitfahrers auf Basis der angezeigten geplanten Route.
+  on('POST', '/api/rides', async ({ user, body }) => {
     const trip = db.trips[body.tripId];
     need(trip && trip.status === 'active', 404, 'Diese Fahrt ist nicht mehr verfügbar.');
     need(trip.driverId !== user.id, 400, 'Du kannst nicht bei dir selbst mitfahren.');
-    need(!Object.values(db.rides).some((r) => r.riderId === user.id && ['requested', 'accepted', 'picked_up'].includes(r.status)), 409, 'Du hast bereits eine offene Mitfahrt.');
+    need(!Object.values(db.rides).some((r) => r.riderId === user.id && OPEN.includes(r.status)), 409, 'Du hast bereits eine offene Mitfahrt.');
+    need(body.confirmPlannedRoute === true, 400, 'Bitte die geplante Route bestätigen.');
     const pickup = point(body.pickup, 'Abholort');
     const dropoff = point(body.dropoff, 'Ziel');
     const seats = Math.max(1, Math.min(8, Math.round(Number(body.seats) || 1)));
@@ -611,8 +650,14 @@ function createApp({ store, config, routing }) {
       maxDetourKm: config.matching.maxDetourKm,
     });
     need(match, 409, 'Der Fahrer passt nicht mehr zu deiner Strecke.');
-    const maxCharge = computeFare(match.plannedKm * config.pricing.maxBilledKmFactor, config.pricing, seats).totalCents;
-    need(user.walletCents - user.reservedCents >= maxCharge, 402, `Nicht genug Guthaben. Benötigt werden bis zu ${(maxCharge / 100).toFixed(2)} €.`);
+    const plannedRoute = await plannedRouteFor(pickup, dropoff);
+    // Der Mitfahrer bestätigt genau die Strecke, die ihm angezeigt wurde.
+    if (body.plannedKm !== undefined && Math.abs(Number(body.plannedKm) - plannedRoute.distanceKm) > 0.5) {
+      throw new HttpError(409, 'Die geplante Route hat sich geändert. Bitte erneut suchen und bestätigen.');
+    }
+    const estimate = computeFare(plannedRoute.distanceKm, config.pricing, seats);
+    // Da nie mehr als die geplante Route berechnet wird, ist der geplante Preis zugleich der Höchstbetrag.
+    need(user.walletCents - user.reservedCents >= estimate.totalCents, 402, `Nicht genug Guthaben. Benötigt werden ${(estimate.totalCents / 100).toFixed(2).replace('.', ',')} €.`);
     const ride = {
       id: store.id('rid'),
       tripId: trip.id,
@@ -622,26 +667,31 @@ function createApp({ store, config, routing }) {
       pickup,
       dropoff,
       seats,
-      plannedKm: match.plannedKm,
+      plannedRoute,
+      plannedKm: plannedRoute.distanceKm,
       pickupAlongKm: match.pickupAlongKm,
       detourKm: match.detourKm,
-      estimate: match.price,
-      maxChargeCents: maxCharge,
+      estimate,
+      maxChargeCents: estimate.totalCents,
       reservedCents: 0,
       trackedKm: 0,
+      confirmations: { riderRoute: now() },
       createdAt: now(),
     };
     db.rides[ride.id] = ride;
     return { ride: rideView(ride, user) };
   });
 
-  on('GET', '/api/rides', ({ user }) => ({
-    rides: Object.values(db.rides)
-      .filter((r) => r.riderId === user.id || r.driverId === user.id)
-      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-      .slice(0, 30)
-      .map((r) => rideView(r, user)),
-  }));
+  on('GET', '/api/rides', ({ user }) => {
+    settleOverdue();
+    return {
+      rides: Object.values(db.rides)
+        .filter((r) => r.riderId === user.id || r.driverId === user.id)
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+        .slice(0, 30)
+        .map((r) => rideView(r, user)),
+    };
+  });
 
   const rideAction = (action, handler) =>
     on('POST', `/api/rides/:id/${action}`, (ctx) => {
@@ -654,10 +704,13 @@ function createApp({ store, config, routing }) {
 
   const asDriver = (ride, user) => need(ride.driverId === user.id, 403, 'Nur der Fahrer kann das.');
   const inStatus = (ride, ...states) => need(states.includes(ride.status), 409, `Aktion im Status „${ride.status}“ nicht möglich.`);
+  const roleOf = (ride, user) => (ride.driverId === user.id ? 'driver' : 'rider');
 
-  rideAction('accept', (ride, { user }) => {
+  // Annahme = Bestätigung des Fahrers auf Basis derselben geplanten Route.
+  rideAction('accept', (ride, { user, body }) => {
     asDriver(ride, user);
     inStatus(ride, 'requested');
+    need(body.confirmPlannedRoute === true, 400, 'Bitte die geplante Route bestätigen.');
     const trip = db.trips[ride.tripId];
     need(trip.status === 'active' && trip.seatsFree >= ride.seats, 409, 'Keine freien Plätze mehr.');
     const rider = db.users[ride.riderId];
@@ -665,6 +718,7 @@ function createApp({ store, config, routing }) {
     rider.reservedCents += ride.maxChargeCents;
     ride.reservedCents = ride.maxChargeCents;
     trip.seatsFree -= ride.seats;
+    ride.confirmations.driverRoute = now();
     ride.status = 'accepted';
     ride.acceptedAt = now();
   });
@@ -690,12 +744,13 @@ function createApp({ store, config, routing }) {
     ride.trackedKm = 0;
   });
 
-  // Abschluss & Abrechnung nach gefahrenen Kilometern.
-  rideAction('complete', (ride, { user }) => {
-    asDriver(ride, user);
-    inStatus(ride, 'picked_up');
-    const km = billableKm(ride.plannedKm, ride.trackedKm, config.pricing);
-    const fare = computeFare(km, config.pricing, ride.seats);
+  /**
+   * Abrechnung: geplante Route oder gefahrene Strecke, sofern kürzer.
+   * kmOverride nur durch den Betreiber bei Reklamationen (höchstens geplante km).
+   */
+  const settle = (ride, confirmedBy, kmOverride) => {
+    const basis = kmOverride !== undefined ? { km: kmOverride, basis: 'betreiber' } : billableKm(ride.plannedKm, ride.trackedKm);
+    const fare = computeFare(basis.km, config.pricing, ride.seats);
     const rider = db.users[ride.riderId];
     const driver = db.users[ride.driverId];
     releaseReservation(ride);
@@ -710,10 +765,52 @@ function createApp({ store, config, routing }) {
 
     rider.co2SavedKg = (rider.co2SavedKg || 0) + fare.co2SavedKg;
     driver.co2SavedKg = (driver.co2SavedKg || 0) + fare.co2SavedKg;
-    ride.final = { ...fare, billing: ride.trackedKm > 0.2 ? 'gps' : 'geplant' };
+    ride.final = { ...fare, plannedKm: ride.plannedKm, trackedKm: ride.trackedKm, billing: basis.basis, confirmedBy };
     ride.status = 'completed';
     ride.completedAt = now();
+  };
+
+  // Fahrtende bestätigen – Fahrer UND Mitfahrer. Mit der ersten Bestätigung endet die km-Messung,
+  // mit der zweiten wird abgerechnet.
+  rideAction('confirm', (ride, { user }) => {
+    inStatus(ride, 'picked_up', 'confirming');
+    const role = roleOf(ride, user);
+    need(!ride.confirmations[role + 'End'], 409, 'Du hast die Fahrt bereits bestätigt.');
+    if (ride.status === 'picked_up') {
+      freeSeats(ride);
+      ride.status = 'confirming';
+      ride.droppedOffAt = now();
+    }
+    ride.confirmations[role + 'End'] = now();
+    if (ride.confirmations.driverEnd && ride.confirmations.riderEnd) settle(ride, 'beide');
   });
+
+  // Reklamation statt Bestätigung: keine Abrechnung, der Betreiber entscheidet.
+  rideAction('dispute', (ride, { user, body }) => {
+    inStatus(ride, 'picked_up', 'confirming');
+    const reason = String(body.reason || '').trim().slice(0, 500);
+    need(reason.length >= 5, 400, 'Bitte kurz beschreiben, was nicht gestimmt hat.');
+    if (ride.status === 'picked_up') {
+      freeSeats(ride);
+      ride.droppedOffAt = now();
+    }
+    ride.status = 'disputed';
+    ride.dispute = { by: roleOf(ride, user), reason, at: now() };
+  });
+
+  // Bestätigt nur eine Seite, gilt die Fahrt nach Ablauf der Frist als bestätigt.
+  const settleOverdue = () => {
+    const limit = Date.now() - config.rides.autoConfirmHours * 3600 * 1000;
+    for (const ride of Object.values(db.rides)) {
+      if (ride.status === 'confirming' && new Date(ride.droppedOffAt).getTime() < limit) {
+        ride.confirmations.autoAt = now();
+        settle(ride, 'automatisch');
+        store.save();
+      }
+    }
+  };
+  const timer = setInterval(settleOverdue, 5 * 60 * 1000);
+  timer.unref();
 
   rideAction('rate', (ride, { user, body }) => {
     inStatus(ride, 'completed');
@@ -744,7 +841,41 @@ function createApp({ store, config, routing }) {
       users: Object.keys(db.users).length,
       activeTrips: Object.values(db.trips).filter((t) => t.status === 'active').length,
       verifiedDrivers: Object.values(db.users).filter((u) => canDrive(u)).length,
+      openDisputes: Object.values(db.rides).filter((r) => r.status === 'disputed').length,
     };
+  });
+
+  on('GET', '/api/admin/disputes', ({ user }) => {
+    adminOnly(user);
+    return {
+      disputes: Object.values(db.rides)
+        .filter((r) => r.status === 'disputed')
+        .map((r) => ({ ...rideView(r, user), riderName: db.users[r.riderId].name, driverName: db.users[r.driverId].name })),
+    };
+  });
+
+  // Reklamation entscheiden: abrechnen (Regel oder geringere km) oder kostenlos stornieren.
+  on('POST', '/api/admin/rides/:id/resolve', ({ user, params, body }) => {
+    adminOnly(user);
+    const ride = db.rides[params.id];
+    need(ride && ride.status === 'disputed', 404, 'Reklamation nicht gefunden.');
+    need(['bill', 'cancel'].includes(body.decision), 400, 'Entscheidung: bill oder cancel.');
+    ride.dispute.resolvedAt = now();
+    ride.dispute.resolvedBy = user.id;
+    ride.dispute.note = String(body.note || '').slice(0, 300);
+    if (body.decision === 'cancel') {
+      releaseReservation(ride);
+      ride.status = 'cancelled';
+      ride.cancelReason = 'Reklamation: vom Betreiber storniert';
+      return { ride };
+    }
+    let km;
+    if (body.km !== undefined && body.km !== '') {
+      km = Number(body.km);
+      need(Number.isFinite(km) && km >= 0 && km <= ride.plannedKm, 400, `km zwischen 0 und ${ride.plannedKm} (geplante Route).`);
+    }
+    settle(ride, 'betreiber', km);
+    return { ride };
   });
 
   on('GET', '/api/admin/licenses', ({ user }) => {

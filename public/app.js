@@ -344,17 +344,77 @@ function renderAuth(panel) {
 }
 
 // ---------- Mitfahrer ----------
-const OPEN_STATES = ['requested', 'accepted', 'picked_up'];
+const OPEN_STATES = ['requested', 'accepted', 'picked_up', 'confirming'];
 const activeRiderRide = () => state.rides.find((r) => r.role === 'rider' && OPEN_STATES.includes(r.status));
 const STATUS = {
   requested: ['Angefragt – wartet auf Fahrer', 'warn'],
   accepted: ['Bestätigt – Fahrer ist unterwegs', 'ok'],
   picked_up: ['Unterwegs', 'ok'],
+  confirming: ['Wartet auf Bestätigung', 'warn'],
+  disputed: ['Reklamation – Betreiber prüft', 'bad'],
   completed: ['Abgeschlossen', 'ok'],
   declined: ['Abgelehnt', 'bad'],
   cancelled: ['Storniert', 'bad'],
 };
 const statusBadge = (s) => `<span class="badge ${STATUS[s][1]}">${STATUS[s][0]}</span>`;
+const PLANNED_STYLE = { color: '#7c3aed', weight: 5, dash: '10 8', opacity: 0.9 };
+const BILLING_RULE = 'Abgerechnet wird die geplante Route – oder die tatsächlich gefahrene Strecke, falls sie kürzer ist. Umwege zahlst du nie.';
+const BASIS = { geplant: 'geplante Route', gefahren: 'gefahrene Strecke (kürzer)', betreiber: 'Entscheidung Betreiber' };
+
+function plannedRouteHtml(route, note) {
+  const estimated = route.provider === 'luftlinie' ? '<div class="small" style="color:var(--warn)">⚠ Routendienst nicht erreichbar – Strecke geschätzt (Luftlinie × 1,3).</div>' : '';
+  return `<div class="planned"><b>🗺️ Geplante Route (schnellste):</b> ${km(route.distanceKm)} · ca. ${Math.round(route.durationMin)} min${estimated}${note ? `<div class="muted small">${note}</div>` : ''}</div>`;
+}
+
+/** Bestätigung des Fahrtendes für Fahrer und Mitfahrer – mit der geplanten Route als Basis. */
+function confirmationCard(r) {
+  const p = r.settlementPreview;
+  if (!p) return '';
+  const partner = r.role === 'driver' ? 'Mitfahrer' : 'Fahrer';
+  const measuring = r.status === 'picked_up';
+  return `<div class="card confirm-card">
+    <h3>✅ Fahrt bestätigen</h3>
+    <table class="breakdown">
+      <tr><td>Geplante Route (schnellste)</td><td>${km(p.plannedKm)}${r.plannedRoute ? ` · ${Math.round(r.plannedRoute.durationMin)} min` : ''}</td></tr>
+      <tr><td>Gefahren (GPS)${measuring ? ' <span class="muted small">– läuft</span>' : ''}</td><td>${p.trackedKm > 0.2 ? km(p.trackedKm) : '–'}</td></tr>
+      <tr class="total"><td>Abgerechnet: ${BASIS[p.basis]}</td><td>${km(p.billedKm)}</td></tr>
+      <tr><td>${r.role === 'driver' ? 'Dein Anteil' : 'Du zahlst'}</td><td><b>${euro(r.role === 'driver' ? p.price.driverCents : p.price.totalCents)}</b></td></tr>
+    </table>
+    <p class="muted small">${r.role === 'driver' ? BILLING_RULE.replace('zahlst du', 'zahlt der Mitfahrer') : BILLING_RULE}</p>
+    <p class="small">${r.myEndConfirmed ? '✔ Du hast bestätigt.' : '○ Deine Bestätigung fehlt.'}<br>${r.partnerEndConfirmed ? `✔ ${partner} hat bestätigt.` : `○ ${partner} hat noch nicht bestätigt.`}
+      ${r.autoConfirmAt && !(r.myEndConfirmed && r.partnerEndConfirmed) ? `<br><span class="muted">Ohne Rückmeldung gilt die Fahrt am ${new Date(r.autoConfirmAt).toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' })} als bestätigt.</span>` : ''}</p>
+    ${r.status === 'disputed' ? `<p class="small"><span class="badge bad">Reklamation</span> ${esc(r.dispute.reason)}</p>` : ''}
+    ${!r.myEndConfirmed && r.status !== 'disputed' ? `<div class="btn-row">
+      <button data-confirm="${r.id}">${measuring && r.role === 'driver' ? 'Am Ziel – Fahrt bestätigen' : 'Fahrt bestätigen'}</button>
+      <button class="secondary" data-dispute="${r.id}">Problem melden</button></div>` : ''}
+  </div>`;
+}
+
+function bindConfirmButtons(root) {
+  root.querySelectorAll('[data-confirm]').forEach((b) => (b.onclick = () => guard(async () => {
+    const { ride } = await api(`/api/rides/${b.dataset.confirm}/confirm`, {});
+    if (ride.status === 'completed') toast(`Fahrt bestätigt und abgerechnet: ${km(ride.final.km)} · ${euro(ride.role === 'driver' ? ride.final.driverCents : ride.final.totalCents)}`);
+    else toast('Bestätigt – wartet auf die Bestätigung des Fahrtpartners.');
+    await refreshMe();
+    render();
+  }, b)));
+  root.querySelectorAll('[data-dispute]').forEach((b) => (b.onclick = () => {
+    openModal(`<h2>Problem melden</h2>
+      <p class="muted">Die Fahrt wird dann nicht automatisch abgerechnet. Der Betreiber prüft den Fall und meldet sich bei euch.</p>
+      <form id="dispute-form"><label for="d-reason">Was ist passiert?</label><textarea id="d-reason" maxlength="500" required></textarea>
+      <div class="btn-row"><button class="danger">Reklamation senden</button></div></form>`);
+    $('#d-reason').focus();
+    $('#dispute-form').onsubmit = (e) => {
+      e.preventDefault();
+      guard(async () => {
+        await api(`/api/rides/${b.dataset.dispute}/dispute`, { reason: $('#d-reason').value });
+        closeModal();
+        toast('Reklamation gesendet.');
+        render();
+      });
+    };
+  }));
+}
 
 async function renderRider(panel) {
   await loadRides();
@@ -387,8 +447,9 @@ async function searchMatches() {
   const pickup = await ensurePlace('pickup');
   const dropoff = await ensurePlace('dropoff');
   if (!pickup || !dropoff) throw new Error('Bitte Abholort und Ziel angeben.');
-  const { matches, activeDrivers } = await api('/api/match', { pickup, dropoff, seats: state.seats });
+  const { matches, activeDrivers, plannedRoute } = await api('/api/match', { pickup, dropoff, seats: state.seats });
   state.matches = matches;
+  state.plannedRoute = plannedRoute;
   state.selected = matches[0] || null;
   state.activeDrivers = activeDrivers;
   if (!matches.length) {
@@ -411,12 +472,15 @@ async function renderMatches() {
           <div class="price">${euro(m.price.totalCents)}</div>
         </div>
         <div class="muted small" style="margin-top:6px">
-          Abholung in ca. ${m.etaMin} min · ${km(m.plannedKm)} Mitfahrt · Umweg für Fahrer ${km(m.detourKm)} · spart ${m.price.co2SavedKg.toLocaleString('de-DE')} kg CO₂
+          Abholung in ca. ${m.etaMin} min · Umweg für Fahrer ${km(m.detourKm)} · spart ${m.price.co2SavedKg.toLocaleString('de-DE')} kg CO₂
         </div>
         <div class="muted small">Fahrt: ${esc(shortLabel(m.origin))} → ${esc(shortLabel(m.destination))}</div>
       </div>`).join('')}
     </div>
-    ${state.selected ? priceCard(state.selected.price, 'Voraussichtlicher Preis') + `<button class="full" id="r-book">Bei ${esc(state.selected.driverName)} mitfahren</button>` : ''}`;
+    ${state.selected ? `<div class="card">
+        <h3>Deine Fahrt bestätigen</h3>
+        ${plannedRouteHtml(state.plannedRoute, 'Lila gestrichelt auf der Karte. Diese Route bestätigen du und der Fahrer – sie ist die Grundlage für den Preis.')}
+      </div>` + priceCard(state.selected.price, 'Preis für die geplante Route (Höchstbetrag)') + `<button class="full" id="r-book">Route bestätigen & bei ${esc(state.selected.driverName)} anfragen</button>` : ''}`;
   box.querySelectorAll('.match').forEach((el) =>
     el.addEventListener('click', () => {
       state.selected = state.matches[el.dataset.i];
@@ -436,9 +500,9 @@ async function showMatchOnMap(m) {
   if (!m) return drawMap({ points });
   try {
     const { trip } = await api('/api/trips/' + m.tripId);
-    drawMap({ routes: [{ coords: trip.route.coords, color: '#2563eb', weight: 5 }], points, driver: trip.position });
+    drawMap({ routes: [{ coords: trip.route.coords, color: '#2563eb', weight: 5, opacity: 0.5 }, { coords: state.plannedRoute.coords, ...PLANNED_STYLE }], points, driver: trip.position });
   } catch {
-    drawMap({ points });
+    drawMap({ routes: state.plannedRoute ? [{ coords: state.plannedRoute.coords, ...PLANNED_STYLE }] : [], points });
   }
 }
 
@@ -451,14 +515,21 @@ function priceCard(p, title) {
       <tr><td>🌱 Spende Umweltschutz</td><td>${euro(p.donationCents)}</td></tr>
       <tr class="total"><td>Gesamt</td><td>${euro(p.totalCents)}</td></tr>
     </table>
-    <p class="muted small">Abgerechnet werden die tatsächlich gefahrenen Kilometer (GPS), höchstens ${Math.round((state.config.pricing.maxBilledKmFactor - 1) * 100)} % über der geplanten Strecke.</p>
+    <p class="muted small">${BILLING_RULE}</p>
   </div>`;
 }
 
 async function bookSelected() {
   const m = state.selected;
   try {
-    await api('/api/rides', { tripId: m.tripId, pickup: state.places.pickup, dropoff: state.places.dropoff, seats: state.seats });
+    await api('/api/rides', {
+      tripId: m.tripId,
+      pickup: state.places.pickup,
+      dropoff: state.places.dropoff,
+      seats: state.seats,
+      confirmPlannedRoute: true,
+      plannedKm: state.plannedRoute.distanceKm,
+    });
   } catch (err) {
     if (err.status === 402) {
       toast(err.message + ' Bitte Guthaben im Konto aufladen.');
@@ -467,7 +538,7 @@ async function bookSelected() {
     }
     throw err;
   }
-  toast('Anfrage gesendet – der Fahrer wird benachrichtigt.');
+  toast('Route bestätigt und angefragt – der Fahrer muss die Route ebenfalls bestätigen.');
   state.matches = [];
   render();
 }
@@ -477,7 +548,7 @@ async function renderRiderRide(panel, ride) {
     let trip = null;
     try { trip = (await api('/api/trips/' + ride.tripId)).trip; } catch {}
     drawMap({
-      routes: trip ? [{ coords: trip.route.coords, color: '#2563eb' }] : [],
+      routes: [...(trip ? [{ coords: trip.route.coords, color: '#2563eb', opacity: 0.5 }] : []), ...(ride.plannedRoute ? [{ coords: ride.plannedRoute.coords, ...PLANNED_STYLE }] : [])],
       points: [
         { ...ride.pickup, color: '#1f8a5b', text: 'A' },
         { ...ride.dropoff, color: '#b91c1c', text: 'B' },
@@ -492,10 +563,11 @@ async function renderRiderRide(panel, ride) {
       ${statusBadge(ride.status)}
       <p>${profileLink(ride.driverId, ride.driverName)} ${ride.vehicle ? '· ' + esc(ride.vehicle) : ''}</p>
       <p class="muted small">Abholung: ${esc(shortLabel(ride.pickup))}<br>Ziel: ${esc(shortLabel(ride.dropoff))}</p>
-      ${ride.status === 'picked_up' ? `<p>Gefahren: <b>${km(ride.trackedKm)}</b> von ca. ${km(ride.plannedKm)}</p>` : ''}
-      ${['requested', 'accepted'].includes(ride.status) ? '<button class="secondary" id="r-cancel">Stornieren</button>' : ''}
+      ${ride.plannedRoute ? plannedRouteHtml(ride.plannedRoute, `${ride.myRouteConfirmed ? '✔ von dir bestätigt' : ''}${ride.partnerRouteConfirmed ? ' · ✔ vom Fahrer bestätigt' : ' · ○ Fahrer hat noch nicht bestätigt'}`) : ''}
+      ${['requested', 'accepted'].includes(ride.status) ? '<button class="secondary" id="r-cancel" style="margin-top:10px">Stornieren</button>' : ''}
     </div>
-    ${priceCard(ride.estimate, 'Voraussichtlicher Preis')}`;
+    ${['picked_up', 'confirming'].includes(ride.status) ? confirmationCard(ride) : priceCard(ride.estimate, 'Preis für die geplante Route (Höchstbetrag)')}`;
+  bindConfirmButtons(panel);
   const c = $('#r-cancel');
   if (c) c.onclick = () => guard(async () => { await api(`/api/rides/${ride.id}/cancel`, {}); await refreshMe(); render(); }, c);
   await draw(true);
@@ -503,8 +575,8 @@ async function renderRiderRide(panel, ride) {
   state.pollTimer = setInterval(async () => {
     try { await loadRides(); } catch { return; }
     const now = state.rides.find((r) => r.id === ride.id);
-    if (!now || now.status !== ride.status || (now.status === 'picked_up' && now.trackedKm !== ride.trackedKm)) {
-      if (now && now.status === 'completed') toast(`Angekommen! Abgerechnet: ${euro(now.final.totalCents)} – danke fürs Teilen 🌱`);
+    if (!now || now.status !== ride.status || now.partnerEndConfirmed !== ride.partnerEndConfirmed || (now.status === 'picked_up' && now.trackedKm !== ride.trackedKm)) {
+      if (now && now.status === 'completed') toast(`Fahrt abgerechnet: ${km(now.final.km)} · ${euro(now.final.totalCents)} – danke fürs Teilen 🌱`);
       if (now && now.status === 'declined') toast('Der Fahrer hat abgelehnt. Bitte wähle einen anderen Fahrer.');
       await refreshMe();
       return render();
@@ -586,7 +658,7 @@ async function renderActiveTrip(panel) {
         ${tracking ? '<button class="secondary" id="d-stoptrack">Standort-Übertragung stoppen</button>' : '<button id="d-gps">📡 GPS-Standort teilen</button><button class="secondary" id="d-sim">Fahrt simulieren (Demo)</button>'}
         <button class="danger" id="d-end">Fahrt beenden</button>
       </div>
-      <p class="muted small">Die gefahrenen Kilometer jedes Mitfahrers werden aus deinem GPS-Standort berechnet.</p>
+      <p class="muted small">Die gefahrenen Kilometer jedes Mitfahrers werden aus deinem GPS-Standort gemessen. ${BILLING_RULE.replace('zahlst du', 'zahlt der Mitfahrer')}</p>
     </div>
     <div class="card">
       <h2>Mitfahrer</h2>
@@ -596,13 +668,14 @@ async function renderActiveTrip(panel) {
   panel.querySelectorAll('[data-act]').forEach((btn) =>
     btn.addEventListener('click', () =>
       guard(async () => {
-        const { ride } = await api(`/api/rides/${btn.dataset.id}/${btn.dataset.act}`, {});
-        if (ride.status === 'completed') toast(`Abgerechnet: ${km(ride.final.km)} – du erhältst ${euro(ride.final.driverCents)}`);
+        const body = btn.dataset.act === 'accept' ? { confirmPlannedRoute: true } : {};
+        await api(`/api/rides/${btn.dataset.id}/${btn.dataset.act}`, body);
         await refreshMe();
         render();
       }, btn),
     ),
   );
+  bindConfirmButtons(panel);
   const on = (id, fn) => { const el = $(id); if (el) el.onclick = fn; };
   on('#d-gps', startGps);
   on('#d-sim', startSimulation);
@@ -619,10 +692,12 @@ async function renderActiveTrip(panel) {
     points.push({ ...r.pickup, color: '#f59e0b', text: '↑', label: `Abholen: ${r.riderName}` });
     points.push({ ...r.dropoff, color: '#7c3aed', text: '↓', label: `Absetzen: ${r.riderName}` });
   });
-  drawMap({ routes: [{ coords: trip.route.coords }], points, driver: trip.position, fit: !renderActiveTrip.fitted });
+  const planned = rides.filter((r) => r.plannedRoute && ['requested', 'accepted', 'picked_up'].includes(r.status)).map((r) => ({ coords: r.plannedRoute.coords, ...PLANNED_STYLE }));
+  drawMap({ routes: [{ coords: trip.route.coords }, ...planned], points, driver: trip.position, fit: !renderActiveTrip.fitted });
   renderActiveTrip.fitted = true;
 
-  const signature = JSON.stringify(rides.map((r) => [r.id, r.status, r.trackedKm]));
+  const sig = (list) => JSON.stringify(list.map((r) => [r.id, r.status, r.trackedKm, r.partnerEndConfirmed]));
+  const signature = sig(rides);
   clearInterval(state.pollTimer);
   state.pollTimer = setInterval(async () => {
     try {
@@ -631,7 +706,9 @@ async function renderActiveTrip(panel) {
       state.trip = t;
       updateDriverMarker(t.position);
       const now = state.rides.filter((r) => r.tripId === t.id && OPEN_STATES.includes(r.status));
-      if (JSON.stringify(now.map((r) => [r.id, r.status, r.trackedKm])) !== signature) {
+      if (sig(now) !== signature) {
+        const done = state.rides.find((r) => r.tripId === t.id && r.status === 'completed' && rides.find((o) => o.id === r.id));
+        if (done) toast(`Fahrt mit ${done.riderName} abgerechnet: ${km(done.final.km)} · du erhältst ${euro(done.final.driverCents)}`);
         if (now.some((r) => r.status === 'requested' && !rides.find((o) => o.id === r.id))) toast('Neue Mitfahranfrage!');
         render();
       }
@@ -641,16 +718,15 @@ async function renderActiveTrip(panel) {
 
 function driverRideCard(r) {
   const actions = {
-    requested: `<button data-act="accept" data-id="${r.id}">Annehmen</button><button class="secondary" data-act="decline" data-id="${r.id}">Ablehnen</button>`,
+    requested: `<button data-act="accept" data-id="${r.id}">Route bestätigen & annehmen</button><button class="secondary" data-act="decline" data-id="${r.id}">Ablehnen</button>`,
     accepted: `<button data-act="pickup" data-id="${r.id}">Eingestiegen</button><button class="secondary" data-act="cancel" data-id="${r.id}">Stornieren</button>`,
-    picked_up: `<button data-act="complete" data-id="${r.id}">Am Ziel abgesetzt</button>`,
-  }[r.status];
+  }[r.status] || '';
   return `<div class="match">
     <div class="top">${profileLink(r.riderId, r.riderName)} ${statusBadge(r.status)}</div>
-    <div class="muted small">${r.seats} Pers. · ${esc(shortLabel(r.pickup))} → ${esc(shortLabel(r.dropoff))}</div>
-    <div class="muted small">Umweg ca. ${km(r.detourKm)} · Mitfahrt ${km(r.plannedKm)} · dein Anteil ca. <b>${euro(r.estimate.driverCents)}</b></div>
-    ${r.status === 'picked_up' ? `<div class="small">Gefahren (GPS): <b>${km(r.trackedKm)}</b></div>` : ''}
-    <div class="btn-row">${actions}</div>
+    <div class="muted small">${r.seats} Pers. · ${esc(shortLabel(r.pickup))} → ${esc(shortLabel(r.dropoff))} · Umweg ca. ${km(r.detourKm)}</div>
+    ${r.plannedRoute && ['requested', 'accepted'].includes(r.status) ? plannedRouteHtml(r.plannedRoute, `dein Anteil höchstens <b>${euro(r.estimate.driverCents)}</b> · ${r.partnerRouteConfirmed ? '✔ vom Mitfahrer bestätigt' : ''}${r.myRouteConfirmed ? ' · ✔ von dir bestätigt' : ''}`) : ''}
+    ${['picked_up', 'confirming'].includes(r.status) ? confirmationCard(r) : ''}
+    ${actions ? `<div class="btn-row">${actions}</div>` : ''}
   </div>`;
 }
 
@@ -819,7 +895,7 @@ async function renderAccount(panel) {
         <div class="match">
           <div class="top"><span>${r.role === 'rider' ? 'Mitgefahren bei' : 'Mitgenommen:'} <b>${esc(r.role === 'rider' ? r.driverName : r.riderName)}</b></span>
             <b>${r.role === 'rider' ? '−' + euro(r.final.totalCents) : '+' + euro(r.final.driverCents)}</b></div>
-          <div class="muted small">${new Date(r.completedAt).toLocaleString('de-DE')} · ${km(r.final.km)} (${r.final.billing === 'gps' ? 'GPS' : 'geplant'}) · ${r.final.co2SavedKg.toLocaleString('de-DE')} kg CO₂ gespart · ${euro(r.final.donationCents)} gespendet</div>
+          <div class="muted small">${new Date(r.completedAt).toLocaleString('de-DE')} · abgerechnet ${km(r.final.km)} (${BASIS[r.final.billing] || r.final.billing}${r.final.plannedKm ? `; geplant ${km(r.final.plannedKm)}, gefahren ${r.final.trackedKm > 0.2 ? km(r.final.trackedKm) : '–'}` : ''}) · ${r.final.co2SavedKg.toLocaleString('de-DE')} kg CO₂ gespart · ${euro(r.final.donationCents)} gespendet</div>
           ${(r.role === 'rider' ? r.ratingByRider : r.ratingByDriver) ? '' : `<div class="stars">${[1, 2, 3, 4, 5].map((s) => `<button data-rate="${r.id}" data-stars="${s}" title="${s} Sterne">☆</button>`).join('')}</div>`}
         </div>`).join('') : '<p class="muted">Noch keine abgeschlossenen Fahrten.</p>'}
     </div>
@@ -838,7 +914,7 @@ async function renderAccount(panel) {
 // ---------- Betreiber ----------
 async function renderAdmin(panel) {
   drawMap();
-  const [stats, { licenses }] = await Promise.all([api('/api/admin/stats'), api('/api/admin/licenses')]);
+  const [stats, { licenses }, { disputes }] = await Promise.all([api('/api/admin/stats'), api('/api/admin/licenses'), api('/api/admin/disputes')]);
   panel.innerHTML = `
     <div class="card">
       <h2>Betreiber-Übersicht</h2>
@@ -851,6 +927,20 @@ async function renderAdmin(panel) {
         <div class="stat"><b>${stats.co2SavedKg.toLocaleString('de-DE')} kg</b><span>CO₂ eingespart</span></div>
         <div class="stat"><b>${stats.activeTrips} / ${stats.verifiedDrivers}</b><span>Fahrer online / verifiziert</span></div>
       </div>
+    </div>
+    <div class="card">
+      <h2>Reklamationen (${disputes.length})</h2>
+      ${disputes.length ? disputes.map((r) => `
+        <div class="match">
+          <div class="top"><b>${esc(r.riderName)}</b> bei <b>${esc(r.driverName)}</b></div>
+          <div class="small">Gemeldet von ${r.dispute.by === 'rider' ? 'Mitfahrer' : 'Fahrer'}: „${esc(r.dispute.reason)}“</div>
+          <div class="muted small">Geplant ${km(r.settlementPreview.plannedKm)} · gefahren ${r.settlementPreview.trackedKm > 0.2 ? km(r.settlementPreview.trackedKm) : '–'} · nach Regel ${km(r.settlementPreview.billedKm)} = ${euro(r.settlementPreview.price.totalCents)}</div>
+          <div class="row"><div><label for="km-${r.id}">km abrechnen (leer = Regel, max. ${km(r.plannedKm)})</label><input id="km-${r.id}" type="number" min="0" max="${r.plannedKm}" step="0.1"></div></div>
+          <div class="btn-row">
+            <button data-resolve="bill" data-ride="${r.id}">Abrechnen</button>
+            <button class="danger" data-resolve="cancel" data-ride="${r.id}">Kostenlos stornieren</button>
+          </div>
+        </div>`).join('') : '<p class="muted">Keine offenen Reklamationen.</p>'}
     </div>
     <div class="card">
       <h2>Führerscheine prüfen (${licenses.length})</h2>
@@ -869,6 +959,13 @@ async function renderAdmin(panel) {
           </div>
         </div>`).join('') : '<p class="muted">Keine offenen Anträge.</p>'}
     </div>`;
+  panel.querySelectorAll('[data-resolve]').forEach((b) =>
+    (b.onclick = () => guard(async () => {
+      await api(`/api/admin/rides/${b.dataset.ride}/resolve`, { decision: b.dataset.resolve, km: $('#km-' + b.dataset.ride).value });
+      toast(b.dataset.resolve === 'bill' ? 'Fahrt abgerechnet.' : 'Fahrt storniert.');
+      render();
+    }, b)),
+  );
   panel.querySelectorAll('[data-decide]').forEach((b) =>
     (b.onclick = () => guard(async () => {
       const note = panel.querySelector(`[data-note="${b.dataset.user}"]`).value;

@@ -36,13 +36,13 @@ function co2SavedKg(passengerKm, pricing) {
 }
 
 /**
- * Bestimmt die abzurechnenden Kilometer.
- * Gemessene GPS-Kilometer werden bevorzugt, aber auf plannedKm × Faktor begrenzt,
- * damit Mitfahrer nicht für Umwege des Fahrers zahlen.
+ * Bestimmt die abzurechnenden Kilometer:
+ * die schnellste Route laut Plan – oder die tatsächlich gefahrene Strecke (GPS), sofern diese kürzer ist.
+ * Mitfahrer zahlen also nie mehr als die vorab bestätigte Route.
  */
-function billableKm(plannedKm, trackedKm, pricing) {
-  if (!(trackedKm > 0.2)) return plannedKm;
-  return Math.min(trackedKm, plannedKm * pricing.maxBilledKmFactor);
+function billableKm(plannedKm, trackedKm) {
+  if (!(trackedKm > 0.2)) return { km: plannedKm, basis: 'geplant' };
+  return trackedKm < plannedKm ? { km: trackedKm, basis: 'gefahren' } : { km: plannedKm, basis: 'geplant' };
 }
 
 const formatEuro = (cents) => (cents / 100).toFixed(2).replace('.', ',') + ' €';

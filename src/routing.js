@@ -72,6 +72,8 @@ async function resolvePlace(place) {
 async function route(from, to) {
   const a = await resolvePlace(from);
   const b = await resolvePlace(to);
+  const key = `route:${a.lat.toFixed(5)},${a.lng.toFixed(5)};${b.lat.toFixed(5)},${b.lng.toFixed(5)}`;
+  if (cache.has(key)) return cache.get(key);
   let result;
   try {
     result = config.googleMapsApiKey ? await googleRoute(a, b) : await osrmRoute(a, b);
@@ -80,7 +82,12 @@ async function route(from, to) {
     result = { coords: straightLine(a, b), distanceKm: km, durationMin: km /* ~60 km/h */, provider: 'luftlinie', warning: err.message };
   }
   result.coords = simplify(result.coords);
-  return { origin: a, destination: b, ...result };
+  const out = { origin: a, destination: b, ...result };
+  if (result.provider !== 'luftlinie') {
+    if (cache.size > 5000) cache.clear();
+    cache.set(key, out);
+  }
+  return out;
 }
 
 async function googleRoute(a, b) {

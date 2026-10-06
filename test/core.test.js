@@ -8,7 +8,7 @@ const { findMatches } = require('../src/matching');
 const { validateLicense, canDrive } = require('../src/license');
 const { parseGoogleMapsUrl } = require('../src/routing');
 
-const pricing = { ratePerKmCents: 25, commissionPercent: 10, donationCentsPerRide: 1, co2GramsPerCarKm: 150, maxBilledKmFactor: 1.25 };
+const pricing = { ratePerKmCents: 25, commissionPercent: 10, donationCentsPerRide: 1, co2GramsPerCarKm: 150 };
 const BERLIN = { lat: 52.52, lng: 13.405 };
 const HAMBURG = { lat: 53.5511, lng: 9.9937 };
 
@@ -51,10 +51,10 @@ test('Preis für mehrere Personen und Rundung in Cent', () => {
   assert.ok(Number.isInteger(f.commissionCents) && Number.isInteger(f.driverCents));
 });
 
-test('Abgerechnete km: GPS bevorzugt, aber gedeckelt', () => {
-  assert.equal(billableKm(10, 0, pricing), 10);
-  assert.equal(billableKm(10, 9.4, pricing), 9.4);
-  assert.equal(billableKm(10, 40, pricing), 12.5);
+test('Abgerechnet wird die geplante Route oder die gefahrene, sofern kürzer', () => {
+  assert.deepEqual(billableKm(10, 0), { km: 10, basis: 'geplant' }, 'ohne GPS: geplante Route');
+  assert.deepEqual(billableKm(10, 9.4), { km: 9.4, basis: 'gefahren' }, 'kürzer gefahren');
+  assert.deepEqual(billableKm(10, 14), { km: 10, basis: 'geplant' }, 'Umweg zahlt der Mitfahrer nicht');
 });
 
 test('Matching: findet Fahrer in Fahrtrichtung, ignoriert Gegenrichtung und Umwege', () => {

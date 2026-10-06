@@ -22,7 +22,8 @@ const routing = {
 };
 const config = {
   adminEmail: 'chef@example.org',
-  pricing: { ratePerKmCents: 25, commissionPercent: 10, donationCentsPerRide: 1, co2GramsPerCarKm: 150, maxBilledKmFactor: 1.25 },
+  pricing: { ratePerKmCents: 25, commissionPercent: 10, donationCentsPerRide: 1, co2GramsPerCarKm: 150 },
+  rides: { autoConfirmHours: 24 },
   matching: { maxDetourKm: 3, maxResults: 10 },
 };
 
@@ -178,9 +179,9 @@ test('Profile, Privatsphäre und vergröberte Fahrerdaten', async (t) => {
   const dropoff = pointAlongRoute(trip.route.coords, 15);
   const m = (await rider('POST', '/api/match', { pickup, dropoff })).matches[0];
   assert.equal(m.origin.label, '10115 Berlin, Deutschland');
-  const { ride } = await rider('POST', '/api/rides', { tripId: trip.id, pickup, dropoff });
+  const { ride } = await rider('POST', '/api/rides', { tripId: trip.id, pickup, dropoff, confirmPlannedRoute: true });
   assert.equal((await rider('GET', `/api/users/${d.id}/profile`)).profile.phone, null, 'erst nach Bestätigung');
-  await driver('POST', `/api/rides/${ride.id}/accept`, {});
+  await driver('POST', `/api/rides/${ride.id}/accept`, { confirmPlannedRoute: true });
   assert.equal((await rider('GET', `/api/users/${d.id}/profile`)).profile.phone, '+49 170 1234567');
   assert.equal((await rider('GET', `/api/trips/${trip.id}`)).trip.origin.label, A.label);
   assert.equal((await stranger('GET', `/api/users/${d.id}/profile`)).profile.phone, null);
