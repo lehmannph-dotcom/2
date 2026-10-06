@@ -1416,14 +1416,12 @@ const CAT_LABEL = { promoter: 'Promotor', passive: 'Neutral', detractor: 'Kritik
 const pts = (n) => `${Number(n).toLocaleString('de-DE')} ${n === 1 ? 'Punkt' : 'Punkte'}`;
 
 function pointsHint(partnerName) {
-  const f = state.config && state.config.points;
-  if (!f) return '';
-  return `<p class="muted small">🎯 Punkte: Je besser dich ${esc(partnerName)} bewertet, desto mehr Punkte gibt es – Promotor ×${f.promoter}, neutral ×${f.passive}, Kritiker ×${f.detractor}, jeweils × eingesparte kg CO₂.</p>`;
+  return `<p class="muted small">🎯 Punkte: Die Bewertung, die du von ${esc(partnerName)} bekommst, ist dein Faktor – 10 bis 7 zählen voll (×10 … ×7), 4–6 zählen ×1, 0–3 bringen keine Punkte. Multipliziert mit den eingesparten kg CO₂.</p>`;
 }
 
 function ridePointsLine(p) {
   if (!p) return '';
-  return `<span class="points-chip" title="${p.rated ? `Bewertung: ${CAT_LABEL[p.category]}` : 'Noch nicht bewertet – neutraler Faktor'}">+${pts(p.points)} <span class="muted">(×${p.factor} · ${p.co2Kg.toLocaleString('de-DE')} kg CO₂${p.rated ? '' : ' · vorläufig'})</span></span>`;
+  return `<span class="points-chip" title="${p.rated ? `Bewertet mit ${p.score} (${CAT_LABEL[p.category]})` : 'Noch nicht bewertet – vorläufiger Faktor'}">+${pts(p.points)} <span class="muted">(×${p.factor} · ${p.co2Kg.toLocaleString('de-DE')} kg CO₂${p.rated ? '' : ' · vorläufig'})</span></span>`;
 }
 
 async function renderPoints(panel) {
@@ -1444,11 +1442,12 @@ async function renderPoints(panel) {
       <h2>So sammelst du Punkte</h2>
       <p class="formula">Punkte = <b>Faktor</b> × <b>eingesparte kg CO₂</b></p>
       <table class="breakdown">
-        <tr><td>😊 Promotor (9–10)</td><td><b>×${g.factors.promoter}</b></td></tr>
-        <tr><td>😐 Neutral (7–8)</td><td><b>×${g.factors.passive}</b></td></tr>
-        <tr><td>🙁 Kritiker (0–6)</td><td><b>×${g.factors.detractor}</b></td></tr>
+        <tr><td>😊 Promotor: 10 · 9</td><td><b>×10 · ×9</b></td></tr>
+        <tr><td>😐 Passiv: 8 · 7</td><td><b>×8 · ×7</b></td></tr>
+        <tr><td>🙁 Kritiker: 6 · 5 · 4</td><td><b>×1</b></td></tr>
+        <tr><td>🙁 Kritiker: 3 · 2 · 1 · 0</td><td><b>×0</b> <span class="muted small">(keine Punkte)</span></td></tr>
       </table>
-      <p class="muted small">Der Faktor richtet sich nach der Bewertung, die du vom jeweils anderen bekommst: Fahrer werden vom Mitfahrer bewertet, Mitfahrer vom Fahrer. Solange keine Bewertung vorliegt, zählt der neutrale Faktor. Längere geteilte Strecken und mehr Mitfahrer sparen mehr CO₂ – und bringen mehr Punkte.</p>
+      <p class="muted small">Dein Faktor ist die Bewertung (0–10), die du vom jeweils anderen bekommst: Fahrer werden vom Mitfahrer bewertet, Mitfahrer vom Fahrer. Solange keine Bewertung vorliegt, zählt vorläufig ×${g.unratedFactor}. Beispiel: 20 km geteilt ≈ 3 kg CO₂ → mit 10 bewertet 30 Punkte, mit 7 bewertet 21, mit 5 bewertet 3, mit 2 bewertet 0.</p>
     </div>
 
     <div class="card">
@@ -1465,7 +1464,7 @@ async function renderPoints(panel) {
 
     <div class="card">
       <h2>Punkte-Verlauf</h2>
-      ${g.history.length ? `<table class="breakdown">${g.history.map((h) => `<tr><td>${h.role === 'driver' ? '🚗 Mitgenommen' : '🧍 Mitgefahren bei'} ${esc(h.partner)}<br><span class="muted small">${new Date(h.at).toLocaleDateString('de-DE')} · ${km(h.km)} · ${h.rated ? `bewertet als ${CAT_LABEL[h.category]}` : 'noch nicht bewertet'}</span></td><td><b>+${h.points}</b><br><span class="muted small">×${h.factor} · ${h.co2Kg.toLocaleString('de-DE')} kg</span></td></tr>`).join('')}</table>` : '<p class="muted">Noch keine Punkte – teile deine erste Fahrt! 🌱</p>'}
+      ${g.history.length ? `<table class="breakdown">${g.history.map((h) => `<tr><td>${h.role === 'driver' ? '🚗 Mitgenommen' : '🧍 Mitgefahren bei'} ${esc(h.partner)}<br><span class="muted small">${new Date(h.at).toLocaleDateString('de-DE')} · ${km(h.km)} · ${h.rated ? `bewertet mit ${h.score} (${CAT_LABEL[h.category]})` : 'noch nicht bewertet'}</span></td><td><b>+${h.points}</b><br><span class="muted small">×${h.factor} · ${h.co2Kg.toLocaleString('de-DE')} kg</span></td></tr>`).join('')}</table>` : '<p class="muted">Noch keine Punkte – teile deine erste Fahrt! 🌱</p>'}
     </div>`;
 
   const loadBoard = async (period) => {

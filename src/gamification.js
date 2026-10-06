@@ -3,15 +3,16 @@
 /**
  * Gamification: Punkte für geteilte Fahrten.
  *
- *   Punkte je Fahrt = Faktor(Bewertung durch den jeweils anderen) × CO₂-Ersparnis der Fahrt in kg
+ *   Punkte je Fahrt = Faktor × CO₂-Ersparnis der Fahrt in kg
  *
- *   Promotor (9–10)  ×10
- *   Neutral  (7–8)   ×5
- *   Kritiker (0–6)   ×1
+ * Der Faktor ist der NPS-Wert (0–10), den man vom jeweils anderen bekommt:
+ *   Promotoren (9–10) und Passive (7–8): Faktor = Bewertung selbst (×10, ×9, ×8, ×7)
+ *   Kritiker 4–6: ×1
+ *   Kritiker 0–3: ×0 – keine Punkte
  *
  * Fahrer werden vom Mitfahrer bewertet (Pflicht bei der Zahlung), Mitfahrer optional vom Fahrer.
- * Solange keine Bewertung vorliegt, zählt der neutrale Faktor – wer nicht bewertet wird, soll
- * nicht leer ausgehen. Kommt die Bewertung später, werden die Punkte neu berechnet.
+ * Solange keine Bewertung vorliegt, zählt points.unratedFactor (Standard 7 = schwächste passive
+ * Bewertung). Kommt die Bewertung später, werden die Punkte neu berechnet.
  */
 
 const { category } = require('./nps');
@@ -36,18 +37,24 @@ const BADGES = [
   { id: 'streak-5', icon: '🔥', name: 'Promotor-Serie', desc: '5 Promotor-Bewertungen in Folge', test: (s) => s.bestStreak >= 5 },
 ];
 
-const factorFor = (rating, factors) => factors[rating ? category(rating.score) : 'passive'];
+/** Faktor aus dem NPS-Wert: 7–10 → Wert selbst, 4–6 → 1, 0–3 → 0. */
+function factorForScore(score) {
+  if (score >= 7) return score;
+  if (score >= 4) return 1;
+  return 0;
+}
 
 /** Punkte, die userId für eine abgeschlossene Fahrt erhält. */
-function ridePoints(ride, userId, factors) {
+function ridePoints(ride, userId, settings) {
   if (ride.status !== 'completed' || !ride.final) return null;
   const received = userId === ride.riderId ? ride.npsByDriver : ride.npsByRider;
-  const factor = factorFor(received, factors);
+  const factor = received ? factorForScore(received.score) : settings.unratedFactor;
   const co2Kg = ride.final.co2SavedKg || 0;
   return {
     points: Math.round(factor * co2Kg),
     factor,
     co2Kg,
+    score: received ? received.score : null,
     category: received ? category(received.score) : null,
     rated: Boolean(received),
   };
@@ -69,7 +76,7 @@ function levelFor(points) {
 const monthKey = (iso) => String(iso || '').slice(0, 7);
 
 /** Einmaliger Durchlauf über alle Fahrten → Punktestand aller Nutzer. */
-function computeAll(rides, factors, { month } = {}) {
+function computeAll(rides, settings, { month } = {}) {
   const byUser = new Map();
   const get = (id) => {
     if (!byUser.has(id)) byUser.set(id, { total: 0, month: 0, rides: 0, asDriver: 0, asRider: 0, co2Kg: 0, promoters: 0, streak: 0, bestStreak: 0 });
@@ -78,7 +85,7 @@ function computeAll(rides, factors, { month } = {}) {
   const done = rides.filter((r) => r.status === 'completed' && r.final).sort((a, b) => a.completedAt.localeCompare(b.completedAt));
   for (const ride of done) {
     for (const userId of [ride.driverId, ride.riderId]) {
-      const p = ridePoints(ride, userId, factors);
+      const p = ridePoints(ride, userId, settings);
       const s = get(userId);
       s.total += p.points;
       if (month && monthKey(ride.completedAt) === month) s.month += p.points;
@@ -109,4 +116,4 @@ function summaryFor(stats) {
   };
 }
 
-module.exports = { LEVELS, BADGES, ridePoints, levelFor, computeAll, summaryFor, monthKey };
+module.exports = { LEVELS, BADGES, factorForScore, ridePoints, levelFor, computeAll, summaryFor, monthKey };

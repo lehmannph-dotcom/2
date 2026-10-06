@@ -90,16 +90,17 @@ Statt Sternen fragt joinmyride.com: **„Wie wahrscheinlich ist es, dass du *Nam
 
 ## Gamification: Punkte für geteiltes CO₂
 
-**Punkte je Fahrt = Faktor × eingesparte kg CO₂ der Fahrt.** Der Faktor richtet sich nach der Bewertung, die man vom **jeweils anderen** bekommt:
+**Punkte je Fahrt = Faktor × eingesparte kg CO₂ der Fahrt.** Der Faktor ist die **NPS-Bewertung (0–10), die man vom jeweils anderen bekommt**:
 
-| Erhaltene Bewertung | Faktor (`.env`) |
+| Erhaltene Bewertung | Faktor |
 |---|---|
-| 😊 Promotor (9–10) | ×10 (`POINTS_FACTOR_PROMOTER`) |
-| 😐 Neutral (7–8) | ×5 (`POINTS_FACTOR_NEUTRAL`) |
-| 🙁 Kritiker (0–6) | ×1 (`POINTS_FACTOR_DETRACTOR`) |
+| 😊 Promotor 10 / 9 | ×10 / ×9 |
+| 😐 Passiv 8 / 7 | ×8 / ×7 |
+| 🙁 Kritiker 4–6 | ×1 |
+| 🙁 Kritiker 0–3 | ×0 (keine Punkte) |
 
-* Fahrer werden vom Mitfahrer bewertet (Pflicht), Mitfahrer vom Fahrer (optional). Ohne Bewertung zählt vorläufig der neutrale Faktor; kommt die Bewertung später, wird neu berechnet.
-* Beispiel: 20 km geteilt → 3 kg CO₂ → als Promotor bewertet 30 Punkte, neutral 15, als Kritiker 3.
+* Fahrer werden vom Mitfahrer bewertet (Pflicht), Mitfahrer vom Fahrer (optional). Ohne Bewertung zählt vorläufig ×7 (`POINTS_FACTOR_UNRATED`); kommt die Bewertung später, wird neu berechnet.
+* Beispiel: 20 km geteilt → 3 kg CO₂ → mit 10 bewertet 30 Punkte, mit 8 → 24, mit 5 → 3, mit 2 → 0.
 * **Level:** 🌱 Setzling (0) → 🌿 Sprössling (50) → 🪴 Jungbaum (200) → 🌳 Baum (500) → 🌲 Wald (1.500) → 🌍 Klimaheld (5.000).
 * **Abzeichen:** Erste Fahrt, Stammgast (10), Vielteiler (50), Beide Seiten, 10 kg / 100 kg CO₂, Empfehlenswert (5 Promotoren), Promotor-Serie (5 in Folge).
 * **Bestenliste** (Monat / gesamt): nur Mitglieder, die zugestimmt haben (Standard: aus), mit Anzeigenamen gemäß Privatsphäre. Den eigenen Platz sieht man immer.

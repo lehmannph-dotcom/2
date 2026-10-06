@@ -30,7 +30,7 @@ const config = {
   adminEmail: 'chef@example.org',
   pricing: { ratePerKmCents: 25, commissionPercent: 10, donationCentsPerRide: 1, co2GramsPerCarKm: 150 },
   rides: { autoConfirmHours: 24 },
-  points: { promoter: 10, passive: 5, detractor: 1 },
+  points: { unratedFactor: 7 },
   matching: { maxDetourKm: 3, maxResults: 10 },
 };
 
@@ -289,13 +289,13 @@ test('Punkte nach der Fahrt und Bestenliste nur mit Einwilligung', async (t) => 
   await driver('POST', `/api/rides/${ride.id}/confirm`, {});
   const done = (await rider('POST', `/api/rides/${ride.id}/confirm`, { nps: 10 })).ride;
   const co2 = done.final.co2SavedKg;
-  // Fahrer: Promotor-Bewertung → ×10
+  // Fahrer: mit 10 bewertet → ×10
   const dp = await driver('GET', '/api/me/points');
   assert.equal(dp.points, Math.round(10 * co2));
   assert.equal(dp.history[0].factor, 10);
-  // Mitfahrer: (noch) nicht bewertet → neutral ×5
-  assert.equal((await rider('GET', '/api/me/points')).points, Math.round(5 * co2));
-  // Fahrer bewertet Mitfahrer als Kritiker → ×1
+  // Mitfahrer: (noch) nicht bewertet → ×7
+  assert.equal((await rider('GET', '/api/me/points')).points, Math.round(7 * co2));
+  // Fahrer bewertet Mitfahrer mit 5 → ×1
   await driver('POST', `/api/rides/${ride.id}/rate`, { nps: 5 });
   const rp = await rider('GET', '/api/me/points');
   assert.equal(rp.points, Math.round(1 * co2));

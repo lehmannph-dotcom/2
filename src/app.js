@@ -411,7 +411,7 @@ function createApp({ store, config, routing }) {
         km: r.final.km,
         ...game.ridePoints(r, user.id, config.points),
       }));
-    return { ...summary, factors: config.points, levels: game.LEVELS, history, leaderboardOptIn: privacyOf(user).showOnLeaderboard };
+    return { ...summary, unratedFactor: config.points.unratedFactor, levels: game.LEVELS, history, leaderboardOptIn: privacyOf(user).showOnLeaderboard };
   });
 
   // Bestenliste: nur Mitglieder, die zugestimmt haben (Privatsphäre-Einstellung), Anzeigename gemäß Privatsphäre.

@@ -24,7 +24,7 @@ const config = {
   adminEmail: 'chef@example.org',
   pricing: { ratePerKmCents: 25, commissionPercent: 10, donationCentsPerRide: 1, co2GramsPerCarKm: 150 },
   rides: { autoConfirmHours: 24 },
-  points: { promoter: 10, passive: 5, detractor: 1 },
+  points: { unratedFactor: 7 },
   matching: { maxDetourKm: 3, maxResults: 10 },
 };
 
