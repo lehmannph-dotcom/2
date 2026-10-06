@@ -366,38 +366,101 @@ function plannedRouteHtml(route, note) {
   return `<div class="planned"><b>🗺️ Geplante Route (schnellste):</b> ${km(route.distanceKm)} · ca. ${Math.round(route.durationMin)} min${estimated}${note ? `<div class="muted small">${note}</div>` : ''}</div>`;
 }
 
-/** Bestätigung des Fahrtendes für Fahrer und Mitfahrer – mit der geplanten Route als Basis. */
+// ---------- Bewertung nach NPS-Logik (0–10) ----------
+const bewertungen = (n) => `${n} ${n === 1 ? 'Bewertung' : 'Bewertungen'}`;
+const NPS_CAT = (n) => (n >= 9 ? 'promoter' : n >= 7 ? 'passive' : 'detractor');
+const NPS_COMMENT = {
+  promoter: 'Was hat dir besonders gefallen? (optional)',
+  passive: 'Was hätte die Fahrt noch besser gemacht? (optional)',
+  detractor: 'Was ist schiefgelaufen? (optional – für echte Probleme bitte „Problem melden“)',
+};
+
+function npsWidget(question) {
+  return `<div class="nps">
+    <p class="nps-q">${esc(question)}</p>
+    <div class="nps-scale" role="radiogroup">${Array.from({ length: 11 }, (_, i) => `<button type="button" class="nps-btn ${NPS_CAT(i)}" data-score="${i}" role="radio" aria-checked="false">${i}</button>`).join('')}</div>
+    <div class="nps-legend"><span>unwahrscheinlich</span><span>sehr wahrscheinlich</span></div>
+    <label class="nps-comment-label" hidden></label>
+    <textarea class="nps-comment" maxlength="500" hidden></textarea>
+  </div>`;
+}
+
+function npsBadge(summary, label = 'NPS') {
+  if (!summary || !summary.count) return '<span class="badge">Neu – noch keine Bewertung</span>';
+  const cls = summary.score >= 50 ? 'ok' : summary.score >= 0 ? 'warn' : 'bad';
+  return `<span class="badge ${cls}" title="${summary.promoters} Promotoren · ${summary.passives} Passive · ${summary.detractors} Kritiker">${label} ${summary.score > 0 ? '+' : ''}${summary.score} · ${bewertungen(summary.count)}</span>`;
+}
+
+/** Macht alle NPS-Formulare in root bedienbar; onSubmit erhält {nps, comment}. */
+function bindNpsForms(root, selector, onSubmit) {
+  root.querySelectorAll(selector).forEach((form) => {
+    const submit = form.querySelector('[data-submit]');
+    form.querySelectorAll('.nps-btn').forEach((b) =>
+      b.addEventListener('click', () => {
+        form.dataset.score = b.dataset.score;
+        form.querySelectorAll('.nps-btn').forEach((x) => {
+          x.classList.toggle('selected', x === b);
+          x.setAttribute('aria-checked', String(x === b));
+        });
+        const label = form.querySelector('.nps-comment-label');
+        label.textContent = NPS_COMMENT[NPS_CAT(Number(b.dataset.score))];
+        label.hidden = false;
+        form.querySelector('.nps-comment').hidden = false;
+        if (submit) submit.disabled = false;
+      }),
+    );
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const body = form.dataset.score !== undefined ? { nps: Number(form.dataset.score), comment: form.querySelector('.nps-comment').value } : {};
+      guard(() => onSubmit(form, body), submit);
+    });
+  });
+}
+
+/**
+ * Fahrtende: Gezahlt wird, sobald der Fahrer den Mitfahrer abgesetzt hat
+ * und der Mitfahrer die Fahrt bewertet hat (NPS 0–10).
+ */
 function confirmationCard(r) {
   const p = r.settlementPreview;
   if (!p) return '';
-  const partner = r.role === 'driver' ? 'Mitfahrer' : 'Fahrer';
   const measuring = r.status === 'picked_up';
+  const isRider = r.role === 'rider';
+  const mine = isRider ? (r.myEndConfirmed ? '✔ Du hast die Fahrt bewertet.' : '○ Deine Bewertung fehlt.') : (r.myEndConfirmed ? '✔ Du hast das Absetzen bestätigt.' : '○ Absetzen noch nicht bestätigt.');
+  const theirs = isRider ? (r.partnerEndConfirmed ? '✔ Der Fahrer hat dich abgesetzt.' : '○ Der Fahrer hat das Absetzen noch nicht bestätigt.') : (r.partnerEndConfirmed ? '✔ Der Mitfahrer hat die Fahrt bewertet.' : '○ Der Mitfahrer hat noch nicht bewertet.');
+  const open = !r.myEndConfirmed && r.status !== 'disputed';
   return `<div class="card confirm-card">
-    <h3>✅ Fahrt bestätigen</h3>
+    <h3>${isRider ? '🏁 Angekommen? Bewerten & bezahlen' : '🏁 Mitfahrer absetzen'}</h3>
     <table class="breakdown">
       <tr><td>Geplante Route (schnellste)</td><td>${km(p.plannedKm)}${r.plannedRoute ? ` · ${Math.round(r.plannedRoute.durationMin)} min` : ''}</td></tr>
       <tr><td>Gefahren (GPS)${measuring ? ' <span class="muted small">– läuft</span>' : ''}</td><td>${p.trackedKm > 0.2 ? km(p.trackedKm) : '–'}</td></tr>
       <tr class="total"><td>Abgerechnet: ${BASIS[p.basis]}</td><td>${km(p.billedKm)}</td></tr>
-      <tr><td>${r.role === 'driver' ? 'Dein Anteil' : 'Du zahlst'}</td><td><b>${euro(r.role === 'driver' ? p.price.driverCents : p.price.totalCents)}</b></td></tr>
+      <tr><td>${isRider ? 'Du zahlst' : 'Dein Anteil'}</td><td><b>${euro(isRider ? p.price.totalCents : p.price.driverCents)}</b></td></tr>
     </table>
-    <p class="muted small">${r.role === 'driver' ? BILLING_RULE.replace('zahlst du', 'zahlt der Mitfahrer') : BILLING_RULE}</p>
-    <p class="small">${r.myEndConfirmed ? '✔ Du hast bestätigt.' : '○ Deine Bestätigung fehlt.'}<br>${r.partnerEndConfirmed ? `✔ ${partner} hat bestätigt.` : `○ ${partner} hat noch nicht bestätigt.`}
+    <p class="muted small">${isRider ? BILLING_RULE : BILLING_RULE.replace('zahlst du', 'zahlt der Mitfahrer')}<br>
+      <b>Gezahlt wird, sobald der Fahrer ${isRider ? 'dich' : 'den Mitfahrer'} abgesetzt und ${isRider ? 'du die Fahrt' : 'der Mitfahrer die Fahrt'} bewertet ${isRider ? 'hast' : 'hat'}.</b> Die Bewertung ändert den Preis nicht.</p>
+    <p class="small">${mine}<br>${theirs}
       ${r.autoConfirmAt && !(r.myEndConfirmed && r.partnerEndConfirmed) ? `<br><span class="muted">Ohne Rückmeldung gilt die Fahrt am ${new Date(r.autoConfirmAt).toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' })} als bestätigt.</span>` : ''}</p>
     ${r.status === 'disputed' ? `<p class="small"><span class="badge bad">Reklamation</span> ${esc(r.dispute.reason)}</p>` : ''}
-    ${!r.myEndConfirmed && r.status !== 'disputed' ? `<div class="btn-row">
-      <button data-confirm="${r.id}">${measuring && r.role === 'driver' ? 'Am Ziel – Fahrt bestätigen' : 'Fahrt bestätigen'}</button>
-      <button class="secondary" data-dispute="${r.id}">Problem melden</button></div>` : ''}
+    ${open && isRider ? `<form class="nps-form" data-confirm-form="${r.id}">
+        ${npsWidget(`Wie wahrscheinlich ist es, dass du ${r.driverName} weiterempfiehlst?`)}
+        <div class="btn-row"><button data-submit disabled>Bewerten & bezahlen</button><button type="button" class="secondary" data-dispute="${r.id}">Problem melden</button></div>
+      </form>` : ''}
+    ${open && !isRider ? `<form class="nps-form" data-confirm-form="${r.id}">
+        <details><summary class="small">Optional: ${esc(r.riderName)} bewerten</summary>${npsWidget(`Wie wahrscheinlich ist es, dass du ${r.riderName} anderen Fahrern weiterempfiehlst?`)}</details>
+        <div class="btn-row"><button data-submit>${measuring ? 'Mitfahrer abgesetzt' : 'Absetzen bestätigen'}</button><button type="button" class="secondary" data-dispute="${r.id}">Problem melden</button></div>
+      </form>` : ''}
   </div>`;
 }
 
 function bindConfirmButtons(root) {
-  root.querySelectorAll('[data-confirm]').forEach((b) => (b.onclick = () => guard(async () => {
-    const { ride } = await api(`/api/rides/${b.dataset.confirm}/confirm`, {});
-    if (ride.status === 'completed') toast(`Fahrt bestätigt und abgerechnet: ${km(ride.final.km)} · ${euro(ride.role === 'driver' ? ride.final.driverCents : ride.final.totalCents)}`);
-    else toast('Bestätigt – wartet auf die Bestätigung des Fahrtpartners.');
+  bindNpsForms(root, '[data-confirm-form]', async (form, body) => {
+    const { ride } = await api(`/api/rides/${form.dataset.confirmForm}/confirm`, body);
+    if (ride.status === 'completed') toast(`Bezahlt: ${km(ride.final.km)} · ${euro(ride.role === 'driver' ? ride.final.driverCents : ride.final.totalCents)} – danke! 🌱`);
+    else toast(ride.role === 'rider' ? 'Danke für deine Bewertung! Gezahlt wird, sobald der Fahrer das Absetzen bestätigt.' : 'Abgesetzt – gezahlt wird, sobald der Mitfahrer bewertet hat.');
     await refreshMe();
     render();
-  }, b)));
+  });
   root.querySelectorAll('[data-dispute]').forEach((b) => (b.onclick = () => {
     openModal(`<h2>Problem melden</h2>
       <p class="muted">Die Fahrt wird dann nicht automatisch abgerechnet. Der Betreiber prüft den Fall und meldet sich bei euch.</p>
@@ -468,7 +531,7 @@ async function renderMatches() {
       <div class="match ${state.selected && state.selected.tripId === m.tripId ? 'selected' : ''}" data-i="${i}">
         <div class="top">
           <div>${profileLink(m.driverId, m.driverName)} ${i === 0 ? '<span class="badge best">Beste Wahl</span>' : ''}<br>
-            <span class="muted small">★ ${m.driverRating} · ${esc(m.vehicle || 'Pkw')} · ${m.seatsFree} frei</span></div>
+            ${npsBadge(m.driverNps)}<br><span class="muted small">${esc(m.vehicle || 'Pkw')} · ${m.seatsFree} frei</span></div>
           <div class="price">${euro(m.price.totalCents)}</div>
         </div>
         <div class="muted small" style="margin-top:6px">
@@ -882,7 +945,7 @@ async function renderAccount(panel) {
       <div class="stats">
         <div class="stat"><b>${euro(me.walletCents - me.reservedCents)}</b><span>verfügbares Guthaben${me.reservedCents ? ` (${euro(me.reservedCents)} reserviert)` : ''}</span></div>
         <div class="stat"><b>${me.co2SavedKg.toLocaleString('de-DE')} kg</b><span>CO₂ gemeinsam eingespart</span></div>
-        <div class="stat"><b>${me.rating ? '★ ' + me.rating : '–'}</b><span>Bewertung (${me.ratingCount})</span></div>
+        <div class="stat"><b>${me.nps.count ? (me.nps.score > 0 ? '+' : '') + me.nps.score : '–'}</b><span>dein NPS (${bewertungen(me.nps.count)}: ${me.nps.promoters} 😊 · ${me.nps.passives} 😐 · ${me.nps.detractors} 🙁)</span></div>
         <div class="stat"><b>${me.canDrive ? '✅' : '—'}</b><span>Fahrer verifiziert</span></div>
       </div>
       <h3 style="margin-top:14px">Guthaben aufladen</h3>
@@ -896,7 +959,7 @@ async function renderAccount(panel) {
           <div class="top"><span>${r.role === 'rider' ? 'Mitgefahren bei' : 'Mitgenommen:'} <b>${esc(r.role === 'rider' ? r.driverName : r.riderName)}</b></span>
             <b>${r.role === 'rider' ? '−' + euro(r.final.totalCents) : '+' + euro(r.final.driverCents)}</b></div>
           <div class="muted small">${new Date(r.completedAt).toLocaleString('de-DE')} · abgerechnet ${km(r.final.km)} (${BASIS[r.final.billing] || r.final.billing}${r.final.plannedKm ? `; geplant ${km(r.final.plannedKm)}, gefahren ${r.final.trackedKm > 0.2 ? km(r.final.trackedKm) : '–'}` : ''}) · ${r.final.co2SavedKg.toLocaleString('de-DE')} kg CO₂ gespart · ${euro(r.final.donationCents)} gespendet</div>
-          ${(r.role === 'rider' ? r.ratingByRider : r.ratingByDriver) ? '' : `<div class="stars">${[1, 2, 3, 4, 5].map((s) => `<button data-rate="${r.id}" data-stars="${s}" title="${s} Sterne">☆</button>`).join('')}</div>`}
+          ${r.myRating ? `<div class="muted small">Deine Bewertung: <b>${r.myRating.score}</b>/10</div>` : `<form class="nps-form" data-rate-form="${r.id}">${npsWidget(`Wie wahrscheinlich ist es, dass du ${r.role === 'rider' ? r.driverName : r.riderName} weiterempfiehlst?`)}<div class="btn-row"><button data-submit disabled>Bewertung senden</button></div></form>`}
         </div>`).join('') : '<p class="muted">Noch keine abgeschlossenen Fahrten.</p>'}
     </div>
     <div class="card">
@@ -906,9 +969,11 @@ async function renderAccount(panel) {
   panel.querySelectorAll('[data-topup]').forEach((b) =>
     (b.onclick = () => guard(async () => { await api('/api/wallet/topup', { amountCents: Number(b.dataset.topup) }); toast('Guthaben aufgeladen.'); render(); }, b)),
   );
-  panel.querySelectorAll('[data-rate]').forEach((b) =>
-    (b.onclick = () => guard(async () => { await api(`/api/rides/${b.dataset.rate}/rate`, { stars: Number(b.dataset.stars) }); toast('Danke für deine Bewertung!'); render(); }, b)),
-  );
+  bindNpsForms(panel, '[data-rate-form]', async (form, body) => {
+    await api(`/api/rides/${form.dataset.rateForm}/rate`, body);
+    toast('Danke für deine Bewertung!');
+    render();
+  });
 }
 
 // ---------- Betreiber ----------
@@ -925,6 +990,8 @@ async function renderAdmin(panel) {
         <div class="stat"><b>${stats.ridesCompleted}</b><span>abgeschlossene Mitfahrten</span></div>
         <div class="stat"><b>${km(stats.kmShared)}</b><span>geteilte Kilometer</span></div>
         <div class="stat"><b>${stats.co2SavedKg.toLocaleString('de-DE')} kg</b><span>CO₂ eingespart</span></div>
+        <div class="stat"><b>${stats.driverNps.count ? (stats.driverNps.score > 0 ? '+' : '') + stats.driverNps.score : '–'}</b><span>NPS der Fahrer (${bewertungen(stats.driverNps.count)})</span></div>
+        <div class="stat"><b>${stats.openDisputes}</b><span>offene Reklamationen</span></div>
         <div class="stat"><b>${stats.activeTrips} / ${stats.verifiedDrivers}</b><span>Fahrer online / verifiziert</span></div>
       </div>
     </div>
@@ -996,7 +1063,7 @@ function profileHtml(p) {
         <div class="chips">
           ${p.verifiedDriver ? '<span class="badge ok">✔ Führerschein geprüft</span>' : ''}
           ${p.mfaEnabled ? '<span class="badge ok">🔐 2FA gesichert</span>' : ''}
-          ${p.rating ? `<span class="badge">★ ${p.rating} (${p.ratingCount})</span>` : '<span class="badge">Noch keine Bewertung</span>'}
+          ${npsBadge(p.nps)}
         </div>
       </div>
     </div>

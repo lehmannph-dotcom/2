@@ -6,6 +6,8 @@
  * gemeinsame Fahrt nötig ist; Telefonnummer nur bei bestätigter Buchung und nur mit Freigabe.
  */
 
+const { summary: npsSummary } = require('./nps');
+
 const LANGUAGES = ['Deutsch', 'Englisch', 'Französisch', 'Spanisch', 'Italienisch', 'Türkisch', 'Polnisch', 'Russisch', 'Arabisch', 'Ukrainisch'];
 const PREFERENCES = {
   smoking: ['nein', 'ja'],
@@ -99,8 +101,7 @@ function publicProfile(user, viewer, { hasBooking = false, stats = {} } = {}) {
     vehicle: prof.vehicle,
     hasPhoto: Boolean(prof.photo && (priv.showPhoto || self)),
     phone: prof.phone && (self || (hasBooking && priv.phoneVisibility === 'booked')) ? prof.phone : null,
-    rating: user.ratingCount ? Math.round((user.ratingSum / user.ratingCount) * 10) / 10 : null,
-    ratingCount: user.ratingCount || 0,
+    nps: npsSummary(user),
     verifiedDriver: Boolean(lic && lic.status === 'verified' && new Date(lic.expiry) > new Date()),
     mfaEnabled: Boolean(user.mfa && user.mfa.enabled),
     stats: priv.showStats || self

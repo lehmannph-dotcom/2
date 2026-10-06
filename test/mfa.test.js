@@ -61,7 +61,7 @@ test('otpauth-URI für Authenticator-Apps', () => {
 });
 
 test('Profil: Anzeigename und Telefonnummer gemäß Privatsphäre', () => {
-  const user = { id: 'u1', name: 'Doris Maria Fahrer', createdAt: '2026-01-01T00:00:00Z', ratingCount: 0, profile: { phone: '+49 170 1234567' } };
+  const user = { id: 'u1', name: 'Doris Maria Fahrer', createdAt: '2026-01-01T00:00:00Z', profile: { phone: '+49 170 1234567' } };
   const viewer = { id: 'u2' };
   assert.equal(displayName(user, viewer), 'Doris F.');
   assert.equal(displayName(user, user), 'Doris Maria Fahrer');

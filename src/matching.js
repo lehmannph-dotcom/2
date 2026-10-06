@@ -2,6 +2,7 @@
 
 const { haversineKm, projectOntoRoute, cumulativeKm } = require('./geo');
 const { computeFare } = require('./pricing');
+const nps = require('./nps');
 
 // Straßen sind länger als die Luftlinie – Faktor für Umwegschätzung.
 const ROAD_FACTOR = 1.3;
@@ -15,7 +16,8 @@ const ROAD_FACTOR = 1.3;
  *  3. Hat der Fahrer den Abholort noch nicht passiert und genug freie Plätze?
  *
  * Bewertung (kleiner = besser): Umweg des Fahrers, Wartezeit bis Abholung,
- * Anteil der Strecke, die der Mitfahrer nicht abgedeckt bekommt, und Fahrerbewertung.
+ * Anteil der Strecke, die der Mitfahrer nicht abgedeckt bekommt, und NPS des Fahrers
+ * (geglättet, damit wenige Bewertungen nicht überbewertet werden).
  */
 function findMatches({ trips, request, pricing, maxDetourKm = 3, maxResults = 10, users = {} }) {
   const { pickup, dropoff, seats = 1, riderId } = request;
@@ -43,15 +45,16 @@ function findMatches({ trips, request, pricing, maxDetourKm = 3, maxResults = 10
     const etaMin = (Math.max(0, p.alongKm - progressKm) + p.offKm * ROAD_FACTOR) / Math.max(avgKmh, 5) * 60;
     const coverage = Math.min(1, sharedKm / Math.max(directKm, 0.1));
     const driver = users[trip.driverId];
-    const rating = driver && driver.ratingCount ? driver.ratingSum / driver.ratingCount : 4.5;
+    // NPS −100 … +100 → Abzug 8 … 0 Punkte
+    const npsPenalty = ((100 - nps.smoothedNps(driver)) / 200) * 8;
 
-    const score = detourKm * 2 + etaMin * 0.5 + (1 - coverage) * 10 + (5 - rating) * 2;
+    const score = detourKm * 2 + etaMin * 0.5 + (1 - coverage) * 10 + npsPenalty;
 
     results.push({
       tripId: trip.id,
       driverId: trip.driverId,
       driverName: driver ? driver.name : 'Fahrer',
-      driverRating: Math.round(rating * 10) / 10,
+      driverNps: nps.summary(driver),
       vehicle: trip.vehicle || '',
       origin: trip.origin,
       destination: trip.destination,

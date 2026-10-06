@@ -52,7 +52,7 @@ Für jede aktive Fahrt (`src/matching.js`):
 1. Abholort und Ziel werden auf die Route des Fahrers projiziert – beide müssen höchstens `MAX_DETOUR_KM` (Standard 3 km) entfernt liegen.
 2. Der Abholort muss in Fahrtrichtung **vor** dem Ziel liegen, und der Fahrer darf ihn noch nicht passiert haben (Live-GPS).
 3. Genug freie Plätze, Führerschein verifiziert und gültig.
-4. Bewertung (kleiner = besser): `2 × Umweg-km + 0,5 × Wartezeit-min + 10 × (1 − Streckenabdeckung) + 2 × (5 − Sterne)`.
+4. Bewertung (kleiner = besser): `2 × Umweg-km + 0,5 × Wartezeit-min + 10 × (1 − Streckenabdeckung) + 8 × (100 − geglätteter NPS) / 200`.
 
 ## Bestätigung der Fahrt durch Fahrer und Mitfahrer
 
@@ -61,13 +61,32 @@ Grundlage ist die **schnellste Route laut Plan** vom Abholort zum Ziel (Google D
 | Schritt | Mitfahrer | Fahrer |
 |---|---|---|
 | **Vor der Fahrt** | sieht geplante Route, km, Dauer und Höchstpreis → „Route bestätigen & anfragen“ | sieht dieselbe Route und seinen Anteil → „Route bestätigen & annehmen“ |
-| **Nach der Fahrt** | „Fahrt bestätigen“ oder „Problem melden“ | „Am Ziel – Fahrt bestätigen“ oder „Problem melden“ |
+| **Nach der Fahrt** | **bewertet** die Fahrt (NPS 0–10) → „Bewerten & bezahlen“ – oder „Problem melden“ | „Mitfahrer abgesetzt“ (Mitfahrer optional bewerten) – oder „Problem melden“ |
 
+* **Gezahlt wird mit dem Absetzen durch den Fahrer und der Bewertung durch den Mitfahrer** – Reihenfolge egal. Ohne Bewertung keine Zahlung (außer nach Ablauf der Frist, s. u.).
 * Beide sehen beim Abschluss: geplante Route · gefahrene km (GPS) · abgerechnete km · Betrag.
-* Mit der **ersten** Bestätigung endet die km-Messung, erst mit der **zweiten** wird abgerechnet.
+* Mit dem **ersten** Schritt endet die km-Messung, mit dem **zweiten** wird abgerechnet.
 * Bestätigt nur eine Seite, gilt die Fahrt nach `AUTO_CONFIRM_HOURS` (Standard 24 h) als bestätigt – damit Fahrer nicht unbegrenzt auf ihr Geld warten.
 * **Problem melden** stoppt die Abrechnung; der Betreiber entscheidet im Bereich „Betreiber“ (abrechnen nach Regel, mit weniger km oder kostenlos stornieren).
 * Hat sich die geplante Route zwischen Anzeige und Buchung geändert (> 0,5 km), muss der Mitfahrer neu bestätigen.
+
+## Bewertung nach NPS-Logik
+
+Statt Sternen fragt joinmyride.com: **„Wie wahrscheinlich ist es, dass du *Name* weiterempfiehlst?“** – Skala 0 bis 10.
+
+| Wert | Kategorie |
+|---|---|
+| 9–10 | Promotor 😊 |
+| 7–8 | Passiver 😐 |
+| 0–6 | Kritiker 🙁 |
+
+**NPS = % Promotoren − % Kritiker** (−100 bis +100). Er wird in Profilen, in der Trefferliste und im Konto angezeigt; der Betreiber sieht den NPS aller Fahrer.
+
+* Die Bewertung des Mitfahrers ist **Pflicht für die Zahlung**, ändert aber **nicht den Preis**. Für echte Probleme gibt es „Problem melden“.
+* Optionaler Kommentar, Frage passend zur Kategorie („Was hat dir gefallen?“ / „Was ist schiefgelaufen?“).
+* Fahrer können Mitfahrer optional bewerten (beim Absetzen oder später im Konto).
+* Jeder sieht nur die eigene abgegebene Bewertung; die Bewertungen anderer fließen nur zusammengefasst in den NPS ein.
+* Im Matching zählt ein **geglätteter NPS** (3 gedachte passive Bewertungen dazu), damit neue Fahrer bei 0 starten und ein einzelner Kritiker nicht gleich −100 ergibt.
 
 ## Abrechnung
 
@@ -104,6 +123,7 @@ src/pricing.js       Kilometerabrechnung, Provision, Spende, CO₂
 src/license.js       Führerschein-Prüfung
 src/profile.js       Profile, Anzeigenamen, Privatsphäre-Regeln
 src/mfa.js           TOTP, Backup-Codes, Verschlüsselung der 2FA-Schlüssel
+src/nps.js           Bewertung nach NPS-Logik
 src/routing.js       Google Maps / OSM, Google-Maps-Link-Parser
 src/geo.js           Distanzen, Polylines, Projektion auf Routen
 src/db.js            JSON-Dateispeicher (data/db.json)

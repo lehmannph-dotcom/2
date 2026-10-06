@@ -9,6 +9,7 @@ const { findMatches } = require('./matching');
 const { computeFare, billableKm } = require('./pricing');
 const { haversineKm, projectOntoRoute, cumulativeKm, isLatLng, simplify } = require('./geo');
 const mfa = require('./mfa');
+const nps = require('./nps');
 const { displayName, publicProfile, privacyOf, profileOf, sanitizeProfile, sanitizePrivacy } = require('./profile');
 
 const PRIVACY_POLICY_VERSION = '2026-10';
@@ -62,8 +63,7 @@ function createApp({ store, config, routing }) {
     isAdmin: Boolean(u.isAdmin),
     walletCents: u.walletCents,
     reservedCents: u.reservedCents,
-    rating: u.ratingCount ? Math.round((u.ratingSum / u.ratingCount) * 10) / 10 : null,
-    ratingCount: u.ratingCount,
+    nps: nps.summary(u),
     co2SavedKg: Math.round((u.co2SavedKg || 0) * 100) / 100,
     canDrive: canDrive(u),
     mfaEnabled: Boolean(u.mfa && u.mfa.enabled),
@@ -108,6 +108,10 @@ function createApp({ store, config, routing }) {
       partnerRouteConfirmed: Boolean(c[partner + 'Route']),
       myEndConfirmed: Boolean(c[role + 'End']),
       partnerEndConfirmed: Boolean(c[partner + 'End']),
+      // Jeder sieht nur die eigene Bewertung – die des Partners fließt anonym in dessen NPS ein.
+      npsByRider: role === 'rider' ? ride.npsByRider : undefined,
+      npsByDriver: role === 'driver' ? ride.npsByDriver : undefined,
+      myRating: (role === 'rider' ? ride.npsByRider : ride.npsByDriver) || null,
       autoConfirmAt: ride.status === 'confirming' ? new Date(new Date(ride.droppedOffAt).getTime() + config.rides.autoConfirmHours * 3600 * 1000).toISOString() : null,
       settlementPreview,
       riderName: displayName(rider, viewer),
@@ -219,8 +223,7 @@ function createApp({ store, config, routing }) {
       isAdmin: config.adminEmail ? email === config.adminEmail : isFirst,
       walletCents: 0,
       reservedCents: 0,
-      ratingSum: 0,
-      ratingCount: 0,
+      nps: null,
       co2SavedKg: 0,
       license: null,
       profile: null,
@@ -770,12 +773,31 @@ function createApp({ store, config, routing }) {
     ride.completedAt = now();
   };
 
-  // Fahrtende bestätigen – Fahrer UND Mitfahrer. Mit der ersten Bestätigung endet die km-Messung,
-  // mit der zweiten wird abgerechnet.
-  rideAction('confirm', (ride, { user }) => {
+  const ratingFrom = (body) => {
+    const score = nps.parseScore(body.nps);
+    if (score === null) return null;
+    return { score, category: nps.category(score), comment: String(body.comment || '').trim().slice(0, 500), at: now() };
+  };
+
+  /**
+   * Fahrtende: Gezahlt wird, wenn der Fahrer den Mitfahrer ABGESETZT hat UND der Mitfahrer
+   * die Fahrt nach NPS-Logik (0–10) BEWERTET hat. Reihenfolge egal; mit dem ersten Schritt
+   * endet die km-Messung, mit dem zweiten wird abgerechnet.
+   * Der Fahrer kann beim Absetzen optional den Mitfahrer bewerten.
+   */
+  rideAction('confirm', (ride, { user, body }) => {
     inStatus(ride, 'picked_up', 'confirming');
     const role = roleOf(ride, user);
-    need(!ride.confirmations[role + 'End'], 409, 'Du hast die Fahrt bereits bestätigt.');
+    need(!ride.confirmations[role + 'End'], 409, role === 'driver' ? 'Du hast das Absetzen bereits bestätigt.' : 'Du hast die Fahrt bereits bewertet.');
+    const rating = ratingFrom(body);
+    if (role === 'rider') {
+      need(rating, 400, 'Bitte bewerte die Fahrt mit 0 bis 10 – erst dann wird bezahlt.');
+      ride.npsByRider = rating;
+      nps.addScore(db.users[ride.driverId], rating.score);
+    } else if (rating) {
+      ride.npsByDriver = rating;
+      nps.addScore(db.users[ride.riderId], rating.score);
+    }
     if (ride.status === 'picked_up') {
       freeSeats(ride);
       ride.status = 'confirming';
@@ -812,17 +834,16 @@ function createApp({ store, config, routing }) {
   const timer = setInterval(settleOverdue, 5 * 60 * 1000);
   timer.unref();
 
+  // Nachträgliche Bewertung (z. B. Fahrer bewertet Mitfahrer, oder nach automatischer Bestätigung).
   rideAction('rate', (ride, { user, body }) => {
     inStatus(ride, 'completed');
-    const stars = Math.round(Number(body.stars));
-    need(stars >= 1 && stars <= 5, 400, '1 bis 5 Sterne.');
+    const rating = ratingFrom(body);
+    need(rating, 400, 'Bewertung von 0 bis 10.');
     const isRider = ride.riderId === user.id;
-    const field = isRider ? 'ratingByRider' : 'ratingByDriver';
+    const field = isRider ? 'npsByRider' : 'npsByDriver';
     need(!ride[field], 409, 'Bereits bewertet.');
-    ride[field] = stars;
-    const target = db.users[isRider ? ride.driverId : ride.riderId];
-    target.ratingSum += stars;
-    target.ratingCount += 1;
+    ride[field] = rating;
+    nps.addScore(db.users[isRider ? ride.driverId : ride.riderId], rating.score);
   });
 
   // ---------- Betreiber / Admin ----------
@@ -842,6 +863,13 @@ function createApp({ store, config, routing }) {
       activeTrips: Object.values(db.trips).filter((t) => t.status === 'active').length,
       verifiedDrivers: Object.values(db.users).filter((u) => canDrive(u)).length,
       openDisputes: Object.values(db.rides).filter((r) => r.status === 'disputed').length,
+      // NPS der Plattform aus allen Bewertungen der Mitfahrer
+      driverNps: (() => {
+        const all = Object.values(db.rides).filter((r) => r.npsByRider);
+        const acc = { nps: null };
+        all.forEach((r) => nps.addScore(acc, r.npsByRider.score));
+        return nps.summary(acc);
+      })(),
     };
   });
 

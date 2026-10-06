@@ -132,8 +132,14 @@ test('kompletter Ablauf: Führerschein → Fahrt → Match → Buchung → GPS �
   assert.equal((await rider('GET', '/api/rides')).rides[0].trackedKm, half.trackedKm, 'nach Bestätigung keine km mehr');
   assert.equal((await rider('GET', '/api/me')).user.walletCents, 2000, 'noch nicht abgebucht');
 
-  // Mitfahrer bestätigt → Abrechnung: gefahrene 10 km < geplante 17 km
-  const done = (await rider('POST', `/api/rides/${ride.id}/confirm`, {})).ride;
+  // Mitfahrer muss bewerten (NPS 0–10), sonst keine Zahlung
+  assert.equal((await rider('POST', `/api/rides/${ride.id}/confirm`, {})).status, 400);
+  assert.equal((await rider('POST', `/api/rides/${ride.id}/confirm`, { nps: 11 })).status, 400);
+  assert.equal((await rider('GET', '/api/me')).user.walletCents, 2000);
+  // Bewertung → Abrechnung: gefahrene 10 km < geplante 17 km
+  const done = (await rider('POST', `/api/rides/${ride.id}/confirm`, { nps: 10, comment: 'Super pünktlich!' })).ride;
+  assert.equal(done.myRating.score, 10);
+  assert.equal(done.myRating.category, 'promoter');
   assert.equal(done.status, 'completed');
   assert.equal(done.final.billing, 'gefahren');
   assert.equal(done.final.confirmedBy, 'beide');
@@ -156,9 +162,15 @@ test('kompletter Ablauf: Führerschein → Fahrt → Match → Buchung → GPS �
   // Geld geht nicht verloren: Mitfahrer zahlt = Fahrer + Provision + Spende
   assert.equal(done.final.totalCents, done.final.driverCents + stats.commissionCents + stats.donationCents);
 
-  // Bewertung
-  await rider('POST', `/api/rides/${ride.id}/rate`, { stars: 5 });
-  assert.equal((await driver('GET', '/api/me')).user.rating, 5);
+  // NPS des Fahrers; der Fahrer sieht die Bewertung nicht im Einzelnen
+  assert.deepEqual((await driver('GET', '/api/me')).user.nps, { score: 100, count: 1, promoters: 1, passives: 0, detractors: 0 });
+  const driverView = (await driver('GET', '/api/rides')).rides[0];
+  assert.equal(driverView.npsByRider, undefined);
+  assert.equal((await rider('POST', `/api/rides/${ride.id}/rate`, { nps: 3 })).status, 409, 'nur einmal bewerten');
+  // Fahrer bewertet den Mitfahrer nachträglich
+  await driver('POST', `/api/rides/${ride.id}/rate`, { nps: 6 });
+  assert.equal((await rider('GET', '/api/me')).user.nps.detractors, 1);
+  assert.equal((await admin('GET', '/api/admin/stats')).driverNps.score, 100);
 
   // Fahrt beenden
   assert.equal((await driver('POST', `/api/trips/${trip.id}/end`, {})).trip.status, 'ended');
@@ -204,7 +216,7 @@ async function bookedRide(t, { kmDriven, plannedShift } = {}) {
 
 test('Umweg wird nicht berechnet: gefahrene Strecke länger → geplante Route', async (t) => {
   const { driver, rider, ride } = await bookedRide(t, { kmDriven: 15 });
-  await rider('POST', `/api/rides/${ride.id}/confirm`, {}); // Reihenfolge egal
+  await rider('POST', `/api/rides/${ride.id}/confirm`, { nps: 8 }); // Reihenfolge egal
   const done = (await driver('POST', `/api/rides/${ride.id}/confirm`, {})).ride;
   assert.ok(done.final.trackedKm > done.final.plannedKm);
   assert.equal(done.final.billing, 'geplant');
@@ -244,4 +256,29 @@ test('Reklamation: keine Abrechnung, Betreiber entscheidet', async (t) => {
   const me = (await rider('GET', '/api/me')).user;
   assert.equal(me.walletCents, 1000 - res.final.totalCents);
   assert.equal(me.reservedCents, 0);
+});
+
+test('Gezahlt wird erst mit Absetzen UND NPS-Bewertung des Mitfahrers', async (t) => {
+  const { driver, rider, ride } = await bookedRide(t, { kmDriven: 4 });
+  // Mitfahrer bewertet zuerst (Kritiker) – noch keine Zahlung, weil nicht abgesetzt
+  const r1 = (await rider('POST', `/api/rides/${ride.id}/confirm`, { nps: 4, comment: 'Zu schnell gefahren.' })).ride;
+  assert.equal(r1.status, 'confirming');
+  assert.equal((await rider('GET', '/api/me')).user.walletCents, 1000);
+  // Fahrer setzt ab (bewertet Mitfahrer optional) → Zahlung
+  const r2 = (await driver('POST', `/api/rides/${ride.id}/confirm`, { nps: 9 })).ride;
+  assert.equal(r2.status, 'completed');
+  assert.ok((await rider('GET', '/api/me')).user.walletCents < 1000);
+  // Bewertung ändert den Preis nicht
+  assert.equal(r2.final.km, Math.min(r2.final.plannedKm, r2.final.trackedKm));
+  assert.equal((await driver('GET', '/api/me')).user.nps.score, -100);
+  assert.equal((await rider('GET', '/api/me')).user.nps.score, 100);
+});
+
+test('Nach automatischer Bestätigung kann der Mitfahrer noch bewerten', async (t) => {
+  const { driver, rider, ride, store } = await bookedRide(t, { kmDriven: 3 });
+  await driver('POST', `/api/rides/${ride.id}/confirm`, {});
+  store.data.rides[ride.id].droppedOffAt = new Date(Date.now() - 25 * 3600 * 1000).toISOString();
+  assert.equal((await rider('GET', '/api/rides')).rides[0].status, 'completed');
+  await rider('POST', `/api/rides/${ride.id}/rate`, { nps: 7 });
+  assert.equal((await driver('GET', '/api/me')).user.nps.passives, 1);
 });
