@@ -23,7 +23,7 @@ const routing = {
 const config = {
   adminEmail: 'chef@example.org',
   pricing: {
-    energyCostPerKmCents: 12, riderEnergySharePercent: 67, costPerKmCents: 30, commissionPercent: 10, donationCentsPerRide: 1, co2GramsPerCarKm: 150,
+    avgFuelPriceCentsPerLiter: 175, avgConsumptionLitersPer100Km: 7, riderEnergySharePercent: 67, commissionPercent: 10, donationCentsPerRide: 1, co2GramsPerCarKm: 150,
     transitFares: [{ maxKm: 3, cents: 260 }, { maxKm: 20, cents: 380 }, { maxKm: 45, cents: 500 }], transitPerKmBeyondCents: 18,
   },
   identity: { provider: 'demo', webhookSecret: 'geheim-webhook' },
@@ -144,7 +144,8 @@ test('Vorkasse in 3 Stufen mit Rabatt auf die Provision, sonst je Fahrt bezahlen
 
   const cfg = await d('GET', '/api/config');
   assert.deepEqual(cfg.prepaidPackages.map((p) => [p.amountCents, p.discountPercent]), [[1000, 6], [2000, 10], [5000, 20]]);
-  assert.equal(cfg.pricing.recommendedRateCents, 8);
+  assert.equal(cfg.pricing.ratePerKmCents, 8);
+  assert.equal(cfg.pricing.energyCostPerKmCents, 12.25);
 
   // Ohne Guthaben und ohne Zahlungsmittel: 402
   const r = await user('Rita Ride', 'rita@example.org');
@@ -185,21 +186,19 @@ test('Vorkasse in 3 Stufen mit Rabatt auf die Provision, sonst je Fahrt bezahlen
   assert.equal(after.prepaidCents, 5000 - done2.final.totalCents);
 });
 
-test('Kilometersatz: Empfehlung oder vom Fahrer gewählt, höchstens Betriebskosten', async (t) => {
+test('Kilometersatz kommt aus Durchschnittswerten – Fahrer können ihn nicht selbst festlegen', async (t) => {
   const { user, license, identify, vehicle } = await setup(t);
   const d = await user('Dana Drive', 'dana@example.org');
   await license(d); await identify(d); await vehicle(d);
-  assert.equal((await d('POST', '/api/trips', { origin: A, destination: B, ratePerKmCents: 31, declaration: DECL })).status, 400);
-  const { trip } = await d('POST', '/api/trips', { origin: A, destination: B, ratePerKmCents: 12, declaration: DECL });
-  assert.equal(trip.ratePerKmCents, 12);
+  const { trip } = await d('POST', '/api/trips', { origin: A, destination: B, ratePerKmCents: 25, declaration: DECL });
+  assert.equal(trip.ratePerKmCents, undefined, 'eigener Satz wird ignoriert');
   const r = await user('Rita Ride', 'rita@example.org');
   await r('POST', '/api/wallet/payment-method', {});
   const pickup = pointAlongRoute(trip.route.coords, 1);
   const dropoff = pointAlongRoute(trip.route.coords, 11);
   const m = await r('POST', '/api/match', { pickup, dropoff });
-  assert.equal(m.matches[0].price.ratePerKmCents, 12);
-  assert.equal(m.matches[0].price.recommendedRateCents, 8);
+  assert.equal(m.matches[0].price.ratePerKmCents, 8);
   const { ride } = await r('POST', '/api/rides', { tripId: trip.id, pickup, dropoff, confirmPlannedRoute: true });
-  assert.equal(ride.ratePerKmCents, 12);
-  assert.equal(ride.estimate.fareCents, Math.round(ride.plannedKm * 12));
+  assert.equal(ride.ratePerKmCents, 8);
+  assert.equal(ride.estimate.fareCents, Math.round(ride.plannedKm * 8));
 });

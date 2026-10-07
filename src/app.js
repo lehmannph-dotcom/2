@@ -6,7 +6,7 @@ const path = require('node:path');
 const { hashPassword, verifyPassword, createSession, userFromRequest, sessionCookie, requestSessionKey, isSecure } = require('./auth');
 const { validateLicense, canDrive } = require('./license');
 const { findMatches } = require('./matching');
-const { computeFare, billableKm, recommendedRateCents, maxRateCents, PREPAID_PACKAGES, prepaidDiscountPercent, consumePrepaid, prepaidRemainingCents } = require('./pricing');
+const { computeFare, billableKm, kmRateCents, energyCostPerKmCents, PREPAID_PACKAGES, prepaidDiscountPercent, consumePrepaid, prepaidRemainingCents } = require('./pricing');
 const identity = require('./identity');
 const { haversineKm, projectOntoRoute, cumulativeKm, isLatLng, simplify } = require('./geo');
 const mfa = require('./mfa');
@@ -313,7 +313,7 @@ function createApp({ store, config, routing }) {
 
   // ---------- Öffentliche Konfiguration ----------
   on('GET', '/api/config', () => ({
-    pricing: { ...config.pricing, ratePerKmCents: recommendedRateCents(config.pricing), recommendedRateCents: recommendedRateCents(config.pricing), maxRateCents: maxRateCents(config.pricing) },
+    pricing: { ...config.pricing, ratePerKmCents: kmRateCents(config.pricing), energyCostPerKmCents: energyCostPerKmCents(config.pricing) },
     prepaidPackages: PREPAID_PACKAGES,
     identityProvider: { id: identCfg.provider, name: (identity.PROVIDERS[identCfg.provider] || {}).name || identCfg.provider },
     routingProvider: config.googleMapsApiKey ? 'google' : 'openstreetmap',
@@ -921,9 +921,6 @@ function createApp({ store, config, routing }) {
     need(origin && destination, 400, 'Start und Ziel angeben.');
     const seats = Math.round(Number(body.seats) || 1);
     need(seats >= 1 && seats <= 8, 400, 'Zwischen 1 und 8 Plätze anbieten.');
-    // Kilometersatz: Empfehlung oder selbst gewählt – höchstens die Betriebskosten (keine Gewinnerzielung)
-    const rate = body.ratePerKmCents === undefined || body.ratePerKmCents === '' ? recommendedRateCents(config.pricing) : Math.round(Number(body.ratePerKmCents));
-    need(Number.isInteger(rate) && rate >= 1 && rate <= maxRateCents(config.pricing), 400, `Kilometersatz zwischen 1 und ${maxRateCents(config.pricing)} Cent wählen.`);
     const r = await routing.route(origin, destination);
     const trip = {
       id: store.id('trp'),
@@ -934,7 +931,6 @@ function createApp({ store, config, routing }) {
       route: { coords: r.coords, distanceKm: r.distanceKm, durationMin: r.durationMin, provider: r.provider },
       seats,
       seatsFree: seats,
-      ratePerKmCents: rate,
       vehicle: String(body.vehicle || (({ color, brand, model, plateRegion }) => [color, brand, model].filter(Boolean).join(' ') + (plateRegion ? ` (${plateRegion})` : ''))(profileOf(user).vehicle)).trim().slice(0, 80),
       position: r.origin,
       progressKm: 0,
@@ -1055,7 +1051,7 @@ function createApp({ store, config, routing }) {
         ...m,
         plannedKm: plannedRoute.distanceKm,
         plannedDurationMin: plannedRoute.durationMin,
-        price: computeFare(plannedRoute.distanceKm, config.pricing, seats, { pickupDetourKm: m.pickupDetourKm, ratePerKmCents: db.trips[m.tripId].ratePerKmCents, commissionDiscountPercent: discount }),
+        price: computeFare(plannedRoute.distanceKm, config.pricing, seats, { pickupDetourKm: m.pickupDetourKm, commissionDiscountPercent: discount }),
         driverName: displayName(db.users[m.driverId], user),
         driverIdentityVerified: identity.isVerified(db.users[m.driverId]),
         origin: coarsePlace(m.origin),
@@ -1092,7 +1088,7 @@ function createApp({ store, config, routing }) {
     if (body.plannedKm !== undefined && Math.abs(Number(body.plannedKm) - plannedRoute.distanceKm) > 0.5) {
       throw new HttpError(409, 'Die geplante Route hat sich geändert. Bitte erneut suchen und bestätigen.');
     }
-    const fareOpts = { pickupDetourKm: match.pickupDetourKm, ratePerKmCents: trip.ratePerKmCents };
+    const fareOpts = { pickupDetourKm: match.pickupDetourKm };
     // Bezahlung: aus Vorkasse-Guthaben (mit Rabatt auf die Provision) oder je Fahrt mit hinterlegtem Zahlungsmittel
     let payment = 'wallet';
     let estimate = computeFare(plannedRoute.distanceKm, config.pricing, seats, { ...fareOpts, commissionDiscountPercent: prepaidDiscountPercent(user) });
@@ -1118,6 +1114,7 @@ function createApp({ store, config, routing }) {
       detourKm: match.detourKm,
       estimate,
       payment,
+      // Satz zum Zeitpunkt der Buchung festhalten – spätere Anpassung der Durchschnittswerte ändert den bestätigten Preis nicht
       ratePerKmCents: estimate.ratePerKmCents,
       commissionDiscountPercent: estimate.commissionDiscountPercent,
       maxChargeCents: estimate.totalCents,

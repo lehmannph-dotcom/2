@@ -302,8 +302,7 @@ table.breakdown tr.total td { border-top: 1px solid var(--line); font-weight: 70
 .tier.active { border-color: var(--sage-500); background: var(--mint-50); }
 .tier-head { display: flex; flex-direction: column; }
 .tier-no { font-size: .72rem; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
-.rate-row { display: flex; align-items: center; gap: 10px; }
-.rate-row input[type=range] { flex: 1; padding: 0; accent-color: var(--green-600); }
+.rate-info { margin: 10px 0 0; }
 .compare { margin: 8px 0 0; }
 .conduct li { margin: 6px 0; }
 .decl-remember { background: var(--mint-50); border-radius: 10px; padding: 6px 8px; }

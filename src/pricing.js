@@ -4,11 +4,9 @@
  * Preismodell: private Fahrgemeinschaft – keine Fahrdienstleistung.
  *
  * Der Fahrer stellt Auto und Zeit, der Mitfahrer beteiligt sich mit rund zwei Dritteln an den
- * Energiekosten (Kraftstoff bzw. Strom). Daraus ergibt sich ein EMPFOHLENER Kilometersatz.
- * Der Fahrer kann seinen Satz beim Online-Gehen anpassen; die Empfehlung, der Vergleich mit dem
- * Nahverkehr und der Anteil an den Energiekosten helfen, einen angemessenen Preis zu finden.
- * Einzige feste Obergrenze ist der gesetzliche Rahmen: höchstens die Betriebskosten je km
- * (§ 1 Abs. 2 Nr. 1 PBefG).
+ * Energiekosten. Gerechnet wird mit DURCHSCHNITTSWERTEN (Ø-Kraftstoffpreis × Ø-Verbrauch), nicht mit
+ * einem selbst gewählten Satz – so zahlen alle für dieselbe Strecke denselben fairen Preis.
+ * Vergleichswerte (Nahverkehr, Energiekosten) helfen bei der Einordnung, sind aber keine Grenze.
  *
  *   Fahrpreis        = km × Kilometersatz × Personen
  *   Anfahrt          = Umweg-km zum Treffpunkt × Kilometersatz → zu 100 % an den Fahrer
@@ -27,14 +25,15 @@ const PREPAID_PACKAGES = Object.freeze([
   Object.freeze({ id: 'p50', amountCents: 5000, discountPercent: 20 }),
 ]);
 
-/** Empfohlener Kilometersatz: Anteil des Mitfahrers an den Energiekosten (fester Satz, falls konfiguriert). */
-function recommendedRateCents(pricing) {
-  if (pricing.ratePerKmCents) return pricing.ratePerKmCents;
-  return Math.max(1, Math.round((pricing.energyCostPerKmCents * (pricing.riderEnergySharePercent ?? 67)) / 100));
-}
+/** Durchschnittliche Energiekosten je km in Cent (Ø-Preis × Ø-Verbrauch). */
+const energyCostPerKmCents = (pricing) =>
+  pricing.avgFuelPriceCentsPerLiter ? (pricing.avgFuelPriceCentsPerLiter * pricing.avgConsumptionLitersPer100Km) / 100 : null;
 
-/** Höchster Satz, den ein Fahrer wählen kann: Betriebskosten je km (gesetzlicher Rahmen). */
-const maxRateCents = (pricing) => pricing.costPerKmCents || Math.max(recommendedRateCents(pricing) * 3, 30);
+/** Kilometersatz: rund zwei Drittel der durchschnittlichen Energiekosten (oder fest konfiguriert). */
+function kmRateCents(pricing) {
+  if (pricing.ratePerKmCents) return pricing.ratePerKmCents;
+  return Math.max(1, Math.round((energyCostPerKmCents(pricing) * (pricing.riderEnergySharePercent ?? 67)) / 100));
+}
 
 /** Richtpreis eines ÖPNV-Einzeltickets für die Entfernung (null, wenn nicht konfiguriert). */
 function transitFareCents(km, pricing) {
@@ -49,13 +48,13 @@ function transitFareCents(km, pricing) {
 /**
  * @param km                  abzurechnende km der gemeinsamen Strecke
  * @param seats               Personen
- * @param ratePerKmCents      vom Fahrer gewählter Satz (sonst die Empfehlung)
+ * @param ratePerKmCents      bei der Buchung festgehaltener Satz (sonst der aktuelle)
  * @param pickupDetourKm      Anfahrt zum Treffpunkt
  * @param commissionDiscountPercent  Rabatt auf die Provision (Vorkasse-Stufe)
  */
 function computeFare(km, pricing, seats = 1, { pickupDetourKm = 0, commissionDiscountPercent = 0, ratePerKmCents } = {}) {
-  const recommended = recommendedRateCents(pricing);
-  const rate = Math.min(ratePerKmCents || recommended, maxRateCents(pricing));
+  const rate = ratePerKmCents || kmRateCents(pricing);
+  const energyPerKm = energyCostPerKmCents(pricing);
   const billedKm = Math.max(0, Math.round(km * 100) / 100);
   const detourKm = pickupDetourKm >= 0.1 ? Math.round(pickupDetourKm * 100) / 100 : 0;
   const fareCents = Math.round(billedKm * rate * seats);
@@ -68,12 +67,11 @@ function computeFare(km, pricing, seats = 1, { pickupDetourKm = 0, commissionDis
   const donationCents = fareCents > 0 ? pricing.donationCentsPerRide : 0;
   const totalCents = fareCents + detourCents - discountCents;
   const transitTotal = transitFareCents(billedKm, pricing);
-  const energyCents = pricing.energyCostPerKmCents ? Math.round((billedKm + detourKm) * pricing.energyCostPerKmCents) : null;
+  const energyCents = energyPerKm ? Math.round((billedKm + detourKm) * energyPerKm) : null;
   return {
     km: billedKm,
     seats,
     ratePerKmCents: rate,
-    recommendedRateCents: recommended,
     fareCents,
     commissionFullCents,
     commissionDiscountPercent: discountPercent,
@@ -139,8 +137,8 @@ module.exports = {
   computeFare,
   co2SavedKg,
   billableKm,
-  recommendedRateCents,
-  maxRateCents,
+  kmRateCents,
+  energyCostPerKmCents,
   transitFareCents,
   prepaidDiscountPercent,
   consumePrepaid,

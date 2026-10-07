@@ -3,7 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { haversineKm, decodePolyline, projectOntoRoute, straightLine } = require('../src/geo');
-const { computeFare, billableKm, recommendedRateCents, maxRateCents } = require('../src/pricing');
+const { computeFare, billableKm, kmRateCents, energyCostPerKmCents } = require('../src/pricing');
 const { findMatches } = require('../src/matching');
 const { validateLicense, canDrive } = require('../src/license');
 const { parseGoogleMapsUrl } = require('../src/routing');
@@ -45,29 +45,27 @@ test('Preisaufteilung: Fahrer + Provision; 1 Cent Spende aus der Provision', () 
   assert.equal(f.co2SavedKg, 15);
 });
 
-// Preismodell wie im Livebetrieb (config.js): Mitfahrer trägt ca. 2/3 der Energiekosten
+// Preismodell wie im Livebetrieb (config.js): Durchschnittswerte, Mitfahrer trägt ca. 2/3 der Energiekosten
 const live = {
-  energyCostPerKmCents: 12, riderEnergySharePercent: 67, costPerKmCents: 30, commissionPercent: 10, donationCentsPerRide: 1, co2GramsPerCarKm: 150,
+  avgFuelPriceCentsPerLiter: 175, avgConsumptionLitersPer100Km: 7, riderEnergySharePercent: 67, commissionPercent: 10, donationCentsPerRide: 1, co2GramsPerCarKm: 150,
   transitFares: [{ maxKm: 3, cents: 260 }, { maxKm: 20, cents: 380 }, { maxKm: 45, cents: 500 }], transitPerKmBeyondCents: 18,
 };
 
-test('Preisempfehlung: Mitfahrer beteiligt sich mit ca. 2/3 an Kraftstoff bzw. Strom', () => {
-  assert.equal(recommendedRateCents(live), 8);
-  const f = computeFare(10, live);
+test('Kilometersatz aus Durchschnittswerten: ca. 2/3 von Ø-Preis × Ø-Verbrauch', () => {
+  assert.equal(energyCostPerKmCents(live), 12.25);
+  assert.equal(kmRateCents(live), 8);
+  const f = computeFare(20, live);
   assert.equal(f.ratePerKmCents, 8);
-  assert.equal(f.totalCents, 80);
-  assert.equal(f.energyCostCents, 120);
-  assert.equal(f.energySharePercent, 67);
+  assert.equal(f.totalCents, 160);
+  assert.equal(f.energyCostCents, 245);
   assert.equal(f.transitFareCents, 380);
-  assert.equal(f.savingsVsTransitPercent, 79, 'Orientierung: Vergleich mit dem Nahverkehr');
+  assert.equal(f.savingsVsTransitPercent, 58, 'Vergleich mit dem Nahverkehr nur zur Orientierung');
+  // Steigt der Ø-Kraftstoffpreis, steigt der Satz mit
+  assert.equal(kmRateCents({ ...live, avgFuelPriceCentsPerLiter: 214 }), 10);
 });
 
-test('Fahrer wählt den Satz selbst – keine Deckelung außer den Betriebskosten', () => {
-  const f = computeFare(45, live, 1, { ratePerKmCents: 20 });
-  assert.equal(f.totalCents, 900, 'kein ÖPNV-Deckel mehr');
-  assert.ok(f.savingsVsTransitPercent < 0, 'teurer als der Nahverkehr wird nur angezeigt');
-  assert.equal(computeFare(10, live, 1, { ratePerKmCents: 99 }).ratePerKmCents, 30, 'höchstens Betriebskosten je km');
-  assert.equal(maxRateCents(live), 30);
+test('Bei der Buchung festgehaltener Satz bleibt bei der Abrechnung gültig', () => {
+  assert.equal(computeFare(10, { ...live, avgFuelPriceCentsPerLiter: 214 }, 1, { ratePerKmCents: 8 }).fareCents, 80);
 });
 
 test('Rabatt auf die Provision geht nicht zulasten des Fahrers', () => {

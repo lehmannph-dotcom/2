@@ -180,20 +180,21 @@ Eigenes Menü **Funfacts** (auch ohne Anmeldung): Wo und in welchen Autos sitzen
 
 ## Startseite und App
 
-* **`/`** – Startseite mit der Idee in Kürze: *Du fährst sowieso. Nimm jemanden mit.* Ziel eingeben, nette Gesellschaft mitnehmen, der Umwelt etwas Gutes tun. Der Fahrer stellt Auto und Fahrt, der Mitfahrer trägt rund zwei Drittel der Energiekosten – alle gewinnen: leerere Straßen, besser genutzte Ressourcen, weniger CO₂. Die Beispielrechnung kommt aus der aktuellen Preiskonfiguration.
+* **`/`** – Startseite mit der Idee in Kürze: *Du fährst sowieso. Nimm jemanden mit.* Ziel eingeben, nette Gesellschaft mitnehmen, der Umwelt etwas Gutes tun. Der Fahrer stellt Auto und Fahrt, der Mitfahrer trägt rund zwei Drittel der Energiekosten (nach Durchschnittswerten) – alle gewinnen: leerere Straßen, besser genutzte Ressourcen, weniger CO₂. Die Beispielrechnung kommt aus der aktuellen Preiskonfiguration.
 * **`/app`** – die eigentliche Anwendung mit Anmeldung (`/app#/registrieren` öffnet direkt die Registrierung).
 
-## Preis: Empfehlung statt Grenze
+## Preis: fair geteilt nach Durchschnittswerten
 
 joinmyride.com ist eine Plattform für **private Fahrgemeinschaften**, keine Fahrdienstleistung wie Taxi oder Uber.
 
-* **Empfehlung:** Der Mitfahrer beteiligt sich mit rund **2/3 an Kraftstoff bzw. Strom**. Bei 12 ct Energiekosten je km ergibt das **8 ct/km** (einstellbar).
-* **Der Fahrer wählt** beim Online-Gehen seinen Satz mit einem Schieberegler. Die App zeigt dazu den Preis für 10 km, den Vergleich mit einem ÖPNV-Einzelticket und den Anteil an den Energiekosten – und warnt, wenn der Preis über dem Nahverkehr liegt. Es gibt keine Deckelung nach ÖPNV oder Anteil; einzige Obergrenze ist der gesetzliche Rahmen: höchstens die **Betriebskosten je km** (Standard 30 ct, § 1 Abs. 2 Nr. 1 PBefG).
-* Mitfahrer sehen bei jedem Angebot den Vergleich mit dem Nahverkehr und, falls der Fahrer abweicht, die Empfehlung.
+* Der Fahrer stellt Auto und Fahrt, der Mitfahrer beteiligt sich mit rund **2/3 an Kraftstoff bzw. Strom**.
+* Gerechnet wird mit **Durchschnittswerten**, nicht mit einem selbst gewählten Preis: Ø-Kraftstoffpreis 1,75 €/l × Ø-Verbrauch 7 l/100 km = 12,25 ct/km Energiekosten → **8 ct/km** für den Mitfahrer. Der Betreiber aktualisiert die Durchschnittswerte (`AVG_FUEL_PRICE_CENTS_PER_LITER`, `AVG_CONSUMPTION_L_PER_100KM`); für eine bestätigte Fahrt gilt der Satz zum Zeitpunkt der Buchung.
+* Fahrer legen keinen eigenen Preis fest. So zahlt jeder für dieselbe Strecke denselben Preis, und das Entgelt bleibt unter den Betriebskosten (§ 1 Abs. 2 Nr. 1 PBefG).
+* Zur Orientierung zeigt die App bei jedem Angebot den Vergleich mit einem ÖPNV-Einzelticket und den Anteil an den Energiekosten – als Hilfe, nicht als Grenze.
 
 ```
 abgerechnete km = geplante Route (fällig mit dem Einsteigen) – bei Fahrtabbruch: gefahrene Strecke (GPS), höchstens die geplante Route
-Fahrpreis       = abgerechnete km × Kilometersatz des Fahrers × Personen
+Fahrpreis       = abgerechnete km × Kilometersatz (aus Durchschnittswerten) × Personen
 Anfahrt         = Umweg zum Treffpunkt (km) × Kilometersatz → zu 100 % Fahrer, KEINE Provision
 Provision       = Fahrpreis × 10 % (im Preis enthalten)      → Betreiber, davon 1 Cent Umweltspende
 Rabatt          = 6 / 10 / 20 % der Provision bei Vorkasse   → senkt den Preis, nicht den Fahreranteil

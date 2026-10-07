@@ -28,12 +28,12 @@ module.exports = {
   // Demo-Guthaben ohne echte Zahlung – im Livebetrieb abschalten (ALLOW_DEMO_TOPUP=0).
   allowDemoTopup: !['0', 'false', 'no'].includes(String(process.env.ALLOW_DEMO_TOPUP || '1').toLowerCase()),
   pricing: {
-    // Private Fahrgemeinschaft, siehe src/pricing.js: Der Mitfahrer beteiligt sich mit rund zwei
-    // Dritteln an den Energiekosten. Daraus ergibt sich der empfohlene Kilometersatz; Fahrer können
-    // ihn anpassen – höchstens bis zu den Betriebskosten (§ 1 Abs. 2 Nr. 1 PBefG).
-    energyCostPerKmCents: num('ENERGY_COST_PER_KM_CENTS', 12), // Kraftstoff/Strom je km (Richtwert)
+    // Private Fahrgemeinschaft, siehe src/pricing.js: Der Kilometersatz ergibt sich aus
+    // Durchschnittswerten – der Mitfahrer trägt rund zwei Drittel der Energiekosten.
+    // Ø-Kraftstoffpreis (Cent je Liter) und Ø-Verbrauch eines Pkw (Liter je 100 km) – regelmäßig aktualisieren.
+    avgFuelPriceCentsPerLiter: num('AVG_FUEL_PRICE_CENTS_PER_LITER', 175),
+    avgConsumptionLitersPer100Km: num('AVG_CONSUMPTION_L_PER_100KM', 7),
     riderEnergySharePercent: num('RIDER_ENERGY_SHARE_PERCENT', 67),
-    costPerKmCents: num('COST_PER_KM_CENTS', 30), // Betriebskosten je km = Obergrenze für den Satz
     ...(process.env.RATE_PER_KM_CENTS ? { ratePerKmCents: num('RATE_PER_KM_CENTS', 8) } : {}),
     commissionPercent: num('COMMISSION_PERCENT', 10),  // im Preis enthalten
     donationCentsPerRide: num('DONATION_CENTS_PER_RIDE', 1), // aus der Provision gezahlt
