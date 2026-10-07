@@ -378,6 +378,7 @@ test('Gründe bei kritischer Bewertung, anonymes Feedback und Filter beim Suchen
   for (const [i, aspects, comment] of [[1, ['cleanliness'], ''], [2, ['smell'], 'Roch nach Rauch.']]) {
     store.data.rides['x' + i] = { ...r, id: 'x' + i, npsByRider: { score: 5, aspects, comment, at: `2026-09-0${i}T10:00:00Z` } };
   }
+  store.touch();
   fbk = await driver('GET', '/api/me/feedback');
   assert.equal(fbk.asDriver.ready, true);
   assert.deepEqual(fbk.asDriver.aspects.map((a) => [a.id, a.count]), [['cleanliness', 2], ['driving', 1], ['smell', 1]]);
@@ -479,6 +480,7 @@ test('Fahrtabbruch: begründet, nur gefahrene Strecke, Fahrtabbruchsquote bei be
   // Zweite, normale Fahrt → Quote 50 %
   const r2 = { ...store.data.rides[ride.id], id: 'r2', abort: undefined, final: { ...store.data.rides[ride.id].final, billing: 'geplant' } };
   store.data.rides.r2 = r2;
+  store.touch();
   assert.equal((await driver('GET', '/api/me')).user.abortStats.asDriver.quote, 50);
 });
 
@@ -497,6 +499,7 @@ test('Nutzungsbedingungen: Sperre bei zu hoher Fahrtabbruchsquote', async (t) =>
   for (let i = 0; i < 5; i++) {
     store.data.rides['x' + i] = { ...base, id: 'x' + i, abort: i < 2 ? { by: 'driver', category: 'other', reason: 'Testabbruch', at: base.completedAt } : undefined };
   }
+  store.touch();
   assert.equal((await rider('GET', '/api/admin/abort-review')).status, 403);
   let review = await admin('GET', '/api/admin/abort-review');
   assert.deepEqual(review.policy, { maxQuote: 20, minRides: 5 });

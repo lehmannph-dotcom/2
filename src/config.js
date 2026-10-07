@@ -22,6 +22,11 @@ module.exports = {
   dataDir: process.env.DATA_DIR || path.join(__dirname, '..', 'data'),
   googleMapsApiKey: process.env.GOOGLE_MAPS_API_KEY || '',
   adminEmail: (process.env.ADMIN_EMAIL || '').toLowerCase(),
+  // Nur setzen, wenn ein Reverse-Proxy davorsteht: dann gelten X-Forwarded-For/-Proto
+  // (Client-IP für den Brute-Force-Schutz, HTTPS-Erkennung). Sonst wären sie fälschbar.
+  trustProxy: ['1', 'true', 'yes'].includes(String(process.env.TRUST_PROXY || '').toLowerCase()),
+  // Demo-Guthaben ohne echte Zahlung – im Livebetrieb abschalten (ALLOW_DEMO_TOPUP=0).
+  allowDemoTopup: !['0', 'false', 'no'].includes(String(process.env.ALLOW_DEMO_TOPUP || '1').toLowerCase()),
   pricing: {
     // Kostenteilung: Der Preis darf die Betriebskosten nicht übersteigen (§ 1 Abs. 2 Nr. 1 PBefG).
     ratePerKmCents: num('RATE_PER_KM_CENTS', 25),

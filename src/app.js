@@ -3,7 +3,7 @@
 const fs = require('node:fs');
 const crypto = require('node:crypto');
 const path = require('node:path');
-const { hashPassword, verifyPassword, createSession, userFromRequest, sessionCookie, parseCookies } = require('./auth');
+const { hashPassword, verifyPassword, createSession, userFromRequest, sessionCookie, requestSessionKey, isSecure } = require('./auth');
 const { validateLicense, canDrive } = require('./license');
 const { findMatches } = require('./matching');
 const { computeFare, billableKm } = require('./pricing');
@@ -15,9 +15,8 @@ const guestbook = require('./guestbook');
 const funfacts = require('./funfacts');
 const feedback = require('./feedback');
 const filters = require('./filters');
-const { BRANDS } = require('./profile');
 const { REGIONS } = require('./plates');
-const { displayName, publicProfile, privacyOf, profileOf, sanitizeProfile, sanitizePrivacy } = require('./profile');
+const { BRANDS, LANGUAGES, displayName, publicProfile, privacyOf, profileOf, sanitizeProfile, sanitizePrivacy } = require('./profile');
 
 const PRIVACY_POLICY_VERSION = '2026-10';
 const TERMS_VERSION = '2026-10';
@@ -31,6 +30,8 @@ const ABORT_REASONS = [
 ];
 const MFA_LOGIN_TTL_MS = 5 * 60 * 1000;
 const MFA_MAX_ATTEMPTS = 5;
+const MAX_PASSWORD_LENGTH = 200;
+const LICENSE_SIDES = ['front', 'back'];
 
 const PUBLIC_DIR = path.join(__dirname, '..', 'public');
 const MAX_BODY = 16 * 1024 * 1024;
@@ -72,7 +73,9 @@ function createApp({ store, config, routing }) {
     need(isLatLng(v), 400, `${name}: Koordinaten fehlen.`);
     return v;
   };
-  const publicUser = (u) => ({
+  const publicUser = (u) => {
+    const g = gameOf(u.id);
+    return {
     id: u.id,
     name: u.name,
     email: u.email,
@@ -80,8 +83,8 @@ function createApp({ store, config, routing }) {
     walletCents: u.walletCents,
     reservedCents: u.reservedCents,
     nps: nps.summary(u),
-    points: gameOf(u.id).points,
-    level: (({ name, rank }) => ({ name, rank }))(gameOf(u.id).level),
+    points: g.points,
+    level: { name: g.level.name, rank: g.level.rank },
     co2SavedKg: Math.round((u.co2SavedKg || 0) * 100) / 100,
     canDrive: canDrive(u),
     mfaEnabled: Boolean(u.mfa && u.mfa.enabled),
@@ -104,8 +107,44 @@ function createApp({ store, config, routing }) {
           reviewNote: u.license.reviewNote || '',
         }
       : null,
-  });
-  const gameAll = () => game.computeAll(Object.values(db.rides), config.points, { month: game.monthKey(now()) });
+    };
+  };
+
+  // ---------- Abgeleitete Kennzahlen – einmal je Datenstand berechnet ----------
+  // Statt bei jeder Anfrage (und je Fahrt/Fahrer mehrfach) alle Fahrten zu durchsuchen, wird ein
+  // Index aufgebaut und bis zur nächsten Änderung (store.rev) wiederverwendet.
+  let derivedCache = null;
+  const EMPTY_SLOT = Object.freeze({ all: [], partners: new Set(), driver: [], rider: [], ratedAsDriver: [], ratedAsRider: [] });
+  const derived = () => {
+    const month = game.monthKey(now());
+    if (derivedCache && derivedCache.rev === store.rev && derivedCache.month === month) return derivedCache;
+    const rides = Object.values(db.rides);
+    const perUser = new Map();
+    const slot = (id) => {
+      let s = perUser.get(id);
+      if (!s) perUser.set(id, (s = { all: [], partners: new Set(), driver: [], rider: [], ratedAsDriver: [], ratedAsRider: [] }));
+      return s;
+    };
+    const confirming = [];
+    for (const r of rides) {
+      // Alle Fahrten je Nutzer und Fahrtpartner (für Fahrtenliste und Profil-Sichtbarkeit)
+      slot(r.driverId).all.push(r);
+      slot(r.riderId).all.push(r);
+      slot(r.driverId).partners.add(r.riderId);
+      slot(r.riderId).partners.add(r.driverId);
+      if (r.status === 'confirming') confirming.push(r);
+      if (r.status === 'completed') {
+        slot(r.driverId).driver.push(r);
+        slot(r.riderId).rider.push(r);
+      }
+      if (r.npsByRider) slot(r.driverId).ratedAsDriver.push(r.npsByRider);
+      if (r.npsByDriver) slot(r.riderId).ratedAsRider.push(r.npsByDriver);
+    }
+    derivedCache = { rev: store.rev, month, perUser, confirming, game: game.computeAll(rides, config.points, { month }), funfacts: null };
+    return derivedCache;
+  };
+  const userSlot = (id) => derived().perUser.get(id) || EMPTY_SLOT;
+  const gameAll = () => derived().game;
   const gameOf = (userId) => game.summaryFor(gameAll().get(userId));
   // Kilometer im deutschen Format, gleich gerundet wie in der Oberfläche (z. B. „0,9“)
   const fmtKm = (n) => Number(n).toLocaleString('de-DE', { maximumFractionDigits: 1 });
@@ -114,7 +153,7 @@ function createApp({ store, config, routing }) {
    * in einer Rolle – egal, wer abgebrochen hat (beide waren beteiligt). initiated = selbst abgebrochen.
    */
   const abortStats = (userId, role) => {
-    const rides = Object.values(db.rides).filter((r) => r.status === 'completed' && (role === 'driver' ? r.driverId === userId : r.riderId === userId));
+    const rides = userSlot(userId)[role];
     const aborted = rides.filter((r) => r.abort);
     return {
       rides: rides.length,
@@ -143,6 +182,18 @@ function createApp({ store, config, routing }) {
   };
   const book = (account, amountCents, type, rideId, note) => {
     db.ledger.push({ id: store.id('tx'), at: now(), account, amountCents, type, rideId, note });
+  };
+  /** Hochgeladene Datei ausliefern; fehlt sie, gibt es 404 statt eines Serverfehlers. */
+  const sendUpload = (res, file, cacheControl) => {
+    let data;
+    try {
+      data = fs.readFileSync(store.uploadPath(path.basename(file)));
+    } catch {
+      throw new HttpError(404, 'Datei nicht gefunden.');
+    }
+    const ext = path.extname(file).slice(1);
+    res.writeHead(200, { 'Content-Type': `image/${ext === 'jpg' ? 'jpeg' : ext}`, 'Cache-Control': cacheControl, 'X-Content-Type-Options': 'nosniff' });
+    res.end(data);
   };
   const tripCum = (trip) => {
     if (!trip._cum) Object.defineProperty(trip, '_cum', { value: cumulativeKm(trip.route.coords), enumerable: false, writable: true });
@@ -245,13 +296,20 @@ function createApp({ store, config, routing }) {
     abortReasons: ABORT_REASONS,
     abortPolicy: config.abortPolicy,
     termsVersion: TERMS_VERSION,
+    languages: LANGUAGES,
+    demoTopup: config.allowDemoTopup !== false,
   }), { public: true });
 
   // ---------- Funfacts (öffentlich, nur zusammengefasste Daten) ----------
-  on('GET', '/api/funfacts', () => ({
-    ...funfacts.compute(Object.values(db.rides), db.users, config.funfacts),
-    totalRatings: Object.values(db.rides).filter((r) => r.npsByRider).length,
-  }), { public: true });
+  // Öffentlich erreichbar – daher je Datenstand nur einmal berechnet.
+  on('GET', '/api/funfacts', () => {
+    const d = derived();
+    if (!d.funfacts) {
+      const rides = Object.values(db.rides);
+      d.funfacts = { ...funfacts.compute(rides, db.users, config.funfacts), totalRatings: rides.filter((r) => r.npsByRider).length };
+    }
+    return d.funfacts;
+  }, { public: true });
 
   // ---------- Konto ----------
   const box = mfa.createSecretBox(store.secretKey());
@@ -264,13 +322,30 @@ function createApp({ store, config, routing }) {
     a.count++;
     need(a.count <= max, 429, 'Zu viele Versuche. Bitte in 15 Minuten erneut versuchen.');
   };
-  const clientIp = (req) => String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim();
+  // X-Forwarded-For nur hinter einem vertrauenswürdigen Proxy – sonst könnte man den Brute-Force-Schutz umgehen.
+  const clientIp = (req) =>
+    (config.trustProxy && String(req.headers['x-forwarded-for'] || '').split(',')[0].trim()) || req.socket.remoteAddress || '';
+  const cookie = (token, req) => sessionCookie(token, req, config.trustProxy);
   const startSession = (user, req, res) => {
-    const token = createSession(store, user.id);
-    Object.assign(db.sessions[token], { createdAt: now(), userAgent: String(req.headers['user-agent'] || '').slice(0, 160) });
+    const token = createSession(store, user.id, { createdAt: now(), userAgent: String(req.headers['user-agent'] || '').slice(0, 160) });
     user.lastLoginAt = now();
-    res.setHeader('Set-Cookie', sessionCookie(token, req));
+    res.setHeader('Set-Cookie', cookie(token, req));
   };
+  // Vergleichs-Hash für unbekannte E-Mail-Adressen: gleiche Rechenzeit, kein Rückschluss, ob ein Konto existiert.
+  const DUMMY_HASH = hashPassword(crypto.randomBytes(16).toString('hex'));
+  const passwordMatches = (user, password) => {
+    const pw = String(password || '');
+    if (pw.length > MAX_PASSWORD_LENGTH) return false;
+    const ok = verifyPassword(pw, user ? user.passwordHash : DUMMY_HASH);
+    return Boolean(user) && ok;
+  };
+  // Zähler und halbfertige Anmeldungen regelmäßig aufräumen (sonst wachsen die Maps unbegrenzt).
+  const pruneTimer = setInterval(() => {
+    const t = Date.now();
+    for (const [k, a] of attempts) if (a.reset < t) attempts.delete(k);
+    for (const [k, p] of pendingLogins) if (p.expires < t) pendingLogins.delete(k);
+  }, 10 * 60 * 1000);
+  pruneTimer.unref();
   /** Prüft TOTP- oder Backup-Code; schützt vor Wiederverwendung eines TOTP-Codes. */
   const checkSecondFactor = (user, code) => {
     const c = String(code || '').trim();
@@ -282,8 +357,10 @@ function createApp({ store, config, routing }) {
     if (mfa.useBackupCode(user.mfa.backupHashes, c)) return 'backup';
     return null;
   };
+  // Sensible Aktionen (2FA ändern, Konto löschen): Passwort/Code nicht beliebig oft durchprobierbar.
   const confirmIdentity = (user, body) => {
-    need(verifyPassword(String(body.password || ''), user.passwordHash), 401, 'Passwort ist falsch.');
+    throttle('confirm:' + user.id, 10);
+    need(passwordMatches(user, body.password), 401, 'Passwort ist falsch.');
     if (user.mfa && user.mfa.enabled) need(checkSecondFactor(user, body.code), 401, 'Bestätigungscode ist ungültig.');
   };
 
@@ -295,6 +372,7 @@ function createApp({ store, config, routing }) {
     need(name.length >= 2, 400, 'Bitte Namen angeben.');
     need(/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email), 400, 'Ungültige E-Mail-Adresse.');
     need(password.length >= 8, 400, 'Passwort muss mindestens 8 Zeichen haben.');
+    need(password.length <= MAX_PASSWORD_LENGTH, 400, `Passwort darf höchstens ${MAX_PASSWORD_LENGTH} Zeichen haben.`);
     need(body.acceptPrivacy === true, 400, 'Bitte der Datenschutzerklärung und den Nutzungsbedingungen zustimmen.');
     need(!Object.values(db.users).some((u) => u.email === email), 409, 'E-Mail ist bereits registriert.');
     const isFirst = Object.keys(db.users).length === 0;
@@ -327,7 +405,7 @@ function createApp({ store, config, routing }) {
     const email = String(body.email || '').trim().toLowerCase();
     throttle('login:' + clientIp(req) + ':' + email);
     const user = Object.values(db.users).find((u) => u.email === email && !u.deleted);
-    need(user && verifyPassword(String(body.password || ''), user.passwordHash), 401, 'E-Mail oder Passwort falsch.');
+    need(passwordMatches(user, body.password), 401, 'E-Mail oder Passwort falsch.');
     if (user.mfa && user.mfa.enabled) {
       const mfaToken = crypto.randomBytes(24).toString('base64url');
       pendingLogins.set(mfaToken, { userId: user.id, expires: Date.now() + MFA_LOGIN_TTL_MS, attempts: 0 });
@@ -343,20 +421,21 @@ function createApp({ store, config, routing }) {
     need(pending && pending.expires > Date.now(), 401, 'Anmeldung abgelaufen. Bitte erneut mit Passwort anmelden.');
     pending.attempts++;
     if (pending.attempts > MFA_MAX_ATTEMPTS) {
-      pendingLogins.delete(body.mfaToken);
+      pendingLogins.delete(String(body.mfaToken));
       throw new HttpError(429, 'Zu viele falsche Codes. Bitte erneut mit Passwort anmelden.');
     }
     const user = db.users[pending.userId];
     const method = checkSecondFactor(user, body.code);
     need(method, 401, 'Code ist ungültig.');
-    pendingLogins.delete(body.mfaToken);
+    pendingLogins.delete(String(body.mfaToken));
     startSession(user, req, res);
     return { user: publicUser(user), usedBackupCode: method === 'backup' };
   }, { public: true });
 
   on('POST', '/api/logout', ({ req, res }) => {
-    delete db.sessions[parseCookies(req.headers.cookie).sid];
-    res.setHeader('Set-Cookie', sessionCookie('', req));
+    const key = requestSessionKey(req);
+    if (key) delete db.sessions[key];
+    res.setHeader('Set-Cookie', cookie('', req));
     return { ok: true };
   }, { public: true });
 
@@ -398,21 +477,14 @@ function createApp({ store, config, routing }) {
 
   // ---------- Profil & Privatsphäre ----------
   const rideStats = (userId) => {
-    let asDriver = 0;
-    let asRider = 0;
-    for (const r of Object.values(db.rides)) {
-      if (r.status !== 'completed') continue;
-      if (r.driverId === userId) asDriver++;
-      if (r.riderId === userId) asRider++;
-    }
-    return { asDriver, asRider };
+    const s = userSlot(userId);
+    return { asDriver: s.driver.length, asRider: s.rider.length };
   };
   const sharesBooking = (a, b) =>
     Object.values(db.rides).some(
       (r) => ['accepted', 'picked_up', 'confirming'].includes(r.status) && ((r.driverId === a && r.riderId === b) || (r.driverId === b && r.riderId === a)),
     );
-  const sharesAnyRide = (a, b) =>
-    Object.values(db.rides).some((r) => (r.driverId === a && r.riderId === b) || (r.driverId === b && r.riderId === a));
+  const sharesAnyRide = (a, b) => userSlot(a).partners.has(b);
   // Profile sind nur für angemeldete Nutzer sichtbar – und nur für aktive Fahrer
   // oder Fahrtpartner (keine Möglichkeit, alle Mitglieder zu durchsuchen).
   const canSeeProfile = (viewer, target) =>
@@ -474,9 +546,7 @@ function createApp({ store, config, routing }) {
     need(target && !target.deleted && canSeeProfile(user, target), 404, 'Kein Foto.');
     const photo = profileOf(target).photo;
     need(photo && (privacyOf(target).showPhoto || target.id === user.id), 404, 'Kein Foto.');
-    const ext = path.extname(photo).slice(1);
-    res.writeHead(200, { 'Content-Type': `image/${ext === 'jpg' ? 'jpeg' : ext}`, 'Cache-Control': 'private, max-age=300', 'X-Content-Type-Options': 'nosniff' });
-    res.end(fs.readFileSync(store.uploadPath(photo)));
+    sendUpload(res, photo, 'private, max-age=300');
     return undefined;
   });
 
@@ -580,17 +650,17 @@ function createApp({ store, config, routing }) {
 
   // ---------- Sitzungen ----------
   on('GET', '/api/me/sessions', ({ user, req }) => {
-    const current = parseCookies(req.headers.cookie).sid;
+    const current = requestSessionKey(req);
     return {
       sessions: Object.entries(db.sessions)
         .filter(([, s]) => s.userId === user.id && s.expires > Date.now())
-        .map(([token, s]) => ({ current: token === current, createdAt: s.createdAt || null, userAgent: s.userAgent || '' })),
+        .map(([key, s]) => ({ current: key === current, createdAt: s.createdAt || null, userAgent: s.userAgent || '' })),
     };
   });
 
   on('POST', '/api/me/sessions/revoke-others', ({ user, req }) => {
-    const current = parseCookies(req.headers.cookie).sid;
-    for (const [token, s] of Object.entries(db.sessions)) if (s.userId === user.id && token !== current) delete db.sessions[token];
+    const current = requestSessionKey(req);
+    for (const [key, s] of Object.entries(db.sessions)) if (s.userId === user.id && key !== current) delete db.sessions[key];
     return { ok: true };
   });
 
@@ -668,12 +738,13 @@ function createApp({ store, config, routing }) {
       reservedCents: 0,
     });
     if (payoutCents > 0) book(`user:${user.id}`, -payoutCents, 'payout', null, 'Auszahlung Restguthaben bei Kontolöschung');
-    res.setHeader('Set-Cookie', sessionCookie('', req));
+    res.setHeader('Set-Cookie', cookie('', req));
     return { ok: true, payoutCents };
   });
 
   // Demo-Guthaben. Produktiv: Zahlungsdienstleister (z. B. Stripe Connect), siehe README.
   on('POST', '/api/wallet/topup', ({ user, body }) => {
+    need(config.allowDemoTopup !== false, 403, 'Guthaben wird über den Zahlungsdienstleister aufgeladen.');
     const amount = Math.round(Number(body.amountCents));
     need(Number.isInteger(amount) && amount >= 100 && amount <= 50000, 400, 'Betrag zwischen 1 € und 500 € wählen.');
     user.walletCents += amount;
@@ -690,7 +761,7 @@ function createApp({ store, config, routing }) {
     const check = validateLicense(body);
     if (!check.ok) throw new HttpError(400, 'Führerscheindaten unvollständig.', check.errors);
     const files = {};
-    for (const side of ['front', 'back']) {
+    for (const side of LICENSE_SIDES) {
       const dataUrl = body[side + 'Image'];
       const ext = dataUrl.slice(11, dataUrl.indexOf(';')).replace('jpeg', 'jpg');
       const file = `${user.id}_${side}_${Date.now()}.${ext}`;
@@ -702,9 +773,15 @@ function createApp({ store, config, routing }) {
   });
 
   // ---------- Routing ----------
-  on('GET', '/api/geocode', async ({ query }) => ({ results: await routing.geocode(query.get('q')) }));
+  // Externe Karten-Dienste kosten Geld bzw. haben Nutzungsgrenzen – pro Nutzer drosseln.
+  const routingQuota = (user) => throttle('routing:' + user.id, 300);
+  on('GET', '/api/geocode', async ({ user, query }) => {
+    routingQuota(user);
+    return { results: await routing.geocode(String(query.get('q') || '').slice(0, 200)) };
+  });
 
-  on('POST', '/api/route/preview', async ({ body }) => {
+  on('POST', '/api/route/preview', async ({ user, body }) => {
+    routingQuota(user);
     let { origin, destination } = body;
     if (body.googleMapsUrl) ({ origin, destination } = await routing.parseGoogleMapsLink(body.googleMapsUrl));
     need(origin && destination, 400, 'Start und Ziel angeben.');
@@ -716,6 +793,7 @@ function createApp({ store, config, routing }) {
     need(canDrive(user), 403, 'Bitte zuerst einen gültigen Führerschein verifizieren lassen.');
     needNotSuspended(user);
     need(!Object.values(db.trips).some((t) => t.driverId === user.id && t.status === 'active'), 409, 'Du hast bereits eine aktive Fahrt.');
+    routingQuota(user);
     let { origin, destination } = body;
     if (body.googleMapsUrl) ({ origin, destination } = await routing.parseGoogleMapsLink(body.googleMapsUrl));
     need(origin && destination, 400, 'Start und Ziel angeben.');
@@ -810,6 +888,7 @@ function createApp({ store, config, routing }) {
     const dropoff = point(body.dropoff, 'Ziel');
     const seats = Math.max(1, Math.min(8, Math.round(Number(body.seats) || 1)));
     needNotSuspended(user);
+    routingQuota(user);
     // Gesperrte Fahrer erscheinen nicht in der Suche
     const trips = Object.values(db.trips).filter((t) => t.status === 'active' && canDrive(db.users[t.driverId]) && !activeSuspension(db.users[t.driverId]));
     trips.forEach(tripCum);
@@ -915,8 +994,7 @@ function createApp({ store, config, routing }) {
   on('GET', '/api/rides', ({ user }) => {
     settleOverdue();
     return {
-      rides: Object.values(db.rides)
-        .filter((r) => r.riderId === user.id || r.driverId === user.id)
+      rides: [...new Set(userSlot(user.id).all)] // Set: Fahrten mit sich selbst nicht doppelt
         .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
         .slice(0, 30)
         .map((r) => rideView(r, user)),
@@ -975,7 +1053,7 @@ function createApp({ store, config, routing }) {
   });
 
   /**
-   * Abrechnung: geplante Route oder gefahrene Strecke, sofern kürzer.
+   * Abrechnung: geplante Route (fällig mit dem Einsteigen); bei Fahrtabbruch die gefahrene Strecke.
    * kmOverride nur durch den Betreiber bei Reklamationen (höchstens geplante km).
    */
   const settle = (ride, confirmedBy, kmOverride) => {
@@ -1000,6 +1078,7 @@ function createApp({ store, config, routing }) {
     ride.final = { ...fare, plannedKm: ride.plannedKm, trackedKm: ride.trackedKm, billing: basis.basis, confirmedBy };
     ride.status = 'completed';
     ride.completedAt = now();
+    store.touch();
   };
 
   // ratedRole: wer bewertet wird ('driver' oder 'rider') – bestimmt die möglichen Gründe (Aspekte).
@@ -1016,10 +1095,7 @@ function createApp({ store, config, routing }) {
   };
 
   /** Alle Bewertungen, die ein Nutzer in einer Rolle erhalten hat. */
-  const receivedRatings = (userId, role) =>
-    Object.values(db.rides)
-      .filter((r) => (role === 'driver' ? r.driverId === userId && r.npsByRider : r.riderId === userId && r.npsByDriver))
-      .map((r) => (role === 'driver' ? r.npsByRider : r.npsByDriver));
+  const receivedRatings = (userId, role) => (role === 'driver' ? userSlot(userId).ratedAsDriver : userSlot(userId).ratedAsRider);
 
   /**
    * Fahrtende: Gezahlt wird, wenn der Fahrer den Mitfahrer ABGESETZT hat UND der Mitfahrer
@@ -1046,6 +1122,7 @@ function createApp({ store, config, routing }) {
       ride.droppedOffAt = now();
     }
     ride.confirmations[role + 'End'] = now();
+    store.touch();
     if (ride.confirmations.driverEnd && ride.confirmations.riderEnd) settle(ride, 'beide');
   });
 
@@ -1079,7 +1156,8 @@ function createApp({ store, config, routing }) {
   // Bestätigt nur eine Seite, gilt die Fahrt nach Ablauf der Frist als bestätigt.
   const settleOverdue = () => {
     const limit = Date.now() - config.rides.autoConfirmHours * 3600 * 1000;
-    for (const ride of Object.values(db.rides)) {
+    // Nur Fahrten prüfen, die auf Bestätigung warten (Index), nicht alle Fahrten.
+    for (const ride of derived().confirming) {
       if (ride.status === 'confirming' && new Date(ride.droppedOffAt).getTime() < limit) {
         ride.confirmations.autoAt = now();
         settle(ride, 'automatisch');
@@ -1100,6 +1178,7 @@ function createApp({ store, config, routing }) {
     need(!ride[field], 409, 'Bereits bewertet.');
     ride[field] = rating;
     nps.addScore(db.users[isRider ? ride.driverId : ride.riderId], rating.score);
+    store.touch();
   });
 
   // Feedback zum Lernen – gesammelt und anonym (ab feedback.MIN_ENTRIES Rückmeldungen)
@@ -1279,42 +1358,60 @@ function createApp({ store, config, routing }) {
 
   on('GET', '/api/admin/licenses/:userId/:side', ({ user, params, res }) => {
     adminOnly(user);
+    need(LICENSE_SIDES.includes(params.side), 404, 'Bild nicht gefunden.');
     const target = db.users[params.userId];
     const file = target && target.license && target.license.files && target.license.files[params.side];
     need(file, 404, 'Bild nicht gefunden.');
-    const ext = path.extname(file).slice(1);
-    res.writeHead(200, { 'Content-Type': `image/${ext === 'jpg' ? 'jpeg' : ext}`, 'Cache-Control': 'private, no-store' });
-    res.end(fs.readFileSync(store.uploadPath(file)));
+    sendUpload(res, file, 'private, no-store');
     return undefined;
   });
 
   // ---------- HTTP-Handler ----------
   return async function handle(req, res) {
-    const url = new URL(req.url, 'http://localhost');
-    if (!url.pathname.startsWith('/api/')) return serveStatic(url.pathname, res);
+    const secure = isSecure(req, config.trustProxy);
+    // Alles in try/catch: Eine fehlerhafte Anfrage (z. B. kaputt kodierte URL) darf den Server nie beenden.
+    try {
+      const url = new URL(req.url, 'http://localhost');
+      if (!url.pathname.startsWith('/api/')) return await serveStatic(url.pathname, req, res, secure);
+      await handleApi(req, res, url, secure);
+    } catch (err) {
+      const status = err instanceof HttpError ? err.status : 500;
+      if (status === 500) console.error(err);
+      sendJson(res, status, { error: status === 500 ? 'Interner Fehler. Bitte später erneut versuchen.' : err.message }, secure);
+    }
+  };
 
+  async function handleApi(req, res, url, secure) {
     const ctx = { req, res, query: url.searchParams, params: {}, body: {} };
     try {
       const route = routes.find((r) => r.method === req.method && r.re.test(url.pathname));
       need(route, 404, 'Unbekannter Endpunkt.');
       const m = url.pathname.match(route.re);
-      route.keys.forEach((k, i) => (ctx.params[k] = decodeURIComponent(m[i + 1])));
+      route.keys.forEach((k, i) => {
+        try {
+          ctx.params[k] = decodeURIComponent(m[i + 1]);
+        } catch {
+          throw new HttpError(400, 'Ungültige Adresse.');
+        }
+      });
       ctx.user = userFromRequest(store, req);
       if (!route.public && !ctx.user) throw new HttpError(401, 'Bitte anmelden.', undefined, 'auth_required');
       if (req.method !== 'GET') {
         // Einfacher CSRF-Schutz: nur JSON-Anfragen akzeptieren.
         need(String(req.headers['content-type'] || '').startsWith('application/json'), 415, 'JSON erwartet.');
         ctx.body = await readJson(req);
+        store.touch();
       }
       const result = await route.handler(ctx);
       if (req.method !== 'GET') store.save();
-      if (result !== undefined) sendJson(res, 200, result);
+      if (result !== undefined) sendJson(res, 200, result, secure);
     } catch (err) {
       const status = err instanceof HttpError ? err.status : 500;
       if (status === 500) console.error(err);
-      sendJson(res, status, { error: status === 500 ? 'Interner Fehler: ' + err.message : err.message, details: err.details, code: err.code });
+      // Bei 500 keine internen Details nach außen geben (nur ins Log).
+      sendJson(res, status, { error: status === 500 ? 'Interner Fehler. Bitte später erneut versuchen.' : err.message, details: err.details, code: err.code }, secure);
     }
-  };
+  }
 }
 
 function readJson(req) {
@@ -1339,20 +1436,34 @@ function readJson(req) {
   });
 }
 
-function sendJson(res, status, data) {
+const HSTS = 'max-age=31536000; includeSubDomains';
+
+function sendJson(res, status, data, secure = false) {
   if (res.headersSent) return;
-  res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
+  res.writeHead(status, {
+    'Content-Type': 'application/json; charset=utf-8',
+    'Cache-Control': 'no-store',
+    'X-Content-Type-Options': 'nosniff',
+    ...(secure ? { 'Strict-Transport-Security': HSTS } : {}),
+  });
   res.end(JSON.stringify(data));
 }
 
-function serveStatic(pathname, res) {
-  const rel = pathname === '/' ? 'index.html' : decodeURIComponent(pathname).replace(/^\/+/, '');
-  const file = path.resolve(PUBLIC_DIR, rel);
-  if (!file.startsWith(PUBLIC_DIR + path.sep) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) {
-    // SPA-Fallback
-    return serveFile(path.join(PUBLIC_DIR, 'index.html'), res);
+async function serveStatic(pathname, req, res, secure) {
+  let rel;
+  try {
+    rel = pathname === '/' ? 'index.html' : decodeURIComponent(pathname).replace(/^\/+/, '');
+  } catch {
+    throw new HttpError(400, 'Ungültige Adresse.');
   }
-  return serveFile(file, res);
+  let file = path.resolve(PUBLIC_DIR, rel);
+  let stat = file.startsWith(PUBLIC_DIR + path.sep) ? await fs.promises.stat(file).catch(() => null) : null;
+  if (!stat || stat.isDirectory()) {
+    // SPA-Fallback
+    file = path.join(PUBLIC_DIR, 'index.html');
+    stat = await fs.promises.stat(file);
+  }
+  return serveFile(file, stat, req, res, secure);
 }
 
 const CSP = [
@@ -1366,16 +1477,29 @@ const CSP = [
   "form-action 'self'",
 ].join('; ');
 
-function serveFile(file, res) {
-  res.writeHead(200, {
+function serveFile(file, stat, req, res, secure) {
+  const lastModified = stat.mtime.toUTCString();
+  const headers = {
     'Content-Type': MIME[path.extname(file)] || 'application/octet-stream',
     'X-Content-Type-Options': 'nosniff',
     'Referrer-Policy': 'same-origin',
     'X-Frame-Options': 'DENY',
     'Content-Security-Policy': CSP,
     'Permissions-Policy': 'camera=(self), geolocation=(self), microphone=()',
-  });
-  fs.createReadStream(file).pipe(res);
+    'Last-Modified': lastModified,
+    // Bibliotheken ändern sich selten (1 Tag), eigene Dateien immer neu prüfen (304, wenn unverändert).
+    'Cache-Control': file.includes(`${path.sep}vendor${path.sep}`) ? 'public, max-age=86400' : 'no-cache',
+    ...(secure ? { 'Strict-Transport-Security': HSTS } : {}),
+  };
+  const since = Date.parse(req.headers['if-modified-since'] || '');
+  if (since && Math.floor(stat.mtimeMs / 1000) * 1000 <= since) {
+    res.writeHead(304, headers);
+    return res.end();
+  }
+  res.writeHead(200, headers);
+  const stream = fs.createReadStream(file);
+  stream.on('error', () => res.destroy());
+  stream.pipe(res);
 }
 
 module.exports = { createApp, HttpError };

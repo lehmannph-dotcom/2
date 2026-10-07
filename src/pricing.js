@@ -57,6 +57,4 @@ function billableKm(plannedKm, trackedKm, { aborted = false } = {}) {
   return { km: Math.min(Math.max(trackedKm || 0, 0), plannedKm), basis: 'abbruch' };
 }
 
-const formatEuro = (cents) => (cents / 100).toFixed(2).replace('.', ',') + ' €';
-
-module.exports = { computeFare, co2SavedKg, billableKm, formatEuro };
+module.exports = { computeFare, co2SavedKg, billableKm };

@@ -240,6 +240,16 @@ Dieser Code ist ein funktionsfähiger Prototyp. Für den echten Betrieb fehlen b
 3. **Führerscheinprüfung:** Aktuell manuelle Sichtprüfung durch den Betreiber. Für Skalierung einen Identdienst anbinden (z. B. IDnow, Veriff, Onfido) und Führerscheine regelmäßig erneut prüfen. Führerscheinfotos sind personenbezogene Daten → DSGVO (Verarbeitungsverzeichnis, Löschfristen, Verschlüsselung).
 4. **Versicherung:** Klären, wie Mitfahrer abgesichert sind (Kfz-Haftpflicht des Fahrers deckt Insassen grundsätzlich ab, bei gewerblicher Nutzung aber nicht zwingend).
 5. **Spende:** Empfängerorganisation festlegen und die gesammelten Beträge (Admin-Übersicht) regelmäßig überweisen; transparent ausweisen.
-6. **Technik:** JSON-Datei durch eine Datenbank (z. B. PostgreSQL/PostGIS) ersetzen, HTTPS erzwingen, Rate-Limiting für Login, Push-Benachrichtigungen statt Polling, Google-Maps-Nutzungsbedingungen beachten (Google-Daten auf Google-Karten anzeigen oder Maps JavaScript API verwenden).
+6. **Technik:** JSON-Datei durch eine Datenbank (z. B. PostgreSQL/PostGIS) ersetzen, Push-Benachrichtigungen statt Polling, Google-Maps-Nutzungsbedingungen beachten (Google-Daten auf Google-Karten anzeigen oder Maps JavaScript API verwenden).
 7. **Rechtliches:** Impressum und Datenschutzerklärung (Vorlagen in der App) ausfüllen und prüfen lassen, AGB ergänzen, Auftragsverarbeitungsverträge (Hosting, Zahlungsdienst) abschließen, Verarbeitungsverzeichnis anlegen.
 8. **Domain & Betrieb:** joinmyride.com mit HTTPS (z. B. hinter einem Reverse-Proxy mit `X-Forwarded-Proto`), `APP_SECRET` sicher setzen, regelmäßige Backups von `data/`.
+9. **Konfiguration für den Livebetrieb:** `ALLOW_DEMO_TOPUP=0` (schaltet das Demo-Aufladen ab) und – nur hinter einem eigenen Reverse-Proxy – `TRUST_PROXY=1`, damit `X-Forwarded-For`/`X-Forwarded-Proto` ausgewertet werden. Ohne Proxy bleibt `TRUST_PROXY` aus, sonst könnten Clients ihre IP für das Rate-Limiting fälschen.
+
+## Sicherheit und Performance (Code-Review)
+
+- Sitzungstoken werden nur als SHA-256-Hash gespeichert; Logins prüfen auch bei unbekannter E-Mail einen Passwort-Hash (kein Timing-Hinweis auf existierende Konten).
+- Rate-Limiting für Login, MFA, Identitätsbestätigung sowie Geocoding/Routing pro Nutzer.
+- Datenbank-Objekte ohne Prototyp (Schutz vor Prototype Pollution über IDs wie `__proto__`), fehlerhafte URLs führen zu 400 statt Absturz, interne Fehler werden ohne Details gemeldet.
+- Statische Dateien mit `Last-Modified`/304, Cache für `/vendor/`, HSTS bei HTTPS, `nosniff` auch für API-Antworten.
+- Abgeleitete Kennzahlen (Bewertungen, Abbruchquoten, Punkte, Funfacts, Fahrten je Nutzer) werden einmal pro Datenänderung berechnet statt bei jeder Anfrage; Speichern ist gebündelt.
+- Hinweis: Durch das Hashen der Sitzungen müssen sich bestehende Nutzer nach dem Update einmal neu anmelden.

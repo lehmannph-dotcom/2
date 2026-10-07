@@ -479,7 +479,6 @@ const STATUS = {
 };
 const statusBadge = (s) => `<span class="badge ${STATUS[s][1]}">${STATUS[s][0]}</span>`;
 const PLANNED_STYLE = { color: '#2f7350', weight: 4, dash: '10 8', opacity: 0.9 };
-const BILLING_RULE = 'Mit dem Einsteigen wird der Preis der geplanten Route fällig – auch wenn die Fahrt früher endet. Umwege zahlst du nie. Nur bei einem begründeten Fahrtabbruch wird die bis dahin gefahrene Strecke berechnet.';
 const TIP = {
   billing: (who = 'du') => `<p><b>So wird abgerechnet</b></p><p>Grundlage ist die <b>schnellste Route laut Plan</b>, die ihr beide vorab bestätigt habt.</p><p>Mit dem <b>Einsteigen</b> wird der Preis der geplanten Route fällig – auch wenn die Fahrt früher endet. Ist die Strecke länger (Umweg), bleibt es beim geplanten Preis – Umwege zahlt ${who === 'du' ? 'du' : 'der Mitfahrer'} nie.</p><p>Nur bei einem <b>begründeten Fahrtabbruch</b> wird die bis dahin gefahrene Strecke (GPS) berechnet. Abbrüche erscheinen als Fahrtabbruchsquote im Profil beider Beteiligten.</p>`,
   price: () => {
@@ -1150,8 +1149,8 @@ async function renderAccount(panel) {
         <div class="stat"><b>${me.abortStats.asDriver.rides || me.abortStats.asRider.rides ? `${me.abortStats.asDriver.rides ? me.abortStats.asDriver.quote + ' %' : '–'} / ${me.abortStats.asRider.rides ? me.abortStats.asRider.quote + ' %' : '–'}` : '–'}</b><span>Fahrtabbruchsquote Fahrer / Mitfahrer ${info(`<p>Anteil abgebrochener Fahrten an allen deinen Fahrten.</p><table><tr><td>als Fahrer</td><td>${me.abortStats.asDriver.aborted} von ${me.abortStats.asDriver.rides}</td></tr><tr><td>als Mitfahrer</td><td>${me.abortStats.asRider.aborted} von ${me.abortStats.asRider.rides}</td></tr></table><p style="margin-top:6px">Sichtbar in deinem Profil für Fahrtpartner.</p>`)}</span></div>
         <div class="stat"><b>${me.canDrive ? 'ja' : 'nein'}</b><span>Fahrer verifiziert</span></div>
       </div>
-      <h3 style="margin-top:14px">Guthaben aufladen ${info('Demo-Zahlung. Im Livebetrieb läuft die Zahlung über einen Zahlungsdienstleister.')}</h3>
-      <div class="btn-row">${[1000, 2000, 5000].map((c) => `<button class="secondary" data-topup="${c}">+ ${euro(c)}</button>`).join('')}</div>
+      ${state.config && state.config.demoTopup === false ? '' : `<h3 style="margin-top:14px">Guthaben aufladen ${info('Demo-Zahlung. Im Livebetrieb läuft die Zahlung über einen Zahlungsdienstleister.')}</h3>
+      <div class="btn-row">${[1000, 2000, 5000].map((c) => `<button class="secondary" data-topup="${c}">+ ${euro(c)}</button>`).join('')}</div>`}
     </div>
     <div class="card">
       <h2>Fahrten</h2>
@@ -1359,7 +1358,7 @@ async function renderProfile(panel) {
   const p = me.profile;
   const pv = me.privacy;
   const { sessions } = await api('/api/me/sessions');
-  const LANGS = ['Deutsch', 'Englisch', 'Französisch', 'Spanisch', 'Italienisch', 'Türkisch', 'Polnisch', 'Russisch', 'Arabisch', 'Ukrainisch'];
+  const LANGS = languages();
   const PREFS = { smoking: ['nein', 'ja'], pets: ['nein', 'nach Absprache', 'ja'], music: ['egal', 'gerne', 'lieber leise'], chat: ['egal', 'gerne', 'lieber ruhig'] };
   const sel = (k) => `<div><label for="p-${k}">${PREF_LABELS[k]}</label><select id="p-${k}">${PREFS[k].map((o) => `<option ${p.preferences[k] === o ? 'selected' : ''}>${o}</option>`).join('')}</select></div>`;
 
@@ -1859,7 +1858,8 @@ async function renderFunfacts(panel) {
 }
 
 // ---------- Filter des Mitfahrers: Kriterien, die der Fahrer erfüllen muss ----------
-const LANGS_ALL = ['Deutsch', 'Englisch', 'Französisch', 'Spanisch', 'Italienisch', 'Türkisch', 'Polnisch', 'Russisch', 'Arabisch', 'Ukrainisch'];
+// Sprachliste kommt vom Server (dieselbe Liste wie bei der Profil-Prüfung)
+const languages = () => (state.config && state.config.languages) || ['Deutsch', 'Englisch'];
 
 state.filters = {};
 
@@ -1888,7 +1888,7 @@ function filterPanel() {
       <div><label for="flt-chat">Unterhaltung</label><select id="flt-chat">${opt('', 'egal', f.chat)}${opt('quiet', 'lieber ruhig', f.chat)}${opt('talkative', 'gerne gesprächig', f.chat)}</select></div>
       <div><label for="flt-music">Musik</label><select id="flt-music">${opt('', 'egal', f.music)}${opt('quiet', 'lieber leise', f.music)}</select></div>
     </div>
-    <label for="flt-lang">Fahrer spricht</label><select id="flt-lang">${opt('', 'egal', f.language)}${LANGS_ALL.map((l) => opt(l, l, f.language)).join('')}</select>
+    <label for="flt-lang">Fahrer spricht</label><select id="flt-lang">${opt('', 'egal', f.language)}${languages().map((l) => opt(esc(l), esc(l), f.language)).join('')}</select>
     <div class="btn-row"><button type="button" id="flt-save">Wünsche speichern</button><button type="button" class="secondary" id="flt-reset">Zurücksetzen</button></div>
   </div>`;
 }

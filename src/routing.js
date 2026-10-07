@@ -57,6 +57,7 @@ async function geocode(query) {
     const data = await fetchJson(url);
     results = data.map((r) => ({ label: r.display_name, lat: Number(r.lat), lng: Number(r.lon) }));
   }
+  if (cache.size > 5000) cache.clear(); // Speicher begrenzen
   cache.set(key, results);
   return results;
 }

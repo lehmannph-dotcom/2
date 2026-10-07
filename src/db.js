@@ -10,7 +10,13 @@ const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 
-const EMPTY = () => ({ users: {}, sessions: {}, trips: {}, rides: {}, ledger: [], guestbook: [] });
+// Sammlungen, auf die per ID aus Anfragen zugegriffen wird, haben KEINEN Objekt-Prototyp:
+// So liefern IDs wie „__proto__“ oder „constructor“ nichts zurück und können den
+// Prototyp nicht verändern (Schutz vor Prototype Pollution).
+const DICTS = ['users', 'sessions', 'trips', 'rides'];
+const dict = (obj = {}) => Object.assign(Object.create(null), obj);
+const EMPTY = () => ({ users: dict(), sessions: dict(), trips: dict(), rides: dict(), ledger: [], guestbook: [] });
+const SAVE_DELAY_MS = 1000;
 
 class Store {
   constructor(dir) {
@@ -18,18 +24,29 @@ class Store {
     this.file = dir ? path.join(dir, 'db.json') : null;
     this.data = EMPTY();
     this.timer = null;
+    // Revisionszähler: steigt bei jeder Änderung – abgeleitete Kennzahlen werden je Revision zwischengespeichert.
+    this.rev = 0;
     if (this.file && fs.existsSync(this.file)) {
-      this.data = { ...EMPTY(), ...JSON.parse(fs.readFileSync(this.file, 'utf8')) };
+      const loaded = JSON.parse(fs.readFileSync(this.file, 'utf8'));
+      for (const [k, v] of Object.entries(loaded)) this.data[k] = DICTS.includes(k) ? dict(v) : v;
     }
+  }
+
+  /** Markiert den Datenstand als geändert (Caches werden neu berechnet). */
+  touch() {
+    this.rev++;
   }
 
   id(prefix) {
     return `${prefix}_${crypto.randomBytes(8).toString('hex')}`;
   }
 
+  /** Merkt das Speichern vor; mehrere Änderungen innerhalb von SAVE_DELAY_MS werden zusammengefasst. */
   save() {
+    this.touch();
     if (!this.file || this.timer) return;
-    this.timer = setTimeout(() => this.flush(), 200);
+    this.timer = setTimeout(() => this.flush(), SAVE_DELAY_MS);
+    this.timer.unref();
   }
 
   flush() {
