@@ -50,7 +50,7 @@
     fillExample();
   }
 
-  /** Beispiel 20 km: erster und weiterer Mitfahrer, Aufteilung, Vergleich mit dem eigenen Auto */
+  /** Beispiel 20 km: Buchung, weitere Person derselben Buchung, Aufteilung, Vergleich mit dem eigenen Auto */
   function fillExample() {
     const p = config && config.pricing;
     if (!p) return;
@@ -67,7 +67,7 @@
     set('ex-donation', euro(donation));
     set('ex-extra', euro(extra));
     set('ex-owncar', p.ownCarCostPerKmCents ? euro(km * p.ownCarCostPerKmCents) : '–');
-    // Balken: Aufteilung des Preises für den ersten Mitfahrer
+    // Balken: Aufteilung des Preises einer Buchung
     const width = (sel, part) => { const el = document.querySelector(sel); if (el) el.style.width = `${(part / rider) * 100}%`; };
     width('.share-bar .part-driver', driver);
     width('.share-bar .part-commission', commission);

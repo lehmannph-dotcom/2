@@ -186,37 +186,36 @@ test('Vorkasse in 3 Stufen mit Rabatt auf die Provision, sonst je Fahrt bezahlen
   assert.equal(after.prepaidCents, 5000 - done2.final.totalCents);
 });
 
-test('Zweiter Mitfahrer auf derselben Fahrt zahlt den Satz für weitere Mitfahrer; Fahrer legt keinen Preis fest', async (t) => {
+test('Ermäßigung nur für weitere Personen derselben Buchung; jede weitere Buchung zahlt den normalen Tarif', async (t) => {
   const { user, license, identify, vehicle } = await setup(t);
   const d = await user('Dana Drive', 'dana@example.org');
   await license(d); await identify(d); await vehicle(d);
-  const { trip } = await d('POST', '/api/trips', { origin: A, destination: B, seats: 3, ratePerKmCents: 99, declaration: DECL });
-  assert.equal(trip.ratePerKmCents, undefined, 'eigener Satz wird ignoriert');
+  const { trip } = await d('POST', '/api/trips', { origin: A, destination: B, seats: 4, ratePerKmCents: 99, declaration: DECL });
+  assert.equal(trip.ratePerKmCents, undefined, 'Fahrer legt keinen eigenen Satz fest');
   const pickup = pointAlongRoute(trip.route.coords, 1);
   const dropoff = pointAlongRoute(trip.route.coords, 11);
-  const book = async (name) => {
+  const book = async (name, seats) => {
     const r = await user(`${name} Ride`, `${name.toLowerCase()}@example.org`);
     await r('POST', '/api/wallet/payment-method', {});
-    const m = await r('POST', '/api/match', { pickup, dropoff });
-    const { ride } = await r('POST', '/api/rides', { tripId: trip.id, pickup, dropoff, confirmPlannedRoute: true });
+    const m = await r('POST', '/api/match', { pickup, dropoff, seats });
+    const { ride } = await r('POST', '/api/rides', { tripId: trip.id, pickup, dropoff, seats, confirmPlannedRoute: true });
     return { m, ride, r };
   };
-  const first = await book('Anna');
-  assert.equal(first.m.matches[0].price.totalPerKmCents, 30);
-  assert.equal(first.ride.firstRider, true);
-  assert.equal(first.ride.estimate.driverFareCents, Math.round(first.ride.plannedKm * 20));
-  const second = await book('Ben');
-  assert.equal(second.m.matches[0].price.totalPerKmCents, 14, 'Suche zeigt schon den günstigeren Preis');
-  assert.equal(second.ride.firstRider, false);
-  assert.equal(second.ride.estimate.driverFareCents, Math.round(second.ride.plannedKm * 10));
-  assert.equal(second.ride.estimate.commissionFullCents, Math.round(second.ride.plannedKm * 2));
-  assert.equal(second.ride.estimate.donationCents, Math.round(second.ride.plannedKm * 2));
-  // Abrechnung mit den bei der Buchung festgehaltenen Sätzen
-  await d('POST', `/api/rides/${second.ride.id}/accept`, { confirmPlannedRoute: true });
-  await d('POST', `/api/rides/${second.ride.id}/pickup`, {});
-  await d('POST', `/api/rides/${second.ride.id}/confirm`, {});
-  const done = (await second.r('POST', `/api/rides/${second.ride.id}/confirm`, { nps: 10 })).ride;
+  // Gemeinsame Buchung für zwei Personen (gleicher Einstieg): 30 + 14 ct/km
+  const group = await book('Anna', 2);
+  assert.equal(group.m.matches[0].price.totalPerKmCents, 44);
+  assert.equal(group.ride.estimate.driverFareCents, Math.round(group.ride.plannedKm * 30));
+  // Weitere Buchung auf derselben Fahrt: normaler Tarif
+  const single = await book('Ben', 1);
+  assert.equal(single.m.matches[0].price.totalPerKmCents, 30, 'keine Ermäßigung für eine eigene Buchung');
+  assert.equal(single.ride.estimate.driverFareCents, Math.round(single.ride.plannedKm * 20));
+  assert.equal(single.ride.estimate.commissionFullCents, Math.round(single.ride.plannedKm * 5));
+  // Abrechnung der Gruppe mit den bei der Buchung festgehaltenen Sätzen
+  await d('POST', `/api/rides/${group.ride.id}/accept`, { confirmPlannedRoute: true });
+  await d('POST', `/api/rides/${group.ride.id}/pickup`, {});
+  await d('POST', `/api/rides/${group.ride.id}/confirm`, {});
+  const done = (await group.r('POST', `/api/rides/${group.ride.id}/confirm`, { nps: 10 })).ride;
   assert.equal(done.status, 'completed');
-  assert.equal(done.final.totalCents, second.ride.estimate.totalCents);
-  assert.equal(done.final.totalPerKmCents, 14);
+  assert.equal(done.final.totalCents, group.ride.estimate.totalCents);
+  assert.equal(done.final.totalPerKmCents, 44);
 });

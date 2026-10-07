@@ -66,20 +66,19 @@ test('Erster Mitfahrer: 20 ct Fahrer + 5 ct Provision + 5 ct Umwelt = 30 ct/km',
   assert.equal(f.transitFareCents, 380, 'ÖPNV nur als Vergleich');
 });
 
-test('Jeder weitere Mitfahrer: 10 ct Fahrer + 2 ct Provision + 2 ct Umwelt = 14 ct/km', () => {
-  const second = computeFare(20, live, 1, { firstRider: false });
-  assert.equal(second.totalPerKmCents, 14);
-  assert.equal(second.driverCents, 200);
-  assert.equal(second.commissionCents, 40);
-  assert.equal(second.donationCents, 40);
-  assert.equal(second.totalCents, 280);
-  // Zwei Personen in einer Buchung: erste voll, zweite als weitere
+test('Ermäßigt nur weitere Personen derselben Buchung: 10 ct Fahrer + 2 ct Provision + 2 ct Umwelt', () => {
+  // Zwei Personen, gemeinsamer Einstieg: erste voll, zweite ermäßigt
   const pair = computeFare(20, live, 2);
-  assert.equal(pair.totalPerKmCents, 44);
+  assert.equal(pair.totalPerKmCents, 30 + 14);
+  assert.equal(pair.driverCents, 400 + 200);
+  assert.equal(pair.commissionCents, 100 + 40);
+  assert.equal(pair.donationCents, 100 + 40);
   assert.equal(pair.totalCents, 880);
+  assert.equal(pair.extraRiders, 1);
   assert.equal(pair.driverCents + pair.platformCents + pair.donationCents, pair.totalCents);
-  // Anfahrt zum Treffpunkt immer zum vollen Fahrersatz, ohne Provision und Spende
-  assert.equal(computeFare(20, live, 1, { firstRider: false, pickupDetourKm: 2 }).detourCents, 40);
+  assert.equal(computeFare(20, live, 3).totalCents, 600 + 2 * 280);
+  // Anfahrt zum Treffpunkt einmal je Buchung zum vollen Fahrersatz, ohne Provision und Spende
+  assert.equal(computeFare(20, live, 3, { pickupDetourKm: 2 }).detourCents, 40);
 });
 
 test('Bei der Buchung festgehaltene Sätze bleiben bei der Abrechnung gültig', () => {

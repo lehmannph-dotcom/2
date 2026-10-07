@@ -1,6 +1,6 @@
 # joinmyride.com – Teilen statt Leerfahren
 
-**joinmyride.com** ist eine Ad-hoc-Mitfahrzentrale: Wer ohnehin fährt, wird mit seiner Route (eingegeben oder als **Google-Maps-Link**) spontan zum Fahrtenanbieter. Mitfahrer geben ihr Ziel ein, die App findet den **besten Fahrer** auf dem Weg. Abgerechnet werden die **gefahrenen Kilometer** – je Kilometer 20 ct an den Fahrer, 5 ct Vermittlungsprovision und **5 ct für den Umweltschutz**; jeder weitere Mitfahrer zahlt 10 + 2 + 2 ct. Der Fahrer zahlt nichts.
+**joinmyride.com** ist eine Ad-hoc-Mitfahrzentrale: Wer ohnehin fährt, wird mit seiner Route (eingegeben oder als **Google-Maps-Link**) spontan zum Fahrtenanbieter. Mitfahrer geben ihr Ziel ein, die App findet den **besten Fahrer** auf dem Weg. Abgerechnet werden die **gefahrenen Kilometer** – je Kilometer 20 ct an den Fahrer, 5 ct Vermittlungsprovision und **5 ct für den Umweltschutz**; mitgebrachte Personen derselben Buchung zahlen 10 + 2 + 2 ct. Der Fahrer zahlt nichts.
 
 ## Schnellstart
 
@@ -180,30 +180,30 @@ Eigenes Menü **Funfacts** (auch ohne Anmeldung): Wo und in welchen Autos sitzen
 
 ## Startseite und App
 
-* **`/`** – Startseite mit der Idee in Kürze: *Du fährst sowieso. Nimm jemanden mit.* Ziel eingeben, nette Gesellschaft mitnehmen, der Umwelt etwas Gutes tun. Der Fahrer stellt Auto und Fahrt und zahlt nichts, der Mitfahrer übernimmt die Fahrzeugkosten seiner Strecke, jeder weitere zahlt weniger – alle gewinnen: leerere Straßen, besser genutzte Ressourcen, weniger CO₂. Die Beispielrechnung kommt aus der aktuellen Preiskonfiguration.
+* **`/`** – Startseite mit der Idee in Kürze: *Du fährst sowieso. Nimm jemanden mit.* Ziel eingeben, nette Gesellschaft mitnehmen, der Umwelt etwas Gutes tun. Der Fahrer stellt Auto und Fahrt und zahlt nichts, der Mitfahrer übernimmt die Fahrzeugkosten seiner Strecke, mitgebrachte Personen zahlen weniger – alle gewinnen: leerere Straßen, besser genutzte Ressourcen, weniger CO₂. Die Beispielrechnung kommt aus der aktuellen Preiskonfiguration.
 * **`/app`** – die eigentliche Anwendung mit Anmeldung (`/app#/registrieren` öffnet direkt die Registrierung).
 
 ## Preis: fair geteilt, feste Sätze
 
-joinmyride.com ist eine Plattform für **private Fahrgemeinschaften**, keine Fahrdienstleistung wie Taxi oder Uber. Der Fahrer stellt Auto und Fahrleistung und **zahlt nichts**. Der Mitfahrer übernimmt die Fahrzeugkosten seiner Strecke; jeder weitere Mitfahrer zahlt weniger, weil das Auto ohnehin fährt.
+joinmyride.com ist eine Plattform für **private Fahrgemeinschaften**, keine Fahrdienstleistung wie Taxi oder Uber. Der Fahrer stellt Auto und Fahrleistung und **zahlt nichts**. Der Mitfahrer übernimmt die Fahrzeugkosten seiner Strecke.
 
 | je km und Person | Fahrer | Vermittlungsprovision | Umweltspende | zusammen |
 |---|---|---|---|---|
-| erster Mitfahrer | 20 ct | 5 ct | 5 ct | **30 ct** |
-| jeder weitere Mitfahrer | 10 ct | 2 ct | 2 ct | **14 ct** |
+| jede Buchung (1. Person) | 20 ct | 5 ct | 5 ct | **30 ct** |
+| jede weitere Person **derselben** Buchung | 10 ct | 2 ct | 2 ct | **14 ct** |
 
-* **Weiterer Mitfahrer** ist, wer zu einer Fahrt bucht, auf der schon jemand gebucht ist, und jede zusätzliche Person in derselben Buchung. Die Suche zeigt bereits den passenden Preis; die Sätze werden bei der Buchung festgehalten.
-* Fahrer legen keinen eigenen Preis fest. Die Sätze sind in `.env` einstellbar (`RATE_PER_KM_CENTS`, `EXTRA_RATE_PER_KM_CENTS` usw.).
-* **Anfahrt zum Treffpunkt:** zum vollen Fahrersatz, zu 100 % an den Fahrer, ohne Provision und Spende.
+* **Ermäßigt** sind nur die 2. und jede weitere Person einer gemeinsamen Buchung – sie steigen zusammen am gleichen Ort ein. **Jede weitere Buchung** auf derselben Fahrt zahlt den normalen Tarif.
+* Fahrer legen keinen eigenen Preis fest. Die Sätze werden bei der Buchung festgehalten und sind in `.env` einstellbar (`RATE_PER_KM_CENTS`, `EXTRA_RATE_PER_KM_CENTS` usw.).
+* **Anfahrt zum Treffpunkt:** einmal je Buchung zum vollen Fahrersatz, zu 100 % an den Fahrer, ohne Provision und Spende.
 * **Vergleich** (nur Orientierung): eigenes Auto mit Vollkosten (Richtwert 50 ct/km) und ÖPNV-Einzelticket.
 
-Beispiel 20 km: erster Mitfahrer **6,00 €** (Fahrer 4,00 € · Vermittlung 1,00 € · Umwelt 1,00 €), jeder weitere **2,80 €**; allein mit dem eigenen Auto ca. 10,00 €.
+Beispiel 20 km: eine Person **6,00 €** (Fahrer 4,00 € · Vermittlung 1,00 € · Umwelt 1,00 €), gemeinsame Buchung zu zweit **8,80 €**; eine zweite, eigene Buchung zahlt wieder 6,00 €.
 
-> Rechtlicher Hinweis: Ohne Genehmigung nach dem PBefG darf das Gesamtentgelt die Betriebskosten der Fahrt nicht übersteigen. Mit einem Mitfahrer (20 ct/km) ist das in der Regel erfüllt; mit mehreren (z. B. 20 + 10 + 10 ct/km) vor dem Livegang rechtlich prüfen lassen.
+> Rechtlicher Hinweis: Ohne Genehmigung nach dem PBefG darf das Gesamtentgelt die Betriebskosten der Fahrt nicht übersteigen. Mit einer Buchung (20 ct/km) ist das in der Regel erfüllt; mit mehreren Buchungen (z. B. 2 × 20 ct/km) vor dem Livegang rechtlich prüfen lassen.
 
 ```
 abgerechnete km  = geplante Route (fällig mit dem Einsteigen) – bei Fahrtabbruch: gefahrene Strecke (GPS), höchstens die geplante Route
-Fahreranteil     = km × (20 ct erste Person + 10 ct je weitere Person)   → Fahrer
+Fahreranteil     = km × (20 ct 1. Person + 10 ct je weitere Person derselben Buchung)   → Fahrer
 Provision        = km × ( 5 ct erste Person +  2 ct je weitere Person)   → Betreiber
 Umweltspende     = km × ( 5 ct erste Person +  2 ct je weitere Person)   → Umweltschutz
 Anfahrt          = Umweg zum Treffpunkt (km) × 20 ct                      → zu 100 % Fahrer

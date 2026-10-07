@@ -5,13 +5,14 @@
  *
  * Der Fahrer stellt Auto und Fahrleistung und zahlt nichts. Der Mitfahrer übernimmt die
  * Fahrzeugkosten seiner Strecke; dazu kommen Vermittlungsprovision und Umweltspende.
- * Jeder weitere Mitfahrer im Auto zahlt weniger, weil das Auto ohnehin fährt:
+ * Jede Buchung zahlt den normalen Tarif. Ermäßigt sind nur die 2. und jede weitere Person
+ * DERSELBEN Buchung – sie steigen gemeinsam am gleichen Ort ein:
  *
- *                          Fahrer   Provision   Umwelt   zusammen (je km und Person)
- *   erster Mitfahrer        20 ct      5 ct      5 ct       30 ct
- *   jeder weitere           10 ct      2 ct      2 ct       14 ct
+ *                                     Fahrer   Provision   Umwelt   zusammen (je km und Person)
+ *   Buchung (1. Person)                20 ct      5 ct      5 ct       30 ct
+ *   jede weitere Person der Buchung    10 ct      2 ct      2 ct       14 ct
  *
- *   Anfahrt zum Treffpunkt  = Umweg-km × Satz des ersten Mitfahrers → zu 100 % an den Fahrer
+ *   Anfahrt zum Treffpunkt  = Umweg-km × normaler Fahrersatz, einmal je Buchung → zu 100 % an den Fahrer
  *   Rabatt                  = Prozent der Provision bei Bezahlung aus Vorkasse-Guthaben
  *   Gesamt (Mitfahrer zahlt) = Fahreranteil + Provision − Rabatt + Umweltspende + Anfahrt
  *
@@ -31,13 +32,13 @@ const PREPAID_PACKAGES = Object.freeze([
 const energyCostPerKmCents = (pricing) =>
   pricing.avgFuelPriceCentsPerLiter ? (pricing.avgFuelPriceCentsPerLiter * pricing.avgConsumptionLitersPer100Km) / 100 : null;
 
-/** Satz an den Fahrer für den ersten Mitfahrer (fest oder aus Ø-Energiekosten). */
+/** Satz an den Fahrer je Buchung (fest oder aus Ø-Energiekosten). */
 function kmRateCents(pricing) {
   if (pricing.ratePerKmCents) return pricing.ratePerKmCents;
   return Math.max(1, Math.round((energyCostPerKmCents(pricing) * (pricing.riderEnergySharePercent ?? 67)) / 100));
 }
 
-/** Alle Sätze je km: erster Mitfahrer und jeder weitere (ohne Angabe wie der erste). */
+/** Alle Sätze je km: je Buchung und für weitere Personen derselben Buchung (ohne Angabe wie die erste). */
 function tariffOf(pricing) {
   const rate = kmRateCents(pricing);
   const commission = pricing.commissionPerKmCents || 0;
@@ -64,18 +65,17 @@ function transitFareCents(km, pricing) {
 
 /**
  * @param km                  abzurechnende km der gemeinsamen Strecke
- * @param seats               Personen dieser Buchung
- * @param firstRider          true: die erste Person zahlt den vollen Satz; false: alle als „weitere“
+ * @param seats               Personen dieser Buchung (gemeinsamer Einstieg); ab der 2. Person ermäßigt
  * @param tariff              bei der Buchung festgehaltene Sätze (sonst die aktuellen)
  * @param pickupDetourKm      Anfahrt zum Treffpunkt
  * @param commissionDiscountPercent  Rabatt auf die Provision (Vorkasse-Stufe)
  */
-function computeFare(km, pricing, seats = 1, { pickupDetourKm = 0, commissionDiscountPercent = 0, firstRider = true, tariff } = {}) {
+function computeFare(km, pricing, seats = 1, { pickupDetourKm = 0, commissionDiscountPercent = 0, tariff } = {}) {
   const tf = tariff || tariffOf(pricing);
   const billedKm = Math.max(0, Math.round(km * 100) / 100);
   const detourKm = pickupDetourKm >= 0.1 ? Math.round(pickupDetourKm * 100) / 100 : 0;
-  const first = firstRider ? Math.min(1, seats) : 0;
-  const extra = seats - first;
+  const first = Math.min(1, seats);
+  const extra = seats - first; // weitere Personen derselben Buchung
   const perKm = (base, more) => base * first + more * extra; // Summe je km über alle Personen
   const driverPerKm = perKm(tf.ratePerKmCents, tf.extraRatePerKmCents);
   const commissionPerKm = perKm(tf.commissionPerKmCents, tf.extraCommissionPerKmCents);
@@ -96,7 +96,6 @@ function computeFare(km, pricing, seats = 1, { pickupDetourKm = 0, commissionDis
   return {
     km: billedKm,
     seats,
-    firstRider: Boolean(first),
     extraRiders: extra,
     tariff: tf,
     ratePerKmCents: tf.ratePerKmCents,
