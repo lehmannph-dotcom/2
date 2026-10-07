@@ -46,32 +46,49 @@ test('Preisaufteilung: Fahreranteil + 5 ct/km Provision + 5 ct/km Umweltspende',
   assert.equal(f.co2SavedKg, 15);
 });
 
-// Preismodell wie im Livebetrieb (config.js): Durchschnittswerte, Mitfahrer trägt ca. 2/3 der Energiekosten
+// Preismodell wie im Livebetrieb (config.js): erster Mitfahrer 20+5+5, jeder weitere 10+2+2 ct/km
 const live = {
-  avgFuelPriceCentsPerLiter: 175, avgConsumptionLitersPer100Km: 7, riderEnergySharePercent: 67, commissionPerKmCents: 5, donationPerKmCents: 5, co2GramsPerCarKm: 150,
+  ratePerKmCents: 20, commissionPerKmCents: 5, donationPerKmCents: 5,
+  extraRatePerKmCents: 10, extraCommissionPerKmCents: 2, extraDonationPerKmCents: 2,
+  ownCarCostPerKmCents: 50, co2GramsPerCarKm: 150,
   transitFares: [{ maxKm: 3, cents: 260 }, { maxKm: 20, cents: 380 }, { maxKm: 45, cents: 500 }], transitPerKmBeyondCents: 18,
 };
 
-test('Kilometersatz aus Durchschnittswerten: ca. 2/3 von Ø-Preis × Ø-Verbrauch', () => {
-  assert.equal(energyCostPerKmCents(live), 12.25);
-  assert.equal(kmRateCents(live), 8);
+test('Erster Mitfahrer: 20 ct Fahrer + 5 ct Provision + 5 ct Umwelt = 30 ct/km', () => {
   const f = computeFare(20, live);
-  assert.equal(f.ratePerKmCents, 8);
-  assert.equal(f.totalPerKmCents, 18, '8 ct Fahrer + 5 ct Provision + 5 ct Umweltspende');
-  assert.equal(f.driverCents, 160);
+  assert.equal(f.totalPerKmCents, 30);
+  assert.equal(f.driverCents, 400);
   assert.equal(f.commissionCents, 100);
   assert.equal(f.donationCents, 100);
-  assert.equal(f.totalCents, 360);
-  assert.equal(f.energyCostCents, 245);
-  assert.equal(f.energySharePercent, 65, 'Fahrer erhält ca. 2/3 der Energiekosten');
-  assert.equal(f.transitFareCents, 380);
-  assert.equal(f.savingsVsTransitPercent, 5, 'Vergleich mit dem Nahverkehr nur zur Orientierung');
-  // Steigt der Ø-Kraftstoffpreis, steigt der Satz mit
-  assert.equal(kmRateCents({ ...live, avgFuelPriceCentsPerLiter: 214 }), 10);
+  assert.equal(f.totalCents, 600);
+  assert.equal(f.ownCarCents, 1000);
+  assert.equal(f.savingsVsOwnCarPercent, 40, 'günstiger als das eigene Auto');
+  assert.equal(f.transitFareCents, 380, 'ÖPNV nur als Vergleich');
 });
 
-test('Bei der Buchung festgehaltener Satz bleibt bei der Abrechnung gültig', () => {
-  assert.equal(computeFare(10, { ...live, avgFuelPriceCentsPerLiter: 214 }, 1, { ratePerKmCents: 8 }).driverFareCents, 80);
+test('Jeder weitere Mitfahrer: 10 ct Fahrer + 2 ct Provision + 2 ct Umwelt = 14 ct/km', () => {
+  const second = computeFare(20, live, 1, { firstRider: false });
+  assert.equal(second.totalPerKmCents, 14);
+  assert.equal(second.driverCents, 200);
+  assert.equal(second.commissionCents, 40);
+  assert.equal(second.donationCents, 40);
+  assert.equal(second.totalCents, 280);
+  // Zwei Personen in einer Buchung: erste voll, zweite als weitere
+  const pair = computeFare(20, live, 2);
+  assert.equal(pair.totalPerKmCents, 44);
+  assert.equal(pair.totalCents, 880);
+  assert.equal(pair.driverCents + pair.platformCents + pair.donationCents, pair.totalCents);
+  // Anfahrt zum Treffpunkt immer zum vollen Fahrersatz, ohne Provision und Spende
+  assert.equal(computeFare(20, live, 1, { firstRider: false, pickupDetourKm: 2 }).detourCents, 40);
+});
+
+test('Bei der Buchung festgehaltene Sätze bleiben bei der Abrechnung gültig', () => {
+  const booked = computeFare(10, live).tariff;
+  const later = { ...live, ratePerKmCents: 25, commissionPerKmCents: 6 };
+  assert.equal(computeFare(10, later, 1, { tariff: booked }).totalCents, 300);
+  // Optional weiterhin: Satz aus Ø-Energiekosten, wenn kein fester Satz konfiguriert ist
+  assert.equal(energyCostPerKmCents({ avgFuelPriceCentsPerLiter: 175, avgConsumptionLitersPer100Km: 7 }), 12.25);
+  assert.equal(kmRateCents({ avgFuelPriceCentsPerLiter: 175, avgConsumptionLitersPer100Km: 7, riderEnergySharePercent: 67 }), 8);
 });
 
 test('Rabatt auf die Provision geht nicht zulasten des Fahrers', () => {
@@ -79,8 +96,8 @@ test('Rabatt auf die Provision geht nicht zulasten des Fahrers', () => {
   assert.equal(d.commissionFullCents, 50);
   assert.equal(d.discountCents, 10);
   assert.equal(d.commissionCents, 40);
-  assert.equal(d.totalCents, 80 + 50 + 50 - 10);
-  assert.equal(d.driverCents, 80);
+  assert.equal(d.totalCents, 200 + 50 + 50 - 10);
+  assert.equal(d.driverCents, 200);
   assert.equal(d.donationCents, 50, 'Spende bleibt voll');
   assert.equal(d.driverCents + d.platformCents + d.donationCents, d.totalCents);
 });

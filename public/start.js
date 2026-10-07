@@ -50,35 +50,28 @@
     fillExample();
   }
 
-  /** Beispiel 20 km: Energiekosten, Anteil Mitfahrer (Empfehlung), Ersparnis Fahrer, ÖPNV-Ticket */
+  /** Beispiel 20 km: erster und weiterer Mitfahrer, Aufteilung, Vergleich mit dem eigenen Auto */
   function fillExample() {
     const p = config && config.pricing;
     if (!p) return;
     const km = 20;
-    const energy = Math.round(km * (p.energyCostPerKmCents || 12));
-    const driver = Math.round(km * (p.ratePerKmCents || 8));
-    const commission = Math.round(km * (p.commissionPerKmCents || 0));
-    const donation = Math.round(km * (p.donationPerKmCents || 0));
+    const driver = km * p.ratePerKmCents;
+    const commission = km * (p.commissionPerKmCents || 0);
+    const donation = km * (p.donationPerKmCents || 0);
     const rider = driver + commission + donation;
-    const transit = (p.transitFares || []).find((f) => f.maxKm >= km);
+    const extra = km * ((p.extraRatePerKmCents ?? p.ratePerKmCents) + (p.extraCommissionPerKmCents ?? 0) + (p.extraDonationPerKmCents ?? 0));
     const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
-    set('ex-energy', euro(energy));
     set('ex-rider', euro(rider));
     set('ex-driver', euro(driver));
     set('ex-commission', euro(commission));
     set('ex-donation', euro(donation));
-    set('ex-transit', transit ? euro(transit.cents) : '–');
-    if (p.avgFuelPriceCentsPerLiter) {
-      set('ex-basis', t('Gerechnet mit Durchschnittswerten: {price} je Liter, {consumption} l auf 100 km. Für alle gilt derselbe faire Preis.', {
-        price: euro(p.avgFuelPriceCentsPerLiter),
-        consumption: Number(p.avgConsumptionLitersPer100Km).toLocaleString(locale, { maximumFractionDigits: 1 }),
-      }));
-    }
-    const share = Math.max(5, Math.min(95, Math.round((driver / energy) * 100)));
-    const bar = document.querySelector('.share-bar .rider-part');
-    if (bar) bar.style.width = `${share}%`;
-    const rest = document.querySelector('.share-bar .driver-part');
-    if (rest) rest.style.width = `${100 - share}%`;
+    set('ex-extra', euro(extra));
+    set('ex-owncar', p.ownCarCostPerKmCents ? euro(km * p.ownCarCostPerKmCents) : '–');
+    // Balken: Aufteilung des Preises für den ersten Mitfahrer
+    const width = (sel, part) => { const el = document.querySelector(sel); if (el) el.style.width = `${(part / rider) * 100}%`; };
+    width('.share-bar .part-driver', driver);
+    width('.share-bar .part-commission', commission);
+    width('.share-bar .part-donation', donation);
   }
 
   document.getElementById('lang-select').addEventListener('change', (e) => {

@@ -3,21 +3,21 @@
 /**
  * Preismodell: private Fahrgemeinschaft – keine Fahrdienstleistung.
  *
- * Der Fahrer stellt Auto und Zeit, der Mitfahrer beteiligt sich mit rund zwei Dritteln an den
- * Energiekosten. Gerechnet wird mit DURCHSCHNITTSWERTEN (Ø-Kraftstoffpreis × Ø-Verbrauch), nicht mit
- * einem selbst gewählten Satz – so zahlen alle für dieselbe Strecke denselben fairen Preis.
- * Vergleichswerte (Nahverkehr, Energiekosten) helfen bei der Einordnung, sind aber keine Grenze.
+ * Der Fahrer stellt Auto und Fahrleistung und zahlt nichts. Der Mitfahrer übernimmt die
+ * Fahrzeugkosten seiner Strecke; dazu kommen Vermittlungsprovision und Umweltspende.
+ * Jeder weitere Mitfahrer im Auto zahlt weniger, weil das Auto ohnehin fährt:
  *
- *   Fahreranteil     = km × Kilometersatz × Personen + Anfahrt   → Fahrer
- *   Anfahrt          = Umweg-km zum Treffpunkt × Kilometersatz   → zu 100 % an den Fahrer
- *   Provision        = km × Provision je km × Personen           → Betreiber (abzüglich Rabatt)
- *   Umweltspende     = km × Spende je km × Personen              → Umweltschutz
- *   Rabatt           = Prozent der Provision bei Bezahlung aus Vorkasse-Guthaben
- *   Gesamt (Mitfahrer zahlt) = Fahreranteil + Provision − Rabatt + Umweltspende
+ *                          Fahrer   Provision   Umwelt   zusammen (je km und Person)
+ *   erster Mitfahrer        20 ct      5 ct      5 ct       30 ct
+ *   jeder weitere           10 ct      2 ct      2 ct       14 ct
+ *
+ *   Anfahrt zum Treffpunkt  = Umweg-km × Satz des ersten Mitfahrers → zu 100 % an den Fahrer
+ *   Rabatt                  = Prozent der Provision bei Bezahlung aus Vorkasse-Guthaben
+ *   Gesamt (Mitfahrer zahlt) = Fahreranteil + Provision − Rabatt + Umweltspende + Anfahrt
  *
  * Provision und Spende fallen nur auf die gemeinsame Strecke an, nicht auf die Anfahrt.
- *
- * Alle Beträge in ganzen Cent.
+ * Die Sätze werden bei der Buchung festgehalten (tariff), damit spätere Änderungen eine bestätigte
+ * Fahrt nicht verändern. Alle Beträge in ganzen Cent.
  */
 
 /** Vorkasse-Stufen: Guthaben beim Betreiber, Rabatt auf die Provision (Stufe 1 = je Fahrt zahlen). */
@@ -27,14 +27,29 @@ const PREPAID_PACKAGES = Object.freeze([
   Object.freeze({ id: 'p50', amountCents: 5000, discountPercent: 20 }),
 ]);
 
-/** Durchschnittliche Energiekosten je km in Cent (Ø-Preis × Ø-Verbrauch). */
+/** Durchschnittliche Energiekosten je km in Cent (Ø-Preis × Ø-Verbrauch), falls konfiguriert. */
 const energyCostPerKmCents = (pricing) =>
   pricing.avgFuelPriceCentsPerLiter ? (pricing.avgFuelPriceCentsPerLiter * pricing.avgConsumptionLitersPer100Km) / 100 : null;
 
-/** Kilometersatz: rund zwei Drittel der durchschnittlichen Energiekosten (oder fest konfiguriert). */
+/** Satz an den Fahrer für den ersten Mitfahrer (fest oder aus Ø-Energiekosten). */
 function kmRateCents(pricing) {
   if (pricing.ratePerKmCents) return pricing.ratePerKmCents;
   return Math.max(1, Math.round((energyCostPerKmCents(pricing) * (pricing.riderEnergySharePercent ?? 67)) / 100));
+}
+
+/** Alle Sätze je km: erster Mitfahrer und jeder weitere (ohne Angabe wie der erste). */
+function tariffOf(pricing) {
+  const rate = kmRateCents(pricing);
+  const commission = pricing.commissionPerKmCents || 0;
+  const donation = pricing.donationPerKmCents || 0;
+  return {
+    ratePerKmCents: rate,
+    commissionPerKmCents: commission,
+    donationPerKmCents: donation,
+    extraRatePerKmCents: pricing.extraRatePerKmCents ?? rate,
+    extraCommissionPerKmCents: pricing.extraCommissionPerKmCents ?? commission,
+    extraDonationPerKmCents: pricing.extraDonationPerKmCents ?? donation,
+  };
 }
 
 /** Richtpreis eines ÖPNV-Einzeltickets für die Entfernung (null, wenn nicht konfiguriert). */
@@ -49,35 +64,46 @@ function transitFareCents(km, pricing) {
 
 /**
  * @param km                  abzurechnende km der gemeinsamen Strecke
- * @param seats               Personen
- * @param ratePerKmCents      bei der Buchung festgehaltener Satz (sonst der aktuelle)
+ * @param seats               Personen dieser Buchung
+ * @param firstRider          true: die erste Person zahlt den vollen Satz; false: alle als „weitere“
+ * @param tariff              bei der Buchung festgehaltene Sätze (sonst die aktuellen)
  * @param pickupDetourKm      Anfahrt zum Treffpunkt
  * @param commissionDiscountPercent  Rabatt auf die Provision (Vorkasse-Stufe)
  */
-function computeFare(km, pricing, seats = 1, { pickupDetourKm = 0, commissionDiscountPercent = 0, ratePerKmCents } = {}) {
-  const rate = ratePerKmCents || kmRateCents(pricing);
-  const energyPerKm = energyCostPerKmCents(pricing);
+function computeFare(km, pricing, seats = 1, { pickupDetourKm = 0, commissionDiscountPercent = 0, firstRider = true, tariff } = {}) {
+  const tf = tariff || tariffOf(pricing);
   const billedKm = Math.max(0, Math.round(km * 100) / 100);
   const detourKm = pickupDetourKm >= 0.1 ? Math.round(pickupDetourKm * 100) / 100 : 0;
-  const driverFareCents = Math.round(billedKm * rate * seats);
-  const detourCents = Math.round(detourKm * rate);
-  const commissionFullCents = Math.round(billedKm * (pricing.commissionPerKmCents || 0) * seats);
+  const first = firstRider ? Math.min(1, seats) : 0;
+  const extra = seats - first;
+  const perKm = (base, more) => base * first + more * extra; // Summe je km über alle Personen
+  const driverPerKm = perKm(tf.ratePerKmCents, tf.extraRatePerKmCents);
+  const commissionPerKm = perKm(tf.commissionPerKmCents, tf.extraCommissionPerKmCents);
+  const donationPerKm = perKm(tf.donationPerKmCents, tf.extraDonationPerKmCents);
+
+  const driverFareCents = Math.round(billedKm * driverPerKm);
+  const detourCents = Math.round(detourKm * tf.ratePerKmCents);
+  const commissionFullCents = Math.round(billedKm * commissionPerKm);
   const discountPercent = Math.max(0, Math.min(100, commissionDiscountPercent || 0));
   const discountCents = Math.round((commissionFullCents * discountPercent) / 100);
   const commissionCents = commissionFullCents - discountCents;
-  const donationCents = Math.round(billedKm * (pricing.donationPerKmCents || 0) * seats);
+  const donationCents = Math.round(billedKm * donationPerKm);
   // Fahrtkosten der gemeinsamen Strecke (ohne Anfahrt, vor Rabatt)
   const fareCents = driverFareCents + commissionFullCents + donationCents;
   const totalCents = fareCents + detourCents - discountCents;
-  const transitTotal = transitFareCents(billedKm, pricing);
-  const energyCents = energyPerKm ? Math.round((billedKm + detourKm) * energyPerKm) : null;
+  const transit = transitFareCents(billedKm, pricing);
+  const ownCar = pricing.ownCarCostPerKmCents ? Math.round(billedKm * pricing.ownCarCostPerKmCents) : null;
   return {
     km: billedKm,
     seats,
-    ratePerKmCents: rate,
-    commissionPerKmCents: pricing.commissionPerKmCents || 0,
-    donationPerKmCents: pricing.donationPerKmCents || 0,
-    totalPerKmCents: rate + (pricing.commissionPerKmCents || 0) + (pricing.donationPerKmCents || 0),
+    firstRider: Boolean(first),
+    extraRiders: extra,
+    tariff: tf,
+    ratePerKmCents: tf.ratePerKmCents,
+    driverPerKmCents: driverPerKm,
+    commissionPerKmCents: commissionPerKm,
+    donationPerKmCents: donationPerKm,
+    totalPerKmCents: driverPerKm + commissionPerKm + donationPerKm,
     driverFareCents,
     fareCents,
     commissionFullCents,
@@ -90,12 +116,11 @@ function computeFare(km, pricing, seats = 1, { pickupDetourKm = 0, commissionDis
     driverCents: driverFareCents + detourCents,
     donationCents,
     totalCents,
-    // Orientierung für einen angemessenen Preis
-    transitFareCents: transitTotal === null ? null : transitTotal * seats,
-    savingsVsTransitPercent: transitTotal ? Math.round((1 - totalCents / (transitTotal * seats)) * 100) : null,
-    energyCostCents: energyCents,
-    // Anteil des Mitfahrers an den Energiekosten (was der Fahrer erhält)
-    energySharePercent: energyCents ? Math.round(((driverFareCents + detourCents) / energyCents) * 100) : null,
+    // Vergleichswerte (Orientierung): ÖPNV-Einzeltickets und eigenes Auto (Vollkosten) für alle Personen
+    transitFareCents: transit === null ? null : transit * seats,
+    savingsVsTransitPercent: transit ? Math.round((1 - totalCents / (transit * seats)) * 100) : null,
+    ownCarCents: ownCar,
+    savingsVsOwnCarPercent: ownCar ? Math.round((1 - totalCents / (ownCar * seats)) * 100) : null,
     co2SavedKg: co2SavedKg(billedKm * seats, pricing),
   };
 }
@@ -145,6 +170,7 @@ module.exports = {
   co2SavedKg,
   billableKm,
   kmRateCents,
+  tariffOf,
   energyCostPerKmCents,
   transitFareCents,
   prepaidDiscountPercent,

@@ -6,7 +6,7 @@ const path = require('node:path');
 const { hashPassword, verifyPassword, createSession, userFromRequest, sessionCookie, requestSessionKey, isSecure } = require('./auth');
 const { validateLicense, canDrive } = require('./license');
 const { findMatches } = require('./matching');
-const { computeFare, billableKm, kmRateCents, energyCostPerKmCents, PREPAID_PACKAGES, prepaidDiscountPercent, consumePrepaid, prepaidRemainingCents } = require('./pricing');
+const { computeFare, billableKm, kmRateCents, tariffOf, energyCostPerKmCents, PREPAID_PACKAGES, prepaidDiscountPercent, consumePrepaid, prepaidRemainingCents } = require('./pricing');
 const identity = require('./identity');
 const { haversineKm, projectOntoRoute, cumulativeKm, isLatLng, simplify } = require('./geo');
 const mfa = require('./mfa');
@@ -211,6 +211,16 @@ function createApp({ store, config, routing }) {
   }
   /** Verfügbares Guthaben (abzüglich Reservierungen) */
   const availableCents = (u) => u.walletCents - u.reservedCents;
+  /** Ist auf der Fahrt schon jemand anderes gebucht? Dann zahlt man den Satz für weitere Mitfahrer. */
+  const hasOtherRiders = (trip, riderId) =>
+    Object.values(db.rides).some((r) => r.tripId === trip.id && r.riderId !== riderId && ['requested', 'accepted', 'picked_up', 'confirming'].includes(r.status));
+  /** Bei der Buchung festgehaltene Sätze (ältere Buchungen: nur der Fahrersatz war gespeichert). */
+  const fareOptsOf = (ride) => ({
+    pickupDetourKm: ride.pickupDetourKm || 0,
+    commissionDiscountPercent: ride.commissionDiscountPercent || 0,
+    firstRider: ride.firstRider !== false,
+    tariff: ride.tariff || (ride.ratePerKmCents ? { ...tariffOf(config.pricing), ratePerKmCents: ride.ratePerKmCents, extraRatePerKmCents: ride.ratePerKmCents } : undefined),
+  });
   /** Hochgeladene Datei ausliefern; fehlt sie, gibt es 404 statt eines Serverfehlers. */
   const sendUpload = (res, file, cacheControl) => {
     let data;
@@ -237,7 +247,7 @@ function createApp({ store, config, routing }) {
     let settlementPreview = null;
     if (['picked_up', 'confirming', 'disputed'].includes(ride.status)) {
       const b = billableKm(ride.plannedKm, ride.trackedKm, { aborted: Boolean(ride.abort) });
-      settlementPreview = { plannedKm: ride.plannedKm, trackedKm: ride.trackedKm, billedKm: b.km, basis: b.basis, price: computeFare(b.km, config.pricing, ride.seats, { pickupDetourKm: ride.pickupDetourKm || 0, commissionDiscountPercent: ride.commissionDiscountPercent || 0, ratePerKmCents: ride.ratePerKmCents }) };
+      settlementPreview = { plannedKm: ride.plannedKm, trackedKm: ride.trackedKm, billedKm: b.km, basis: b.basis, price: computeFare(b.km, config.pricing, ride.seats, fareOptsOf(ride)) };
     }
     return {
       ...ride,
@@ -313,7 +323,7 @@ function createApp({ store, config, routing }) {
 
   // ---------- Öffentliche Konfiguration ----------
   on('GET', '/api/config', () => ({
-    pricing: { ...config.pricing, ratePerKmCents: kmRateCents(config.pricing), energyCostPerKmCents: energyCostPerKmCents(config.pricing) },
+    pricing: { ...config.pricing, ...tariffOf(config.pricing), energyCostPerKmCents: energyCostPerKmCents(config.pricing) },
     prepaidPackages: PREPAID_PACKAGES,
     identityProvider: { id: identCfg.provider, name: (identity.PROVIDERS[identCfg.provider] || {}).name || identCfg.provider },
     routingProvider: config.googleMapsApiKey ? 'google' : 'openstreetmap',
@@ -1051,7 +1061,7 @@ function createApp({ store, config, routing }) {
         ...m,
         plannedKm: plannedRoute.distanceKm,
         plannedDurationMin: plannedRoute.durationMin,
-        price: computeFare(plannedRoute.distanceKm, config.pricing, seats, { pickupDetourKm: m.pickupDetourKm, commissionDiscountPercent: discount }),
+        price: computeFare(plannedRoute.distanceKm, config.pricing, seats, { pickupDetourKm: m.pickupDetourKm, commissionDiscountPercent: discount, firstRider: !hasOtherRiders(db.trips[m.tripId], user.id) }),
         driverName: displayName(db.users[m.driverId], user),
         driverIdentityVerified: identity.isVerified(db.users[m.driverId]),
         origin: coarsePlace(m.origin),
@@ -1088,7 +1098,7 @@ function createApp({ store, config, routing }) {
     if (body.plannedKm !== undefined && Math.abs(Number(body.plannedKm) - plannedRoute.distanceKm) > 0.5) {
       throw new HttpError(409, 'Die geplante Route hat sich geändert. Bitte erneut suchen und bestätigen.');
     }
-    const fareOpts = { pickupDetourKm: match.pickupDetourKm };
+    const fareOpts = { pickupDetourKm: match.pickupDetourKm, firstRider: !hasOtherRiders(trip, user.id) };
     // Bezahlung: aus Vorkasse-Guthaben (mit Rabatt auf die Provision) oder je Fahrt mit hinterlegtem Zahlungsmittel
     let payment = 'wallet';
     let estimate = computeFare(plannedRoute.distanceKm, config.pricing, seats, { ...fareOpts, commissionDiscountPercent: prepaidDiscountPercent(user) });
@@ -1114,8 +1124,9 @@ function createApp({ store, config, routing }) {
       detourKm: match.detourKm,
       estimate,
       payment,
-      // Satz zum Zeitpunkt der Buchung festhalten – spätere Anpassung der Durchschnittswerte ändert den bestätigten Preis nicht
-      ratePerKmCents: estimate.ratePerKmCents,
+      // Sätze zum Zeitpunkt der Buchung festhalten – spätere Änderungen betreffen die bestätigte Fahrt nicht
+      tariff: estimate.tariff,
+      firstRider: estimate.firstRider,
       commissionDiscountPercent: estimate.commissionDiscountPercent,
       maxChargeCents: estimate.totalCents,
       reservedCents: 0,
@@ -1199,11 +1210,7 @@ function createApp({ store, config, routing }) {
    */
   const settle = (ride, confirmedBy, kmOverride) => {
     const basis = kmOverride !== undefined ? { km: kmOverride, basis: 'betreiber' } : billableKm(ride.plannedKm, ride.trackedKm, { aborted: Boolean(ride.abort) });
-    const fare = computeFare(basis.km, config.pricing, ride.seats, {
-      pickupDetourKm: ride.pickupDetourKm || 0,
-      commissionDiscountPercent: ride.commissionDiscountPercent || 0,
-      ratePerKmCents: ride.ratePerKmCents,
-    });
+    const fare = computeFare(basis.km, config.pricing, ride.seats, fareOptsOf(ride));
     const rider = db.users[ride.riderId];
     const driver = db.users[ride.driverId];
     releaseReservation(ride);

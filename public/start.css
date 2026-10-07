@@ -55,8 +55,11 @@ section { padding: clamp(48px, 7vw, 96px) clamp(16px, 6vw, 96px); }
 .split { display: grid; grid-template-columns: 1fr 1fr; gap: 48px; align-items: center; }
 .example .example-title { font-weight: 700; margin: 0 0 12px; }
 .share-bar { display: flex; height: 14px; border-radius: 999px; overflow: hidden; background: var(--line); margin-bottom: 16px; }
-.share-bar .rider-part { width: 67%; background: var(--sage-500); }
-.share-bar .driver-part { width: 33%; background: var(--mint-300); }
+.share-bar .part-driver { width: 66%; background: var(--green-600); }
+.share-bar .part-commission { width: 17%; background: var(--sage-500); }
+.share-bar .part-donation { width: 17%; background: var(--mint-300); }
+.example dl div.sub dt { padding-inline-start: 14px; font-size: .92rem; }
+.example dl div.sub dd { font-weight: 500; color: var(--muted); }
 .example dl { margin: 0; }
 .example dl div { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--line); }
 .example dt { color: var(--muted); }

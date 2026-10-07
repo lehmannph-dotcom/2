@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>joinmyride.com – Du fährst sowieso. Nimm jemanden mit.</title>
-  <meta name="description" content="joinmyride.com – Ziel eingeben, nette Gesellschaft mitnehmen, der Umwelt etwas Gutes tun. Der Fahrer stellt Auto und Fahrt, der Mitfahrer trägt rund zwei Drittel der Energiekosten, dazu Vermittlung und Umweltspende.">
+  <meta name="description" content="joinmyride.com – Ziel eingeben, nette Gesellschaft mitnehmen, der Umwelt etwas Gutes tun. Der Fahrer stellt Auto und Fahrt, der Mitfahrer übernimmt die Fahrzeugkosten seiner Strecke – jeder weitere zahlt weniger.">
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/start.css">
 </head>
@@ -36,7 +36,7 @@
         </div>
         <ul class="hero-points">
           <li data-i18n="Spontan auf deiner Strecke">Spontan auf deiner Strecke</li>
-          <li data-i18n="Fair geteilte Energiekosten">Fair geteilte Energiekosten</li>
+          <li data-i18n="Fahrer zahlen nichts">Fahrer zahlen nichts</li>
           <li data-i18n="Geprüfte Mitglieder">Geprüfte Mitglieder</li>
         </ul>
       </div>
@@ -58,7 +58,7 @@
           <g font-family="system-ui, sans-serif" font-size="12" fill="#1c3a2a">
             <rect x="196" y="170" width="140" height="58" rx="12" fill="#fff" stroke="#dcece2"/>
             <text x="210" y="196" font-weight="700" font-size="20">+2</text>
-            <text x="250" y="196" font-weight="700" font-size="20" fill="#4a9a6e">2/3</text>
+            <text x="250" y="196" font-weight="700" font-size="20" fill="#4a9a6e">0 €</text>
             <rect x="210" y="208" width="112" height="8" rx="4" fill="#dcece2"/><rect x="210" y="208" width="75" height="8" rx="4" fill="#78bf96"/>
           </g>
         </svg>
@@ -89,21 +89,22 @@
     <section id="fair" class="split">
       <div>
         <h2 data-i18n="Fair geteilt">Fair geteilt</h2>
-        <p class="lead" data-i18n="Der Fahrer stellt Auto und Fahrt. Der Mitfahrer beteiligt sich mit rund zwei Dritteln an Kraftstoff bzw. Strom.">Der Fahrer stellt Auto und Fahrt. Der Mitfahrer beteiligt sich mit rund zwei Dritteln an Kraftstoff bzw. Strom.</p>
-        <p data-i18n="Kein Taxi, kein Fahrdienst: eine private Fahrgemeinschaft, bei der niemand verdienen will – alle sparen.">Kein Taxi, kein Fahrdienst: eine private Fahrgemeinschaft, bei der niemand verdienen will – alle sparen.</p>
+        <p class="lead" data-i18n="Der Fahrer stellt Auto und Fahrt – und zahlt nichts. Der Mitfahrer übernimmt die Fahrzeugkosten seiner Strecke.">Der Fahrer stellt Auto und Fahrt – und zahlt nichts. Der Mitfahrer übernimmt die Fahrzeugkosten seiner Strecke.</p>
+        <p data-i18n="Jeder weitere Mitfahrer zahlt deutlich weniger, denn das Auto fährt ohnehin. Kein Taxi, kein Fahrdienst: eine private Fahrgemeinschaft zu festen, fairen Sätzen.">Jeder weitere Mitfahrer zahlt deutlich weniger, denn das Auto fährt ohnehin. Kein Taxi, kein Fahrdienst: eine private Fahrgemeinschaft zu festen, fairen Sätzen.</p>
       </div>
       <div class="example card">
         <p class="example-title" data-i18n="Beispiel: 20 km zur Arbeit">Beispiel: 20 km zur Arbeit</p>
-        <div class="share-bar" aria-hidden="true"><span class="rider-part"></span><span class="driver-part"></span></div>
+        <div class="share-bar" aria-hidden="true"><span class="part-driver"></span><span class="part-commission"></span><span class="part-donation"></span></div>
         <dl>
-          <div><dt data-i18n="Kraftstoff bzw. Strom">Kraftstoff bzw. Strom</dt><dd id="ex-energy">–</dd></div>
-          <div><dt data-i18n="Fahrer erhält (ca. 2/3 davon)">Fahrer erhält (ca. 2/3 davon)</dt><dd id="ex-driver">–</dd></div>
-          <div><dt data-i18n="Vermittlungsprovision">Vermittlungsprovision</dt><dd id="ex-commission">–</dd></div>
-          <div><dt data-i18n="Umweltspende">Umweltspende</dt><dd id="ex-donation">–</dd></div>
-          <div class="sum"><dt data-i18n="Mitfahrer zahlt">Mitfahrer zahlt</dt><dd id="ex-rider">–</dd></div>
-          <div><dt data-i18n="Zum Vergleich: ÖPNV-Ticket">Zum Vergleich: ÖPNV-Ticket</dt><dd id="ex-transit">–</dd></div>
+          <div class="sum"><dt data-i18n="Erster Mitfahrer zahlt">Erster Mitfahrer zahlt</dt><dd id="ex-rider">–</dd></div>
+          <div class="sub"><dt data-i18n="davon an den Fahrer">davon an den Fahrer</dt><dd id="ex-driver">–</dd></div>
+          <div class="sub"><dt data-i18n="davon Vermittlung">davon Vermittlung</dt><dd id="ex-commission">–</dd></div>
+          <div class="sub"><dt data-i18n="davon Umweltspende">davon Umweltspende</dt><dd id="ex-donation">–</dd></div>
+          <div class="sum"><dt data-i18n="Jeder weitere Mitfahrer zahlt">Jeder weitere Mitfahrer zahlt</dt><dd id="ex-extra">–</dd></div>
+          <div><dt data-i18n="Fahrer zahlt">Fahrer zahlt</dt><dd>0,00 €</dd></div>
+          <div><dt data-i18n="Zum Vergleich: allein mit dem eigenen Auto">Zum Vergleich: allein mit dem eigenen Auto</dt><dd id="ex-owncar">–</dd></div>
         </dl>
-        <p class="fine" id="ex-basis"></p>
+        <p class="fine" data-i18n="Feste Sätze für alle – der Fahrer legt keinen Preis fest. Eigenes Auto: Richtwert für die Vollkosten eines durchschnittlichen Pkw.">Feste Sätze für alle – der Fahrer legt keinen Preis fest. Eigenes Auto: Richtwert für die Vollkosten eines durchschnittlichen Pkw.</p>
       </div>
     </section>
 
@@ -123,7 +124,7 @@
         <article>
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 4C11 4 5 9 5 16c0 1.4.3 2.6.8 3.6C7 15 10 11.5 15 9c-4 3-6.6 6.4-7.7 10.6.9.3 1.8.4 2.7.4 7 0 10-6.5 10-16z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>
           <h3 data-i18n="Gemeinsam die Umwelt schonen">Gemeinsam die Umwelt schonen</h3>
-          <p data-i18n="Weniger Fahrten, weniger CO₂ – und 5 Cent je Kilometer gehen als Spende an den Umweltschutz.">Weniger Fahrten, weniger CO₂ – und 5 Cent je Kilometer gehen als Spende an den Umweltschutz.</p>
+          <p data-i18n="Weniger Fahrten, weniger CO₂ – und mit jedem Kilometer fließt eine Spende in den Umweltschutz.">Weniger Fahrten, weniger CO₂ – und mit jedem Kilometer fließt eine Spende in den Umweltschutz.</p>
         </article>
         <article>
           <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3.2" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="17" cy="9" r="2.6" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M3 20c0-3.3 2.7-5.5 6-5.5s6 2.2 6 5.5M14.5 14.6c3.3-.6 6.5 1.3 6.5 4.9" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>

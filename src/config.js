@@ -28,18 +28,17 @@ module.exports = {
   // Demo-Guthaben ohne echte Zahlung – im Livebetrieb abschalten (ALLOW_DEMO_TOPUP=0).
   allowDemoTopup: !['0', 'false', 'no'].includes(String(process.env.ALLOW_DEMO_TOPUP || '1').toLowerCase()),
   pricing: {
-    // Private Fahrgemeinschaft, siehe src/pricing.js: Der Kilometersatz ergibt sich aus
-    // Durchschnittswerten – der Mitfahrer trägt rund zwei Drittel der Energiekosten.
-    // Ø-Kraftstoffpreis (Cent je Liter) und Ø-Verbrauch eines Pkw (Liter je 100 km) – regelmäßig aktualisieren.
-    avgFuelPriceCentsPerLiter: num('AVG_FUEL_PRICE_CENTS_PER_LITER', 175),
-    avgConsumptionLitersPer100Km: num('AVG_CONSUMPTION_L_PER_100KM', 7),
-    riderEnergySharePercent: num('RIDER_ENERGY_SHARE_PERCENT', 67),
-    ...(process.env.RATE_PER_KM_CENTS ? { ratePerKmCents: num('RATE_PER_KM_CENTS', 8) } : {}),
-    // Zusätzlich je Kilometer (je Person, nur gemeinsame Strecke):
-    commissionPerKmCents: num('COMMISSION_PER_KM_CENTS', 5), // Vermittlungsprovision → Betreiber
-    donationPerKmCents: num('DONATION_PER_KM_CENTS', 5),     // Umweltspende → Umweltschutz
+    // Private Fahrgemeinschaft, siehe src/pricing.js: Der Fahrer stellt Auto und Fahrleistung und zahlt
+    // nichts; der Mitfahrer übernimmt die Fahrzeugkosten seiner Strecke. Je km und Person in Cent:
+    ratePerKmCents: num('RATE_PER_KM_CENTS', 20),                 // erster Mitfahrer → Fahrer
+    commissionPerKmCents: num('COMMISSION_PER_KM_CENTS', 5),       // erster Mitfahrer → Betreiber
+    donationPerKmCents: num('DONATION_PER_KM_CENTS', 5),           // erster Mitfahrer → Umweltschutz
+    extraRatePerKmCents: num('EXTRA_RATE_PER_KM_CENTS', 10),       // jeder weitere Mitfahrer → Fahrer
+    extraCommissionPerKmCents: num('EXTRA_COMMISSION_PER_KM_CENTS', 2),
+    extraDonationPerKmCents: num('EXTRA_DONATION_PER_KM_CENTS', 2),
+    // Vergleich: Vollkosten des eigenen Autos je km (Richtwert, z. B. ADAC-Autokosten Kompaktklasse)
+    ownCarCostPerKmCents: num('OWN_CAR_COST_PER_KM_CENTS', 50),
     // Vergleich mit dem Nahverkehr (nur Orientierung, keine Grenze):
-    transitDiscountPercent: num('TRANSIT_DISCOUNT_PERCENT', 30),
     // Richtwerte Einzelticket in deutschen Ballungsräumen (2026) – an den regionalen Tarif anpassen.
     transitFares: [
       { maxKm: 3, cents: num('TRANSIT_SHORT_CENTS', 260) },   // Kurzstrecke
