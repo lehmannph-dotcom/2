@@ -207,6 +207,16 @@ Alle Werte sind über `.env` einstellbar (siehe `.env.example`).
 * Ohne Key: OpenStreetMap (Nominatim + OSRM-Demoserver). Fällt der Routingdienst aus, wird die Luftlinie × 1,3 verwendet.
 * Kartenanzeige: Leaflet (lokal in `public/vendor/`, BSD-2-Lizenz) mit OpenStreetMap-Kacheln. QR-Codes: qrcode-generator (MIT).
 
+## Mehrsprachigkeit
+
+Die Oberfläche gibt es auf **Deutsch** (Ausgangssprache) und in den **10 meistgesprochenen Sprachen der Welt**: Englisch, Chinesisch (vereinfacht), Hindi, Spanisch, Arabisch (von rechts nach links), Französisch, Bengalisch, Portugiesisch, Russisch und Indonesisch.
+
+- **Auswahl:** im Profil unter „Sprache“ (gilt auf allen Geräten) oder über die Auswahl in der Kopfzeile. Ohne Auswahl richtet sich die Sprache nach dem Browser; bei der Registrierung wird die angezeigte Sprache übernommen.
+- **Zahlen, Beträge, Datumsangaben** werden im Format der gewählten Sprache angezeigt (Euro bleibt die Währung).
+- **Server-Meldungen** (Fehler, Buchungstexte, Bezeichnungen wie Bewertungsgründe oder Level) übersetzt die Oberfläche; der Server selbst bleibt deutsch.
+- **Rechtstexte** sind übersetzt, mit dem Hinweis, dass die deutsche Fassung verbindlich ist. Vor dem Livegang sollten Nutzungsbedingungen und Datenschutzerklärung zusätzlich fachkundig übersetzt bzw. geprüft werden.
+- **Neue Texte:** in `public/app.js` immer `t('…')` bzw. `tn(n, 'Singular', 'Plural')` verwenden, dann `npm run i18n:extract` und die neuen Schlüssel in `public/i18n/*.json` ergänzen. `npm run i18n:check` (und `npm test`) prüft Vollständigkeit, Platzhalter, HTML und Links jeder Sprache.
+
 ## Projektstruktur
 
 ```
@@ -228,6 +238,8 @@ src/routing.js       Google Maps / OSM, Google-Maps-Link-Parser
 src/geo.js           Distanzen, Polylines, Projektion auf Routen
 src/db.js            JSON-Dateispeicher (data/db.json)
 public/              Frontend (HTML/CSS/JS, kein Build-Schritt)
+public/i18n/         Übersetzungen der Oberfläche (_source.json = deutsche Ausgangstexte)
+scripts/i18n.js      Ausgangstexte einsammeln und Übersetzungen prüfen
 test/                node:test – Unit-Tests + kompletter API-Ablauf
 ```
 

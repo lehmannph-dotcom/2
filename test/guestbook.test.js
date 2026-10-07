@@ -37,6 +37,6 @@ test('Text: Länge, keine Links, E-Mails oder Telefonnummern', () => {
 
 test('Öffentlicher Eintrag ist anonym', () => {
   const pub = gb.publicEntry({ id: 'gb1', driverId: 'D', riderId: 'R', rideId: 'X', text: 'Tolle Fahrt!', kind: 'km', period: '2026-10', createdAt: '2026-10-06T12:34:00Z' });
-  assert.deepEqual(pub, { id: 'gb1', text: 'Tolle Fahrt!', when: 'Oktober 2026', kind: 'Fahrt über 100 km' });
+  assert.deepEqual(pub, { id: 'gb1', text: 'Tolle Fahrt!', when: 'Oktober 2026', period: '2026-10', kind: 'Fahrt über 100 km' });
   assert.ok(!JSON.stringify(pub).includes('R"'));
 });

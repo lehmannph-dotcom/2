@@ -13,15 +13,16 @@
   <header class="topbar">
     <a class="brand" href="#/mitfahren"><svg class="logo" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M20 4C11 4 5 9 5 16c0 1.4.3 2.6.8 3.6C7 15 10 11.5 15 9c-4 3-6.6 6.4-7.7 10.6.9.3 1.8.4 2.7.4 7 0 10-6.5 10-16z" fill="#78bf96"/></svg><span class="brand-text">join<b>my</b>ride<span class="tld">.com</span></span></a>
     <nav id="nav" hidden>
-      <a href="#/mitfahren" data-view="mitfahren">Mitfahren</a>
-      <a href="#/fahren" data-view="fahren">Fahren</a>
-      <a href="#/konto" data-view="konto">Konto</a>
-      <a href="#/punkte" data-view="punkte">Punkte</a>
-      <a href="#/funfacts" data-view="funfacts">Funfacts</a>
-      <a href="#/profil" data-view="profil">Profil</a>
-      <a href="#/admin" data-view="admin" id="nav-admin" hidden>Betreiber</a>
+      <a href="#/mitfahren" data-view="mitfahren" data-i18n="Mitfahren">Mitfahren</a>
+      <a href="#/fahren" data-view="fahren" data-i18n="Fahren">Fahren</a>
+      <a href="#/konto" data-view="konto" data-i18n="Konto">Konto</a>
+      <a href="#/punkte" data-view="punkte" data-i18n="Punkte">Punkte</a>
+      <a href="#/funfacts" data-view="funfacts" data-i18n="Funfacts">Funfacts</a>
+      <a href="#/profil" data-view="profil" data-i18n="Profil">Profil</a>
+      <a href="#/admin" data-view="admin" id="nav-admin" data-i18n="Betreiber" hidden>Betreiber</a>
     </nav>
     <div id="userbox"></div>
+    <select id="lang-select" class="lang-select" aria-label="Sprache"><option value="de">Deutsch</option></select>
   </header>
 
   <main class="layout">
@@ -31,13 +32,13 @@
 
   <footer class="footer">
     <span>© joinmyride.com</span>
-    <a href="#/funfacts">Funfacts</a>
-    <a href="#/nutzungsbedingungen">Nutzungsbedingungen</a>
-    <a href="#/datenschutz">Datenschutz</a>
-    <a href="#/impressum">Impressum</a>
+    <a href="#/funfacts" data-i18n="Funfacts">Funfacts</a>
+    <a href="#/nutzungsbedingungen" data-i18n="Nutzungsbedingungen">Nutzungsbedingungen</a>
+    <a href="#/datenschutz" data-i18n="Datenschutz">Datenschutz</a>
+    <a href="#/impressum" data-i18n="Impressum">Impressum</a>
   </footer>
 
-  <div id="modal" class="modal" hidden><div class="modal-card" role="dialog" aria-modal="true"><button class="secondary modal-close" aria-label="Schließen">×</button><div id="modal-body"></div></div></div>
+  <div id="modal" class="modal" hidden><div class="modal-card" role="dialog" aria-modal="true"><button class="secondary modal-close" aria-label="Schließen" data-i18n-aria="Schließen">×</button><div id="modal-body"></div></div></div>
   <div id="toast" role="status" aria-live="polite"></div>
 
   <script src="/vendor/leaflet/leaflet.js"></script>

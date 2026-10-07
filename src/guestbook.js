@@ -59,6 +59,7 @@ function publicEntry(entry) {
     id: entry.id,
     text: entry.text,
     when: `${MONTHS[Number(m) - 1]} ${y}`,
+    period: entry.period, // JJJJ-MM – die Oberfläche formatiert den Monat in der gewählten Sprache
     kind: entry.kind === 'km' ? `Fahrt über ${MIN_KM} km` : 'Fahrt über 1 Stunde',
   };
 }

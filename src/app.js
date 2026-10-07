@@ -16,7 +16,7 @@ const funfacts = require('./funfacts');
 const feedback = require('./feedback');
 const filters = require('./filters');
 const { REGIONS } = require('./plates');
-const { BRANDS, LANGUAGES, displayName, publicProfile, privacyOf, profileOf, sanitizeProfile, sanitizePrivacy } = require('./profile');
+const { BRANDS, LANGUAGES, UI_LANGUAGES, UI_LANGUAGE_CODES, displayName, publicProfile, privacyOf, profileOf, sanitizeProfile, sanitizePrivacy } = require('./profile');
 
 const PRIVACY_POLICY_VERSION = '2026-10';
 const TERMS_VERSION = '2026-10';
@@ -42,7 +42,7 @@ const MIME = {
   '.svg': 'image/svg+xml',
   '.png': 'image/png',
   '.ico': 'image/x-icon',
-  '.json': 'application/json',
+  '.json': 'application/json; charset=utf-8',
 };
 
 class HttpError extends Error {
@@ -297,6 +297,7 @@ function createApp({ store, config, routing }) {
     abortPolicy: config.abortPolicy,
     termsVersion: TERMS_VERSION,
     languages: LANGUAGES,
+    uiLanguages: UI_LANGUAGES,
     demoTopup: config.allowDemoTopup !== false,
   }), { public: true });
 
@@ -387,7 +388,8 @@ function createApp({ store, config, routing }) {
       nps: null,
       co2SavedKg: 0,
       license: null,
-      profile: null,
+      // Sprache, in der die Registrierung angezeigt wurde, als Sprache der Oberfläche übernehmen
+      profile: UI_LANGUAGE_CODES.includes(body.uiLanguage) ? { uiLanguage: body.uiLanguage } : null,
       privacy: null,
       mfa: null,
       consentAt: now(),

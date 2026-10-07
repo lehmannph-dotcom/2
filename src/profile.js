@@ -12,7 +12,28 @@ const { normalizeRegion, regionName } = require('./plates');
 const BRANDS = ['Audi', 'BMW', 'BYD', 'Citroën', 'Cupra', 'Dacia', 'Fiat', 'Ford', 'Honda', 'Hyundai', 'Jeep', 'Kia', 'Mazda', 'Mercedes-Benz', 'MG', 'Mini', 'Mitsubishi',
   'Nissan', 'Opel', 'Peugeot', 'Polestar', 'Porsche', 'Renault', 'Seat', 'Škoda', 'Smart', 'Subaru', 'Suzuki', 'Tesla', 'Toyota', 'Volvo', 'VW', 'Andere'];
 
-const LANGUAGES = ['Deutsch', 'Englisch', 'Französisch', 'Spanisch', 'Italienisch', 'Türkisch', 'Polnisch', 'Russisch', 'Arabisch', 'Ukrainisch'];
+// Gesprochene Sprachen (Profilangabe und Filter). Gespeichert wird der deutsche Name, angezeigt übersetzt.
+const LANGUAGES = ['Deutsch', 'Englisch', 'Chinesisch', 'Hindi', 'Spanisch', 'Arabisch', 'Französisch', 'Bengalisch', 'Portugiesisch', 'Russisch',
+  'Indonesisch', 'Italienisch', 'Türkisch', 'Polnisch', 'Ukrainisch'];
+
+/**
+ * Sprachen der Oberfläche: Deutsch (Ausgangssprache) und die 10 meistgesprochenen Sprachen
+ * weltweit (Erst- und Zweitsprecher). Die Übersetzungen liegen in public/i18n/<code>.json.
+ */
+const UI_LANGUAGES = [
+  { code: 'de', name: 'Deutsch', locale: 'de-DE' },
+  { code: 'en', name: 'English', locale: 'en-GB' },
+  { code: 'zh', name: '中文（简体）', locale: 'zh-CN' },
+  { code: 'hi', name: 'हिन्दी', locale: 'hi-IN' },
+  { code: 'es', name: 'Español', locale: 'es-ES' },
+  { code: 'ar', name: 'العربية', locale: 'ar-u-nu-latn', dir: 'rtl' },
+  { code: 'fr', name: 'Français', locale: 'fr-FR' },
+  { code: 'bn', name: 'বাংলা', locale: 'bn-BD' },
+  { code: 'pt', name: 'Português', locale: 'pt-BR' },
+  { code: 'ru', name: 'Русский', locale: 'ru-RU' },
+  { code: 'id', name: 'Bahasa Indonesia', locale: 'id-ID' },
+];
+const UI_LANGUAGE_CODES = UI_LANGUAGES.map((l) => l.code);
 const PREFERENCES = {
   smoking: ['nein', 'ja'],
   pets: ['nein', 'nach Absprache', 'ja'],
@@ -35,6 +56,7 @@ const DEFAULT_PROFILE = Object.freeze({
   phone: '',
   photo: null,
   languages: ['Deutsch'],
+  uiLanguage: '', // leer = automatisch (Browsersprache)
   preferences: { smoking: 'nein', pets: 'nach Absprache', music: 'egal', chat: 'egal' },
   vehicle: { brand: '', model: '', color: '', plateRegion: '' },
 });
@@ -64,6 +86,11 @@ function sanitizeProfile(input, current) {
   }
   if (input.languages !== undefined) {
     out.languages = (Array.isArray(input.languages) ? input.languages : []).filter((l) => LANGUAGES.includes(l)).slice(0, 6);
+  }
+  if (input.uiLanguage !== undefined) {
+    const code = String(input.uiLanguage || '');
+    if (code && !UI_LANGUAGE_CODES.includes(code)) errors.push('Diese Sprache wird nicht unterstützt.');
+    else out.uiLanguage = code;
   }
   if (input.preferences) {
     for (const [k, allowed] of Object.entries(PREFERENCES)) {
@@ -133,6 +160,8 @@ function publicProfile(user, viewer, { hasBooking = false, stats = {}, game = nu
 module.exports = {
   BRANDS,
   LANGUAGES,
+  UI_LANGUAGES,
+  UI_LANGUAGE_CODES,
   PREFERENCES,
   DEFAULT_PRIVACY,
   privacyOf,
