@@ -192,14 +192,14 @@ joinmyride.com ist eine Plattform für **private Fahrgemeinschaften**, keine Fah
 | jede Buchung (1. Person) | 20 ct | 5 ct | 5 ct | **30 ct** |
 | jede weitere Person **derselben** Buchung | 10 ct | 2 ct | 2 ct | **14 ct** |
 
-* **Ermäßigt** sind nur die 2. und jede weitere Person einer gemeinsamen Buchung – sie steigen zusammen am gleichen Ort ein. **Jede weitere Buchung** auf derselben Fahrt zahlt den normalen Tarif.
+* **Ermäßigt** sind nur die 2. und jede weitere Person einer gemeinsamen Buchung – sie steigen zusammen am gleichen Ort ein. Eine **weitere, unabhängige Buchung** – ein separater, unabhängiger Streckenabschnitt mit eigenem Ein- und Ausstieg – zahlt den normalen Tarif.
 * Fahrer legen keinen eigenen Preis fest. Die Sätze werden bei der Buchung festgehalten und sind in `.env` einstellbar (`RATE_PER_KM_CENTS`, `EXTRA_RATE_PER_KM_CENTS` usw.).
 * **Anfahrt zum Treffpunkt:** einmal je Buchung zum vollen Fahrersatz, zu 100 % an den Fahrer, ohne Provision und Spende.
 * **Vergleich** (nur Orientierung): eigenes Auto mit Vollkosten (Richtwert 50 ct/km) und ÖPNV-Einzelticket.
 
-Beispiel 20 km: eine Person **6,00 €** (Fahrer 4,00 € · Vermittlung 1,00 € · Umwelt 1,00 €), gemeinsame Buchung zu zweit **8,80 €**; eine zweite, eigene Buchung zahlt wieder 6,00 €.
+Beispiel 20 km: eine Person **6,00 €** (Fahrer 4,00 € · Vermittlung 1,00 € · Umwelt 1,00 €), gemeinsame Buchung zu zweit **8,80 €**; ein separater, unabhängiger Streckenabschnitt für eine weitere unabhängige Buchung zahlt wieder 6,00 €.
 
-> Rechtlicher Hinweis: Ohne Genehmigung nach dem PBefG darf das Gesamtentgelt die Betriebskosten der Fahrt nicht übersteigen. Mit einer Buchung (20 ct/km) ist das in der Regel erfüllt; mit mehreren Buchungen (z. B. 2 × 20 ct/km) vor dem Livegang rechtlich prüfen lassen.
+> Rechtlicher Hinweis: Ohne Genehmigung nach dem PBefG darf das Gesamtentgelt die Betriebskosten der Fahrt nicht übersteigen. Mit einer Buchung (20 ct/km) ist das in der Regel erfüllt; mit mehreren unabhängigen Buchungen auf überlappenden Streckenabschnitten (z. B. 2 × 20 ct/km) vor dem Livegang rechtlich prüfen lassen.
 
 ```
 abgerechnete km  = geplante Route (fällig mit dem Einsteigen) – bei Fahrtabbruch: gefahrene Strecke (GPS), höchstens die geplante Route

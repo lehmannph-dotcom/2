@@ -186,7 +186,7 @@ test('Vorkasse in 3 Stufen mit Rabatt auf die Provision, sonst je Fahrt bezahlen
   assert.equal(after.prepaidCents, 5000 - done2.final.totalCents);
 });
 
-test('Ermäßigung nur für weitere Personen derselben Buchung; jede weitere Buchung zahlt den normalen Tarif', async (t) => {
+test('Ermäßigung nur für weitere Personen derselben Buchung; eine weitere unabhängige Buchung (separater Streckenabschnitt) zahlt den normalen Tarif', async (t) => {
   const { user, license, identify, vehicle } = await setup(t);
   const d = await user('Dana Drive', 'dana@example.org');
   await license(d); await identify(d); await vehicle(d);
@@ -205,9 +205,9 @@ test('Ermäßigung nur für weitere Personen derselben Buchung; jede weitere Buc
   const group = await book('Anna', 2);
   assert.equal(group.m.matches[0].price.totalPerKmCents, 44);
   assert.equal(group.ride.estimate.driverFareCents, Math.round(group.ride.plannedKm * 30));
-  // Weitere Buchung auf derselben Fahrt: normaler Tarif
+  // Separater, unabhängiger Streckenabschnitt für eine weitere unabhängige Buchung: normaler Tarif
   const single = await book('Ben', 1);
-  assert.equal(single.m.matches[0].price.totalPerKmCents, 30, 'keine Ermäßigung für eine eigene Buchung');
+  assert.equal(single.m.matches[0].price.totalPerKmCents, 30, 'keine Ermäßigung für eine weitere unabhängige Buchung');
   assert.equal(single.ride.estimate.driverFareCents, Math.round(single.ride.plannedKm * 20));
   assert.equal(single.ride.estimate.commissionFullCents, Math.round(single.ride.plannedKm * 5));
   // Abrechnung der Gruppe mit den bei der Buchung festgehaltenen Sätzen
