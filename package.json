@@ -10,6 +10,7 @@
     "dev": "node --watch server.js",
     "test": "node --test test/*.test.js",
     "i18n:extract": "node scripts/i18n.js extract",
+    "i18n:placeholders": "node scripts/i18n.js placeholders",
     "i18n:check": "node scripts/i18n.js check"
   },
   "license": "UNLICENSED",

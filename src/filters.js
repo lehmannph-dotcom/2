@@ -19,6 +19,7 @@ const LABELS = {
   music: 'Musik',
   language: 'Sprache',
   mfa: '2FA-gesichert',
+  identity: 'Identität geprüft',
   safeDriving: 'Sichere Fahrweise',
   maxEtaMin: 'Wartezeit',
   verifiedOnly: 'Bewertete Fahrer',
@@ -29,7 +30,7 @@ function sanitizeFilters(input = {}) {
   const nps = Number(input.minNps);
   if (input.minNps !== undefined && input.minNps !== '' && Number.isFinite(nps)) f.minNps = Math.max(-100, Math.min(100, Math.round(nps)));
   if (input.includeNew === false) f.includeNew = false;
-  for (const k of ['nonSmoker', 'pets', 'mfa', 'safeDriving']) if (input[k] === true) f[k] = true;
+  for (const k of ['nonSmoker', 'pets', 'mfa', 'identity', 'safeDriving']) if (input[k] === true) f[k] = true;
   if (['quiet', 'talkative'].includes(input.chat)) f.chat = input.chat;
   if (input.music === 'quiet') f.music = 'quiet';
   if (typeof input.language === 'string' && input.language) f.language = input.language.slice(0, 30);
@@ -61,6 +62,7 @@ function failedCriteria(filters, { driver, match, receivedRatings }) {
   if (filters.music === 'quiet' && prefs.music === 'gerne') failed.push('music');
   if (filters.language && !languages.includes(filters.language)) failed.push('language');
   if (filters.mfa && !(driver.mfa && driver.mfa.enabled)) failed.push('mfa');
+  if (filters.identity && !(driver.identity && driver.identity.status === 'verified')) failed.push('identity');
   if (filters.safeDriving && receivedRatings.length >= SAFE_DRIVING_MIN_RATINGS && aspectShare(receivedRatings, 'driving') > SAFE_DRIVING_MAX_SHARE) failed.push('safeDriving');
   if (filters.maxEtaMin && match.etaMin > filters.maxEtaMin) failed.push('maxEtaMin');
   return failed;

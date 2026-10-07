@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>joinmyride.com – Du fährst sowieso. Nimm jemanden mit.</title>
+  <meta name="description" content="joinmyride.com – Ziel eingeben, nette Gesellschaft mitnehmen, der Umwelt etwas Gutes tun. Der Fahrer stellt Auto und Fahrt, der Mitfahrer trägt rund zwei Drittel der Energiekosten.">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/start.css">
+</head>
+<body>
+  <header class="lp-top">
+    <a class="brand" href="/"><svg class="logo" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path d="M20 4C11 4 5 9 5 16c0 1.4.3 2.6.8 3.6C7 15 10 11.5 15 9c-4 3-6.6 6.4-7.7 10.6.9.3 1.8.4 2.7.4 7 0 10-6.5 10-16z" fill="#78bf96"/></svg><span>join<b>my</b>ride<span class="tld">.com</span></span></a>
+    <nav class="lp-nav">
+      <a href="#so-gehts" data-i18n="So geht's">So geht's</a>
+      <a href="#fair" data-i18n="Fair geteilt">Fair geteilt</a>
+      <a href="#gewinnen" data-i18n="Alle gewinnen">Alle gewinnen</a>
+      <a href="#vertrauen" data-i18n="Sicherheit">Sicherheit</a>
+    </nav>
+    <div class="lp-actions">
+      <select id="lang-select" class="lang-select" aria-label="Sprache"><option value="de">Deutsch</option></select>
+      <a class="btn ghost" id="cta-login" href="/app#/mitfahren" data-i18n="Anmelden">Anmelden</a>
+      <a class="btn" id="cta-register" href="/app#/registrieren" data-i18n="Kostenlos registrieren">Kostenlos registrieren</a>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div class="hero-text">
+        <p class="eyebrow" data-i18n="Die Mitfahrzentrale für spontane Fahrten">Die Mitfahrzentrale für spontane Fahrten</p>
+        <h1 data-i18n="Du fährst sowieso. Nimm jemanden mit.">Du fährst sowieso. Nimm jemanden mit.</h1>
+        <p class="lead" data-i18n="Einfach als Fahrer dein Ziel eingeben, nette Gesellschaft mitnehmen und der Umwelt etwas Gutes tun. Mitfahrer auf deiner Strecke finden dich automatisch.">Einfach als Fahrer dein Ziel eingeben, nette Gesellschaft mitnehmen und der Umwelt etwas Gutes tun. Mitfahrer auf deiner Strecke finden dich automatisch.</p>
+        <div class="hero-cta">
+          <a class="btn big" href="/app#/fahren" data-i18n="Als Fahrer losfahren">Als Fahrer losfahren</a>
+          <a class="btn big ghost" href="/app#/mitfahren" data-i18n="Mitfahrt finden">Mitfahrt finden</a>
+        </div>
+        <ul class="hero-points">
+          <li data-i18n="Spontan auf deiner Strecke">Spontan auf deiner Strecke</li>
+          <li data-i18n="Fair geteilte Energiekosten">Fair geteilte Energiekosten</li>
+          <li data-i18n="Geprüfte Mitglieder">Geprüfte Mitglieder</li>
+        </ul>
+      </div>
+      <div class="hero-art" aria-hidden="true">
+        <svg viewBox="0 0 360 300" class="route-art">
+          <defs><linearGradient id="g" x1="0" x2="1"><stop offset="0" stop-color="#b7e0c7"/><stop offset="1" stop-color="#78bf96"/></linearGradient></defs>
+          <rect x="0" y="0" width="360" height="300" rx="28" fill="#f0f8f2"/>
+          <path d="M40 250 C 90 200, 70 140, 150 130 S 250 120, 270 70 S 320 40, 330 30" fill="none" stroke="url(#g)" stroke-width="12" stroke-linecap="round"/>
+          <path d="M40 250 C 90 200, 70 140, 150 130 S 250 120, 270 70 S 320 40, 330 30" fill="none" stroke="#fff" stroke-width="2" stroke-dasharray="6 10" stroke-linecap="round"/>
+          <circle cx="40" cy="250" r="14" fill="#4a9a6e"/><text x="40" y="255" text-anchor="middle" font-size="13" font-weight="700" fill="#fff">S</text>
+          <circle cx="330" cy="30" r="14" fill="#1c3a2a"/><text x="330" y="35" text-anchor="middle" font-size="13" font-weight="700" fill="#fff">Z</text>
+          <circle cx="150" cy="130" r="11" fill="#fff" stroke="#4a9a6e" stroke-width="4"/>
+          <circle cx="270" cy="72" r="11" fill="#fff" stroke="#4a9a6e" stroke-width="4"/>
+          <g transform="translate(190 112)">
+            <rect x="-30" y="-14" width="60" height="26" rx="10" fill="#2f7350"/>
+            <rect x="-20" y="-24" width="36" height="14" rx="6" fill="#4a9a6e"/>
+            <circle cx="-17" cy="13" r="6" fill="#1c3a2a"/><circle cx="17" cy="13" r="6" fill="#1c3a2a"/>
+          </g>
+          <g font-family="system-ui, sans-serif" font-size="12" fill="#1c3a2a">
+            <rect x="196" y="170" width="140" height="58" rx="12" fill="#fff" stroke="#dcece2"/>
+            <text x="210" y="196" font-weight="700" font-size="20">+2</text>
+            <text x="250" y="196" font-weight="700" font-size="20" fill="#4a9a6e">2/3</text>
+            <rect x="210" y="208" width="112" height="8" rx="4" fill="#dcece2"/><rect x="210" y="208" width="75" height="8" rx="4" fill="#78bf96"/>
+          </g>
+        </svg>
+      </div>
+    </section>
+
+    <section id="so-gehts" class="band">
+      <h2 data-i18n="So einfach geht's">So einfach geht's</h2>
+      <div class="steps3">
+        <article>
+          <span class="num">1</span>
+          <h3 data-i18n="Ziel eingeben">Ziel eingeben</h3>
+          <p data-i18n="Als Fahrer gibst du deine Strecke ein oder fügst deinen Google-Maps-Link ein – und gehst online.">Als Fahrer gibst du deine Strecke ein oder fügst deinen Google-Maps-Link ein – und gehst online.</p>
+        </article>
+        <article>
+          <span class="num">2</span>
+          <h3 data-i18n="Mitfahrer finden dich">Mitfahrer finden dich</h3>
+          <p data-i18n="Wer in deine Richtung will, sieht dich – sortiert nach dem kleinsten Umweg. Ihr bestätigt beide die Route.">Wer in deine Richtung will, sieht dich – sortiert nach dem kleinsten Umweg. Ihr bestätigt beide die Route.</p>
+        </article>
+        <article>
+          <span class="num">3</span>
+          <h3 data-i18n="Gemeinsam ankommen">Gemeinsam ankommen</h3>
+          <p data-i18n="Abgerechnet wird automatisch nach Kilometern. Nach der Fahrt bewertet ihr euch – fertig.">Abgerechnet wird automatisch nach Kilometern. Nach der Fahrt bewertet ihr euch – fertig.</p>
+        </article>
+      </div>
+    </section>
+
+    <section id="fair" class="split">
+      <div>
+        <h2 data-i18n="Fair geteilt">Fair geteilt</h2>
+        <p class="lead" data-i18n="Der Fahrer stellt Auto und Fahrt. Der Mitfahrer beteiligt sich mit rund zwei Dritteln an Kraftstoff bzw. Strom.">Der Fahrer stellt Auto und Fahrt. Der Mitfahrer beteiligt sich mit rund zwei Dritteln an Kraftstoff bzw. Strom.</p>
+        <p data-i18n="Kein Taxi, kein Fahrdienst: eine private Fahrgemeinschaft, bei der niemand verdienen will – alle sparen.">Kein Taxi, kein Fahrdienst: eine private Fahrgemeinschaft, bei der niemand verdienen will – alle sparen.</p>
+      </div>
+      <div class="example card">
+        <p class="example-title" data-i18n="Beispiel: 20 km zur Arbeit">Beispiel: 20 km zur Arbeit</p>
+        <div class="share-bar" aria-hidden="true"><span class="rider-part"></span><span class="driver-part"></span></div>
+        <dl>
+          <div><dt data-i18n="Kraftstoff bzw. Strom">Kraftstoff bzw. Strom</dt><dd id="ex-energy">–</dd></div>
+          <div><dt data-i18n="Mitfahrer zahlt">Mitfahrer zahlt</dt><dd id="ex-rider">–</dd></div>
+          <div><dt data-i18n="Fahrer spart">Fahrer spart</dt><dd id="ex-driver">–</dd></div>
+          <div><dt data-i18n="Zum Vergleich: ÖPNV-Ticket">Zum Vergleich: ÖPNV-Ticket</dt><dd id="ex-transit">–</dd></div>
+        </dl>
+        <p class="fine" data-i18n="Richtwerte. Der Fahrer kann seinen Preis anpassen – die App zeigt ihm, was angemessen ist.">Richtwerte. Der Fahrer kann seinen Preis anpassen – die App zeigt ihm, was angemessen ist.</p>
+      </div>
+    </section>
+
+    <section id="gewinnen" class="band">
+      <h2 data-i18n="Alle gewinnen">Alle gewinnen</h2>
+      <div class="tiles">
+        <article>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 17h18M5 17l2-6h10l2 6M8 21v-4m8 4v-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <h3 data-i18n="Leerere Straßen">Leerere Straßen</h3>
+          <p data-i18n="Jede Mitfahrt ist ein Auto weniger im Berufsverkehr.">Jede Mitfahrt ist ein Auto weniger im Berufsverkehr.</p>
+        </article>
+        <article>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12a8 8 0 0 1 14-5.3M20 12a8 8 0 0 1-14 5.3M18 3v4h-4M6 21v-4h4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <h3 data-i18n="Besser genutzte Ressourcen">Besser genutzte Ressourcen</h3>
+          <p data-i18n="Freie Sitze fahren nicht mehr leer mit – dasselbe Auto, mehr Nutzen.">Freie Sitze fahren nicht mehr leer mit – dasselbe Auto, mehr Nutzen.</p>
+        </article>
+        <article>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 4C11 4 5 9 5 16c0 1.4.3 2.6.8 3.6C7 15 10 11.5 15 9c-4 3-6.6 6.4-7.7 10.6.9.3 1.8.4 2.7.4 7 0 10-6.5 10-16z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>
+          <h3 data-i18n="Gemeinsam die Umwelt schonen">Gemeinsam die Umwelt schonen</h3>
+          <p data-i18n="Weniger Fahrten, weniger CO₂ – und 1 Cent je Fahrt geht an den Umweltschutz.">Weniger Fahrten, weniger CO₂ – und 1 Cent je Fahrt geht an den Umweltschutz.</p>
+        </article>
+        <article>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3.2" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="17" cy="9" r="2.6" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M3 20c0-3.3 2.7-5.5 6-5.5s6 2.2 6 5.5M14.5 14.6c3.3-.6 6.5 1.3 6.5 4.9" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+          <h3 data-i18n="Nette Gesellschaft">Nette Gesellschaft</h3>
+          <p data-i18n="Unterhaltung oder lieber Ruhe – du legst fest, mit wem du fährst.">Unterhaltung oder lieber Ruhe – du legst fest, mit wem du fährst.</p>
+        </article>
+      </div>
+      <div class="win-row">
+        <div><b data-i18n="Fahrer">Fahrer</b><span data-i18n="teilen ihre Kosten und fahren nicht allein.">teilen ihre Kosten und fahren nicht allein.</span></div>
+        <div><b data-i18n="Mitfahrer">Mitfahrer</b><span data-i18n="kommen günstig und direkt ans Ziel.">kommen günstig und direkt ans Ziel.</span></div>
+        <div><b data-i18n="Die Stadt">Die Stadt</b><span data-i18n="bekommt weniger Stau, Lärm und Abgase.">bekommt weniger Stau, Lärm und Abgase.</span></div>
+      </div>
+    </section>
+
+    <section id="vertrauen" class="split">
+      <div>
+        <h2 data-i18n="Sicher und rücksichtsvoll">Sicher und rücksichtsvoll</h2>
+        <p class="lead" data-i18n="Vertrauen ist die Grundlage jeder Mitfahrt.">Vertrauen ist die Grundlage jeder Mitfahrt.</p>
+      </div>
+      <ul class="checks-list">
+        <li data-i18n="Identität geprüft, z. B. mit POSTIDENT">Identität geprüft, z. B. mit POSTIDENT</li>
+        <li data-i18n="Führerschein jedes Fahrers geprüft">Führerschein jedes Fahrers geprüft</li>
+        <li data-i18n="Fahrtauglichkeit vor jeder Fahrt bestätigt">Fahrtauglichkeit vor jeder Fahrt bestätigt</li>
+        <li data-i18n="Ehrliche Bewertungen nach jeder Fahrt">Ehrliche Bewertungen nach jeder Fahrt</li>
+        <li data-i18n="Verhaltensregeln, die auf Rücksicht beruhen">Verhaltensregeln, die auf Rücksicht beruhen</li>
+        <li data-i18n="Privatsphäre ab Werk: Adressen nur ungefähr sichtbar">Privatsphäre ab Werk: Adressen nur ungefähr sichtbar</li>
+      </ul>
+    </section>
+
+    <section class="final">
+      <h2 data-i18n="Bereit? Heute noch jemanden mitnehmen.">Bereit? Heute noch jemanden mitnehmen.</h2>
+      <div class="hero-cta">
+        <a class="btn big" href="/app#/registrieren" data-i18n="Kostenlos registrieren">Kostenlos registrieren</a>
+        <a class="btn big ghost" href="/app#/mitfahren" data-i18n="Anmelden">Anmelden</a>
+      </div>
+    </section>
+  </main>
+
+  <footer class="lp-footer">
+    <span>© joinmyride.com</span>
+    <a href="/app#/verhaltensregeln" data-i18n="Verhaltensregeln">Verhaltensregeln</a>
+    <a href="/app#/nutzungsbedingungen" data-i18n="Nutzungsbedingungen">Nutzungsbedingungen</a>
+    <a href="/app#/datenschutz" data-i18n="Datenschutz">Datenschutz</a>
+    <a href="/app#/impressum" data-i18n="Impressum">Impressum</a>
+  </footer>
+
+  <script src="/start.js"></script>
+</body>
+</html>

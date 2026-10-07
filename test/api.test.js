@@ -36,6 +36,14 @@ const config = {
   matching: { maxDetourKm: 3, maxResults: 10 },
 };
 
+const DECLARATION = { fitToDrive: true, licensePresent: true };
+/** Fahrerprofil vervollständigen: Identität (Demo-Prüfung) und Fahrzeug. */
+async function completeDriverProfile(c) {
+  const { caseId } = await c('POST', '/api/identity/start', {});
+  await c('POST', `/api/identity/demo/${caseId}/complete`, {});
+  await c('PUT', '/api/me/profile', { profile: { vehicle: { brand: 'VW', model: 'Polo', color: 'rot' } } });
+}
+
 function client(base) {
   let cookie = '';
   return async (method, p, body) => {
@@ -69,7 +77,7 @@ test('kompletter Ablauf: Führerschein → Fahrt → Match → Buchung → GPS �
   assert.equal(d.isAdmin, false);
 
   // Ohne Führerschein kein Angebot
-  assert.equal((await driver('POST', '/api/trips', { origin: 'Berlin', destination: 'Potsdam' })).status, 403);
+  assert.equal((await driver('POST', '/api/trips', { declaration: DECLARATION, origin: 'Berlin', destination: 'Potsdam' })).status, 403);
 
   // Führerschein einreichen und vom Betreiber bestätigen lassen
   const img = 'data:image/png;base64,iVBORw0KGgo=';
@@ -82,10 +90,11 @@ test('kompletter Ablauf: Führerschein → Fahrt → Match → Buchung → GPS �
   const pending = await admin('GET', '/api/admin/licenses');
   assert.equal(pending.licenses.length, 1);
   await admin('POST', `/api/admin/licenses/${d.id}`, { decision: 'verified' });
+  await completeDriverProfile(driver);
   assert.equal((await driver('GET', '/api/me')).user.canDrive, true);
 
   // Fahrer geht per Google-Maps-Link online
-  const { trip } = await driver('POST', '/api/trips', { googleMapsUrl: 'https://www.google.com/maps/dir/Berlin/Potsdam', seats: 2, vehicle: 'roter Polo' });
+  const { trip } = await driver('POST', '/api/trips', { declaration: DECLARATION, googleMapsUrl: 'https://www.google.com/maps/dir/Berlin/Potsdam', seats: 2, vehicle: 'roter Polo' });
   assert.equal(trip.status, 'active');
 
   // Mitfahrer sucht – Abholort und Ziel liegen auf der Strecke
@@ -159,8 +168,11 @@ test('kompletter Ablauf: Führerschein → Fahrt → Match → Buchung → GPS �
   assert.equal(driverMe.walletCents, done.final.driverCents);
   assert.ok(riderMe.co2SavedKg > 1);
 
+  // Vorkasse 20 € → 10 % Rabatt auf die Provision; die Spende zahlt der Betreiber aus der Provision
+  assert.equal(done.final.commissionDiscountPercent, 10);
+  assert.equal(done.final.totalCents, done.final.fareCents + done.final.detourCents - done.final.discountCents);
   const stats = await admin('GET', '/api/admin/stats');
-  assert.equal(stats.commissionCents, done.final.commissionCents);
+  assert.equal(stats.commissionCents, done.final.platformCents);
   assert.equal(stats.donationCents, 1);
   assert.equal(stats.ridesCompleted, 1);
   // Geld geht nicht verloren: Mitfahrer zahlt = Fahrer + Provision + Spende
@@ -195,7 +207,8 @@ async function bookedRide(t, { kmDriven, plannedShift } = {}) {
   const img = 'data:image/png;base64,iVBORw0KGgo=';
   await driver('POST', '/api/license', { fullName: 'Doris Fahrer', number: 'B072RRE2I55', classes: 'B', expiry: '2099-01-01', birthdate: '1985-01-01', frontImage: img, backImage: img });
   await admin('POST', `/api/admin/licenses/${d.id}`, { decision: 'verified' });
-  const { trip } = await driver('POST', '/api/trips', { origin: 'Berlin', destination: 'Potsdam', seats: 1 });
+  await completeDriverProfile(driver);
+  const { trip } = await driver('POST', '/api/trips', { declaration: DECLARATION, origin: 'Berlin', destination: 'Potsdam', seats: 1 });
   const pickup = pointAlongRoute(trip.route.coords, 2);
   const dropoff = pointAlongRoute(trip.route.coords, 12);
   await rider('POST', '/api/wallet/topup', { amountCents: 1000 });
@@ -389,7 +402,7 @@ test('Gründe bei kritischer Bewertung, anonymes Feedback und Filter beim Suchen
   const dropoff = pointAlongRoute(trip.route.coords, 12);
   // Fahrer wieder online bringen
   await driver('POST', `/api/trips/${trip.id}/end`, {});
-  const { trip: t2 } = await driver('POST', '/api/trips', { origin: 'Berlin', destination: 'Potsdam', seats: 1 });
+  const { trip: t2 } = await driver('POST', '/api/trips', { declaration: DECLARATION, origin: 'Berlin', destination: 'Potsdam', seats: 1 });
   let m = await rider('POST', '/api/match', { pickup, dropoff, filters: { nonSmoker: true } });
   assert.equal(m.matches.length, 1);
   assert.equal(m.matches[0].driverPrefs.smoking, 'nein');
@@ -414,8 +427,9 @@ test('Anfahrt zum Treffpunkt geht ohne Provision an den Fahrer; Filter kommen au
   const img = 'data:image/png;base64,iVBORw0KGgo=';
   await driver('POST', '/api/license', { fullName: 'Doris Fahrer', number: 'B072RRE2I55', classes: 'B', expiry: '2099-01-01', birthdate: '1985-01-01', frontImage: img, backImage: img });
   await admin('POST', `/api/admin/licenses/${d.id}`, { decision: 'verified' });
+  await completeDriverProfile(driver);
   await driver('PUT', '/api/me/profile', { profile: { preferences: { smoking: 'ja' } } });
-  const { trip } = await driver('POST', '/api/trips', { origin: 'Berlin', destination: 'Potsdam', seats: 1 });
+  const { trip } = await driver('POST', '/api/trips', { declaration: DECLARATION, origin: 'Berlin', destination: 'Potsdam', seats: 1 });
 
   // Abholort ca. 1 km neben der Route des Fahrers
   const onRoute = pointAlongRoute(trip.route.coords, 3);
@@ -429,14 +443,15 @@ test('Anfahrt zum Treffpunkt geht ohne Provision an den Fahrer; Filter kommen au
   assert.equal(m.matches.length, 0);
   assert.equal(m.hiddenByFilters, 1);
   await rider('PUT', '/api/me/profile', { riderFilters: {} });
+  await rider('POST', '/api/wallet/topup', { amountCents: 2000 });
   m = await rider('POST', '/api/match', { pickup, dropoff });
   assert.equal(m.matches.length, 1);
   const price = m.matches[0].price;
+  assert.equal(price.commissionDiscountPercent, 10, 'Suche zeigt den Preis mit Vorkasse-Rabatt');
   assert.ok(price.detourKm > 0.9 && price.detourKm < 1.6, String(price.detourKm));
   assert.equal(price.detourCents, Math.round(price.detourKm * 25));
 
   // Buchen, fahren, abrechnen
-  await rider('POST', '/api/wallet/topup', { amountCents: 2000 });
   const { ride } = await rider('POST', '/api/rides', { tripId: trip.id, pickup, dropoff, confirmPlannedRoute: true });
   assert.equal(ride.pickupDetourKm, price.detourKm);
   assert.equal(ride.maxChargeCents, price.totalCents);
@@ -445,13 +460,13 @@ test('Anfahrt zum Treffpunkt geht ohne Provision an den Fahrer; Filter kommen au
   await driver('POST', `/api/rides/${ride.id}/confirm`, {});
   const done = (await rider('POST', `/api/rides/${ride.id}/confirm`, { nps: 9 })).ride;
   assert.equal(done.final.detourCents, price.detourCents);
-  assert.equal(done.final.commissionCents, Math.round((done.final.fareCents * 10) / 100), 'Provision nur auf gemeinsame Strecke');
+  assert.equal(done.final.commissionFullCents, Math.round((done.final.fareCents * 10) / 100), 'Provision nur auf gemeinsame Strecke');
   const tx = (await driver('GET', '/api/wallet/transactions')).transactions;
   assert.equal(tx.find((x) => x.type === 'pickup_detour').amountCents, price.detourCents);
   const dMe = (await driver('GET', '/api/me')).user;
   assert.equal(dMe.walletCents, done.final.driverCents);
-  assert.equal(done.final.driverCents, done.final.fareCents - done.final.commissionCents + done.final.detourCents);
-  assert.equal((await admin('GET', '/api/admin/stats')).commissionCents, done.final.commissionCents);
+  assert.equal(done.final.driverCents, done.final.fareCents - done.final.commissionFullCents + done.final.detourCents, 'Rabatt geht nicht zulasten des Fahrers');
+  assert.equal((await admin('GET', '/api/admin/stats')).commissionCents, done.final.platformCents);
 });
 
 test('Fahrtabbruch: begründet, nur gefahrene Strecke, Fahrtabbruchsquote bei beiden', async (t) => {
@@ -518,7 +533,7 @@ test('Nutzungsbedingungen: Sperre bei zu hoher Fahrtabbruchsquote', async (t) =>
   const me = (await admin('GET', '/api/me')).user;
   assert.equal((await admin('POST', `/api/admin/users/${me.id}/suspend`, { days: 7, reason: 'Selbsttest' })).status, 400);
   await driver('POST', `/api/trips/${trip.id}/end`, {});
-  const { trip: t2 } = await driver('POST', '/api/trips', { origin: 'Berlin', destination: 'Potsdam', seats: 1 });
+  const { trip: t2 } = await driver('POST', '/api/trips', { declaration: DECLARATION, origin: 'Berlin', destination: 'Potsdam', seats: 1 });
   const s = await admin('POST', `/api/admin/users/${ride.driverId}/suspend`, { days: 7, reason: 'Fahrtabbruchsquote 33 % trotz Verwarnung' });
   assert.ok(s.member.suspension.until);
   assert.equal(store.data.trips[t2.id].status, 'ended', 'aktive Fahrt ohne Mitfahrer beendet');
@@ -526,7 +541,7 @@ test('Nutzungsbedingungen: Sperre bei zu hoher Fahrtabbruchsquote', async (t) =>
   // Wirkung: kein Angebot, nicht in der Suche, Konto bleibt zugänglich
   const dMe = (await driver('GET', '/api/me')).user;
   assert.equal(dMe.suspension.reason, 'Fahrtabbruchsquote 33 % trotz Verwarnung');
-  const blocked = await driver('POST', '/api/trips', { origin: 'Berlin', destination: 'Potsdam', seats: 1 });
+  const blocked = await driver('POST', '/api/trips', { declaration: DECLARATION, origin: 'Berlin', destination: 'Potsdam', seats: 1 });
   assert.equal(blocked.status, 403);
   assert.match(blocked.error, /gesperrt/);
   assert.equal((await driver('GET', '/api/me/export')).account.suspension.reason, 'Fahrtabbruchsquote 33 % trotz Verwarnung');
@@ -537,7 +552,7 @@ test('Nutzungsbedingungen: Sperre bei zu hoher Fahrtabbruchsquote', async (t) =>
   // Entsperren
   await admin('POST', `/api/admin/users/${ride.driverId}/unsuspend`, {});
   assert.equal((await driver('GET', '/api/me')).user.suspension, null);
-  assert.ok((await driver('POST', '/api/trips', { origin: 'Berlin', destination: 'Potsdam', seats: 1 })).trip);
+  assert.ok((await driver('POST', '/api/trips', { declaration: DECLARATION, origin: 'Berlin', destination: 'Potsdam', seats: 1 })).trip);
 
   // Befristete Sperre läuft automatisch ab; gesperrte Mitfahrer können nicht suchen
   await admin('POST', `/api/admin/users/${ride.riderId}/suspend`, { days: 1, reason: 'Fahrtabbruchsquote zu hoch' });

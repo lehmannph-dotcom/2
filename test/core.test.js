@@ -3,7 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { haversineKm, decodePolyline, projectOntoRoute, straightLine } = require('../src/geo');
-const { computeFare, billableKm } = require('../src/pricing');
+const { computeFare, billableKm, recommendedRateCents, maxRateCents } = require('../src/pricing');
 const { findMatches } = require('../src/matching');
 const { validateLicense, canDrive } = require('../src/license');
 const { parseGoogleMapsUrl } = require('../src/routing');
@@ -33,15 +33,50 @@ test('Projektion auf Route liefert Abstand und Position', () => {
   assert.ok(Math.abs(p.alongKm - haversineKm({ lat: 52, lng: 13 }, { lat: 52, lng: 13.5 })) < 0.2);
 });
 
-test('Preisaufteilung: Fahrer + Provision + 1 Cent Spende', () => {
+test('Preisaufteilung: Fahrer + Provision; 1 Cent Spende aus der Provision', () => {
   const f = computeFare(100, pricing);
   assert.equal(f.fareCents, 2500);
   assert.equal(f.commissionCents, 250);
   assert.equal(f.driverCents, 2250);
   assert.equal(f.donationCents, 1);
-  assert.equal(f.totalCents, 2501);
-  assert.equal(f.driverCents + f.commissionCents + f.donationCents, f.totalCents);
+  assert.equal(f.platformCents, 249, 'Betreiber zahlt die Spende');
+  assert.equal(f.totalCents, 2500, 'keine Aufschläge – die Spende ist enthalten');
+  assert.equal(f.driverCents + f.platformCents + f.donationCents, f.totalCents);
   assert.equal(f.co2SavedKg, 15);
+});
+
+// Preismodell wie im Livebetrieb (config.js): Mitfahrer trägt ca. 2/3 der Energiekosten
+const live = {
+  energyCostPerKmCents: 12, riderEnergySharePercent: 67, costPerKmCents: 30, commissionPercent: 10, donationCentsPerRide: 1, co2GramsPerCarKm: 150,
+  transitFares: [{ maxKm: 3, cents: 260 }, { maxKm: 20, cents: 380 }, { maxKm: 45, cents: 500 }], transitPerKmBeyondCents: 18,
+};
+
+test('Preisempfehlung: Mitfahrer beteiligt sich mit ca. 2/3 an Kraftstoff bzw. Strom', () => {
+  assert.equal(recommendedRateCents(live), 8);
+  const f = computeFare(10, live);
+  assert.equal(f.ratePerKmCents, 8);
+  assert.equal(f.totalCents, 80);
+  assert.equal(f.energyCostCents, 120);
+  assert.equal(f.energySharePercent, 67);
+  assert.equal(f.transitFareCents, 380);
+  assert.equal(f.savingsVsTransitPercent, 79, 'Orientierung: Vergleich mit dem Nahverkehr');
+});
+
+test('Fahrer wählt den Satz selbst – keine Deckelung außer den Betriebskosten', () => {
+  const f = computeFare(45, live, 1, { ratePerKmCents: 20 });
+  assert.equal(f.totalCents, 900, 'kein ÖPNV-Deckel mehr');
+  assert.ok(f.savingsVsTransitPercent < 0, 'teurer als der Nahverkehr wird nur angezeigt');
+  assert.equal(computeFare(10, live, 1, { ratePerKmCents: 99 }).ratePerKmCents, 30, 'höchstens Betriebskosten je km');
+  assert.equal(maxRateCents(live), 30);
+});
+
+test('Rabatt auf die Provision geht nicht zulasten des Fahrers', () => {
+  const d = computeFare(10, live, 1, { ratePerKmCents: 15, commissionDiscountPercent: 20 });
+  assert.equal(d.commissionFullCents, 15);
+  assert.equal(d.discountCents, 3);
+  assert.equal(d.totalCents, 150 - 3);
+  assert.equal(d.driverCents, 135);
+  assert.equal(d.driverCents + d.platformCents + d.donationCents, d.totalCents);
 });
 
 test('Preis für mehrere Personen und Rundung in Cent', () => {
@@ -133,8 +168,8 @@ test('Anfahrt zum Treffpunkt: ohne Provision, 100 % an den Fahrer, ohne CO₂-Gu
   assert.equal(f.detourKm, 2);
   assert.equal(f.detourCents, 50);
   assert.equal(f.driverCents, 2250 + 50);
-  assert.equal(f.totalCents, 2500 + 50 + 1);
-  assert.equal(f.driverCents + f.commissionCents + f.donationCents, f.totalCents);
+  assert.equal(f.totalCents, 2500 + 50);
+  assert.equal(f.driverCents + f.commissionCents, f.totalCents);
   assert.equal(f.co2SavedKg, 15, 'Anfahrt spart kein CO₂');
   // Anfahrt einmal pro Fahrt, nicht pro Person; Kleinstwerte ignoriert
   assert.equal(computeFare(10, pricing, 3, { pickupDetourKm: 2 }).detourCents, 50);

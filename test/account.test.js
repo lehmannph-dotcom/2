@@ -30,6 +30,14 @@ const config = {
   matching: { maxDetourKm: 3, maxResults: 10 },
 };
 
+const DECLARATION = { fitToDrive: true, licensePresent: true };
+/** Fahrerprofil vervollständigen: Identität (Demo-Prüfung) und Fahrzeug. */
+async function completeDriverProfile(c) {
+  const { caseId } = await c('POST', '/api/identity/start', {});
+  await c('POST', `/api/identity/demo/${caseId}/complete`, {});
+  await c('PUT', '/api/me/profile', { profile: { vehicle: { brand: 'VW', model: 'Polo', color: 'rot' } } });
+}
+
 function client(base) {
   const c = async (method, p, body) => {
     const res = await fetch(base + p, {
@@ -158,8 +166,9 @@ test('Profile, Privatsphäre und vergröberte Fahrerdaten', async (t) => {
   // Fahrer verifizieren und online gehen
   await driver('POST', '/api/license', { fullName: 'Doris Fahrer', number: 'B072RRE2I55', classes: 'B', expiry: '2099-01-01', birthdate: '1985-01-01', frontImage: img, backImage: img });
   await admin('POST', `/api/admin/licenses/${d.id}`, { decision: 'verified' });
+  await completeDriverProfile(driver);
   assert.equal((await admin('GET', `/api/admin/licenses/${d.id}/front`)).status, 404, 'Führerscheinfotos nach Prüfung gelöscht');
-  const { trip } = await driver('POST', '/api/trips', { origin: A, destination: B, seats: 2 });
+  const { trip } = await driver('POST', '/api/trips', { declaration: DECLARATION, origin: A, destination: B, seats: 2 });
   assert.equal(trip.vehicle, 'rot VW Polo', 'Fahrzeug aus Profil übernommen');
 
   // Aktiver Fahrer: Profil sichtbar, aber Nachname gekürzt, keine Telefonnummer
@@ -199,7 +208,7 @@ test('DSGVO: Datenexport und Kontolöschung', async (t) => {
   await reg(c, 'Lena Löschen', 'lena@example.org');
   const s = await c('POST', '/api/mfa/setup', {});
   await c('POST', '/api/mfa/enable', { code: mfa.totp(s.secret) });
-  await c('POST', '/api/wallet/topup', { amountCents: 1500 });
+  await c('POST', '/api/wallet/topup', { packageId: 'p20' });
   await c('POST', '/api/me/photo', { image: 'data:image/png;base64,iVBORw0KGgo=' });
 
   const exp = await c('GET', '/api/me/export');
@@ -213,7 +222,7 @@ test('DSGVO: Datenexport und Kontolöschung', async (t) => {
   assert.equal((await c('POST', '/api/me/delete', { password: 'geheim123', code: '000000' })).status, 401);
   const del = await c('POST', '/api/me/delete', { password: 'geheim123', code: mfa.totp(s.secret, Date.now() + 30_000) });
   assert.equal(del.ok, true);
-  assert.equal(del.payoutCents, 1500);
+  assert.equal(del.payoutCents, 2000);
   assert.equal((await c('GET', '/api/me')).status, 401);
   assert.equal((await client(base)('POST', '/api/login', { email: 'lena@example.org', password: 'geheim123' })).status, 401);
   // E-Mail ist wieder frei

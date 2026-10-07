@@ -143,6 +143,7 @@ function publicProfile(user, viewer, { hasBooking = false, stats = {}, game = nu
     nps: npsSummary(user),
     verifiedDriver: Boolean(lic && lic.status === 'verified' && new Date(lic.expiry) > new Date()),
     mfaEnabled: Boolean(user.mfa && user.mfa.enabled),
+    identityVerified: Boolean(user.identity && user.identity.status === 'verified'),
     stats: priv.showStats || self
       ? {
           memberSince: user.createdAt.slice(0, 7),

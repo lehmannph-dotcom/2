@@ -76,6 +76,13 @@ test('Sprache der Oberfläche: bei Registrierung übernommen, im Profil änderba
   assert.equal((await call('PUT', '/api/me/profile', { profile: { uiLanguage: 'xx' } })).status, 400);
   assert.equal((await call('PUT', '/api/me/profile', { profile: { uiLanguage: '' } })).user.profile.uiLanguage, '');
 
+  // Startseite unter /, die App unter /app (beide mit Sicherheits-Headern)
+  const home = await fetch(base + '/');
+  assert.match(await home.text(), /Du fährst sowieso\. Nimm jemanden mit\./);
+  assert.ok(home.headers.get('content-security-policy'));
+  assert.match(await (await fetch(base + '/app')).text(), /id="panel"/);
+  assert.match(await (await fetch(base + '/app/')).text(), /id="panel"/);
+
   // Übersetzungsdateien werden ausgeliefert
   const res = await fetch(base + '/i18n/zh.json');
   assert.equal(res.status, 200);

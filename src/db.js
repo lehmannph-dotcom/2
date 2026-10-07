@@ -13,9 +13,9 @@ const crypto = require('node:crypto');
 // Sammlungen, auf die per ID aus Anfragen zugegriffen wird, haben KEINEN Objekt-Prototyp:
 // So liefern IDs wie „__proto__“ oder „constructor“ nichts zurück und können den
 // Prototyp nicht verändern (Schutz vor Prototype Pollution).
-const DICTS = ['users', 'sessions', 'trips', 'rides'];
+const DICTS = ['users', 'sessions', 'trips', 'rides', 'identityCases'];
 const dict = (obj = {}) => Object.assign(Object.create(null), obj);
-const EMPTY = () => ({ users: dict(), sessions: dict(), trips: dict(), rides: dict(), ledger: [], guestbook: [] });
+const EMPTY = () => ({ users: dict(), sessions: dict(), trips: dict(), rides: dict(), identityCases: dict(), ledger: [], guestbook: [] });
 const SAVE_DELAY_MS = 1000;
 
 class Store {

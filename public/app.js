@@ -453,10 +453,60 @@ document.querySelector('#nav').addEventListener('click', (e) => {
 });
 document.querySelector('#lang-select').addEventListener('change', (e) => guard(() => chooseLanguage(e.target.value)));
 
+// ---------- Rollen für die heutige Nutzung (Schiebeschalter in der Kopfzeile) ----------
+const localToday = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
+/** Rollen gelten für den heutigen Tag; an einem neuen Tag ist man zunächst nur Mitfahrer. */
+function rolesToday() {
+  const r = state.me && state.me.roles;
+  if (r && r.date === localToday()) return { rider: r.rider, driver: r.driver && state.me.canDrive };
+  return { rider: true, driver: false };
+}
+const MISSING_LABEL = { identity: N_('Identität prüfen lassen'), license: N_('Führerschein prüfen lassen'), vehicle: N_('Fahrzeug angeben (Marke, Modell, Farbe)') };
+const missingText = () => (state.me.driverMissing || []).map((k) => t(MISSING_LABEL[k])).join(' · ');
+
+function roleSwitchesHtml() {
+  const r = rolesToday();
+  const driverLocked = !state.me.canDrive;
+  const sw = (role, label, on, disabled, tip) => `
+    <label class="switch ${disabled ? 'disabled' : ''}" ${tip ? `data-tip="${esc(tip)}" tabindex="0"` : ''}>
+      <input type="checkbox" role="switch" data-role="${role}" ${on ? 'checked' : ''} ${disabled ? 'disabled' : ''} aria-checked="${on}">
+      <span class="slider" aria-hidden="true"></span><span class="switch-label">${label}</span>
+    </label>`;
+  return sw('rider', t('Mitfahrer'), r.rider, false, t('Heute als Mitfahrer unterwegs'))
+    + sw('driver', t('Fahrer'), r.driver, driverLocked, driverLocked ? t('Fahrerprofil unvollständig: {missing}', { missing: missingText() }) : t('Heute als Fahrer unterwegs'));
+}
+
+async function setRole(role, on) {
+  const r = { ...rolesToday(), [role]: on };
+  if (!r.rider && !r.driver) r[role === 'rider' ? 'driver' : 'rider'] = true; // eine Rolle bleibt immer aktiv
+  const { user } = await api('/api/me/roles', { date: localToday(), rider: r.rider, driver: r.driver }, 'PUT');
+  state.me = user;
+  if (role === 'driver' && on) location.hash = '#/fahren';
+  else if (role === 'rider' && on && !r.driver) location.hash = '#/mitfahren';
+  else if (!on && currentView() === (role === 'driver' ? 'fahren' : 'mitfahren')) location.hash = r.driver ? '#/fahren' : '#/mitfahren';
+  render();
+}
+
+document.querySelector('#roles').addEventListener('change', (e) => {
+  const input = e.target.closest('[data-role]');
+  if (input) guard(() => setRole(input.dataset.role, input.checked).catch((err) => { input.checked = !input.checked; throw err; }));
+});
+// Ausgegrauter Fahrer-Schalter führt zum Fahrerprofil, wo die fehlenden Angaben ergänzt werden
+document.querySelector('#roles').addEventListener('click', (e) => {
+  if (e.target.closest('.switch.disabled')) { e.preventDefault(); location.hash = '#/fahrerprofil'; }
+});
+
 function renderHeader() {
   const nav = $('#nav');
   nav.hidden = !state.me;
   $('#nav-admin').hidden = !(state.me && state.me.isAdmin);
+  const roles = state.me ? rolesToday() : { rider: true, driver: false };
+  $('#nav-rider').hidden = !roles.rider;
+  $('#nav-driver').hidden = !roles.driver;
+  $('#roles').innerHTML = state.me ? roleSwitchesHtml() : '';
   nav.querySelectorAll('a').forEach((a) => a.classList.toggle('active', a.dataset.view === currentView()));
   $('#userbox').innerHTML = state.me
     ? `<a class="points-pill" href="#/punkte" data-tip="${esc(t('Level {name}', { name: t(state.me.level.name) }))}">${t('{n} P', { n: num(state.me.points) })}</a><span>${esc(state.me.name)} · <b>${euro(state.me.walletCents - state.me.reservedCents)}</b></span><button class="secondary" id="logout">${t('Abmelden')}</button>`
@@ -496,16 +546,20 @@ function render() {
   if (view === 'datenschutz') return renderPrivacyPolicy(panel);
   if (view === 'impressum') return renderImprint(panel);
   if (view === 'nutzungsbedingungen') return renderTerms(panel);
+  if (view === 'verhaltensregeln') return renderConduct(panel);
   if (view === 'funfacts') return guard(() => renderFunfacts(panel));
   if (!state.me) return renderAuth(panel);
   // Kontodaten bei jedem Seitenwechsel auffrischen (Sperren, Verwarnungen, Guthaben, Punkte)
   const show = (fn) => guard(async () => { await refreshMe(); return fn(panel); });
-  if (view === 'fahren') show(renderDriver);
+  if (view === 'identitaet') show(renderIdentityDemo);
+  else if (view === 'fahrerprofil') show(renderDriverSetup);
+  else if (view === 'fahren') show(renderDriver);
   else if (view === 'konto') show(renderAccount);
   else if (view === 'profil') show(renderProfile);
   else if (view === 'punkte') show(renderPoints);
   else if (view === 'admin' && state.me.isAdmin) show(renderAdmin);
-  else show(renderRider);
+  // Nur als Fahrer unterwegs: Startseite ist „Fahren“
+  else show(async (p) => (rolesToday().rider ? renderRider(p) : renderDriver(p)));
 }
 
 async function refreshMe() {
@@ -527,7 +581,6 @@ async function signedIn(user) {
 // ---------- Anmeldung ----------
 function renderAuth(panel) {
   drawMap();
-  const cfg = state.config ? state.config.pricing : null;
   panel.innerHTML = `
     <div class="card hero">
       <h2>${t('Teilen statt Leerfahren')}</h2>
@@ -549,7 +602,7 @@ function renderAuth(panel) {
         <input id="a-pass" type="password" autocomplete="current-password" minlength="8" required>
         <label class="check" id="consent-field" hidden>
           <input type="checkbox" id="a-consent">
-          <span>${t('Ich akzeptiere die <a href="#/nutzungsbedingungen" target="_blank">Nutzungsbedingungen</a>, habe die <a href="#/datenschutz" target="_blank">Datenschutzerklärung</a> gelesen und stimme der Verarbeitung meiner Daten zur Vermittlung und Abrechnung von Fahrten zu.')}</span>
+          <span>${t('Ich akzeptiere die <a href="#/nutzungsbedingungen" target="_blank">Nutzungsbedingungen</a> und die <a href="#/verhaltensregeln" target="_blank">Verhaltensregeln</a>, habe die <a href="#/datenschutz" target="_blank">Datenschutzerklärung</a> gelesen und stimme der Verarbeitung meiner Daten zur Vermittlung und Abrechnung von Fahrten zu.')}</span>
         </label>
         <button class="full" style="margin-top:14px" id="a-submit">${t('Anmelden')}</button>
       </form>
@@ -565,7 +618,8 @@ function renderAuth(panel) {
       <ol class="steps">
         <li>${t('<b>Fahrer</b> gehen mit ihrer Route online')} ${info(t('Einmalig den Führerschein verifizieren, dann Route eingeben oder einen Google-Maps-Link einfügen.'))}</li>
         <li>${t('<b>Mitfahrer</b> finden den passenden Fahrer')} ${info(t('Ziel eingeben – die App findet den Fahrer mit dem kleinsten Umweg, der kürzesten Wartezeit und guten Bewertungen.'))}</li>
-        <li>${t('<b>Kosten teilen</b> pro Kilometer')} ${info(`<p>${cfg ? t('Abgerechnet wird die geplante Route – oder die gefahrene Strecke, wenn sie kürzer ist ({rate}/km).', { rate: euro(cfg.ratePerKmCents) }) : t('Abgerechnet wird die geplante Route – oder die gefahrene Strecke, wenn sie kürzer ist.')}</p><p>${t('Der Großteil geht an den Fahrer, {percent} % Vermittlungsprovision, {donation} Umweltspende je Fahrt.', { percent: cfg ? num(cfg.commissionPercent) : '–', donation: cfg ? euro(cfg.donationCentsPerRide) : euro(1) })}</p>`)}</li>
+        <li>${t('<b>Kosten teilen</b> pro Kilometer')} ${info(TIP.price())}</li>
+        <li>${t('<b>Rücksichtsvoll</b> miteinander unterwegs')} ${info(t('Alle Mitglieder sind geprüft und halten sich an unsere Verhaltensregeln: pünktlich, freundlich, sicher und respektvoll.'))} <a href="#/verhaltensregeln" class="small">${t('Verhaltensregeln')}</a></li>
       </ol>
     </div>`;
   let mode = 'login';
@@ -580,6 +634,7 @@ function renderAuth(panel) {
   };
   $('#tab-login').onclick = () => setMode('login');
   $('#tab-register').onclick = () => setMode('register');
+  if (currentView() === 'registrieren') setMode('register'); // Link „Kostenlos registrieren“ der Startseite
   $('#auth-form').onsubmit = (e) => {
     e.preventDefault();
     guard(async () => {
@@ -639,8 +694,8 @@ const PLANNED_STYLE = { color: '#2f7350', weight: 4, dash: '10 8', opacity: 0.9 
 const TIP = {
   billing: (who = 'du') => `<p><b>${t('So wird abgerechnet')}</b></p><p>${t('Grundlage ist die <b>schnellste Route laut Plan</b>, die ihr beide vorab bestätigt habt.')}</p><p>${who === 'du' ? t('Mit dem <b>Einsteigen</b> wird der Preis der geplanten Route fällig – auch wenn die Fahrt früher endet. Ist die Strecke länger (Umweg), bleibt es beim geplanten Preis – Umwege zahlst du nie.') : t('Mit dem <b>Einsteigen</b> wird der Preis der geplanten Route fällig – auch wenn die Fahrt früher endet. Ist die Strecke länger (Umweg), bleibt es beim geplanten Preis – Umwege zahlt der Mitfahrer nie.')}</p><p>${t('Nur bei einem <b>begründeten Fahrtabbruch</b> wird die bis dahin gefahrene Strecke (GPS) berechnet. Abbrüche erscheinen als Fahrtabbruchsquote im Profil beider Beteiligten.')}</p>`,
   price: () => {
-    const c = state.config ? state.config.pricing : { ratePerKmCents: 25, commissionPercent: 10, donationCentsPerRide: 1 };
-    return `<p><b>${t('Kostenteilung pro Kilometer')}</b></p><table><tr><td>${t('Kilometersatz')}</td><td>${euro(c.ratePerKmCents)}/km</td></tr><tr><td>${t('an den Fahrer')}</td><td>${num(100 - c.commissionPercent)} %</td></tr><tr><td>${t('Vermittlungsprovision')}</td><td>${num(c.commissionPercent)} %</td></tr><tr><td>${t('Anfahrt zum Treffpunkt')}</td><td>${t('100 % Fahrer')}</td></tr><tr><td>${t('Umweltspende je Fahrt')}</td><td>${euro(c.donationCentsPerRide)}</td></tr></table><p style="margin-top:6px">${t('Der Preis der geplanten Route ist der Höchstbetrag. Er wird reserviert und erst nach der Fahrt abgebucht.')}</p>`;
+    const c = (state.config && state.config.pricing) || { ratePerKmCents: 8, recommendedRateCents: 8, energyCostPerKmCents: 12, riderEnergySharePercent: 67, commissionPercent: 10, donationCentsPerRide: 1 };
+    return `<p><b>${t('Fair geteilt – kein Fahrdienst')}</b></p><p>${t('Der Fahrer stellt Auto und Zeit, du beteiligst dich mit rund {share} % an Kraftstoff bzw. Strom. Daraus ergibt sich der empfohlene Satz von {rate}/km; Fahrer können ihn anpassen.', { share: num(c.riderEnergySharePercent ?? 67), rate: euro(c.recommendedRateCents ?? c.ratePerKmCents) })}</p><table><tr><td>${t('Energiekosten (Richtwert)')}</td><td>${euro(c.energyCostPerKmCents || 0)}/km</td></tr><tr><td>${t('Empfohlener Kilometersatz')}</td><td>${euro(c.recommendedRateCents ?? c.ratePerKmCents)}/km</td></tr><tr><td>${t('an den Fahrer')}</td><td>${num(100 - c.commissionPercent)} %</td></tr><tr><td>${t('Vermittlungsprovision (enthalten)')}</td><td>${num(c.commissionPercent)} %</td></tr><tr><td>${t('Anfahrt zum Treffpunkt')}</td><td>${t('100 % Fahrer')}</td></tr></table><p style="margin-top:6px">${t('Die Umweltspende von {donation} je Fahrt zahlt der Betreiber aus seiner Provision. Mit Vorkasse-Guthaben sparst du bis zu 20 % der Provision.', { donation: euro(c.donationCentsPerRide) })}</p><p>${t('Der Preis der geplanten Route ist der Höchstbetrag. Er wird reserviert und erst nach der Fahrt abgebucht.')}</p>`;
   },
   payment: (isRider) => `<p><b>${t('Wann wird bezahlt?')}</b></p><p>${isRider ? t('Sobald der Fahrer dich abgesetzt <b>und</b> du die Fahrt bewertet hast – Reihenfolge egal.') : t('Sobald der Fahrer den Mitfahrer abgesetzt <b>und</b> der Mitfahrer die Fahrt bewertet hat – Reihenfolge egal.')}</p><p>${t('Die Bewertung ändert den Preis nicht. Ohne Rückmeldung gilt die Fahrt nach 24 h als bestätigt.')}</p>`,
   points: () => `<p><b>${t('Punkte = Faktor × eingesparte kg CO₂')}</b></p><p>${t('Der Faktor ist die Bewertung, die du vom jeweils anderen bekommst:')}</p><table><tr><td>10 · 9 · 8 · 7</td><td>×10 · ×9 · ×8 · ×7</td></tr><tr><td>6 · 5 · 4</td><td>×1</td></tr><tr><td>3 · 2 · 1 · 0</td><td>×0</td></tr></table>`,
@@ -912,7 +967,7 @@ async function renderMatches() {
         <div class="top">
           <div>${profileLink(m.driverId, m.driverName)} ${i === 0 ? `<span class="badge best" tabindex="0" data-tip="${esc(t('Sortiert nach dem kürzesten Umweg des Fahrers – so entstehen die wenigsten zusätzlichen Kilometer.'))}">${t('Kürzester Umweg')}</span>` : ''}<br>
             ${npsBadge(m.driverNps)} ${abortBadge(m.driverAbort, 'driver')} ${prefIcons(m)}<br><span class="muted small">${esc(m.vehicle || t('Pkw'))} · ${t('{n} frei', { n: num(m.seatsFree) })}</span></div>
-          <div class="price">${euro(m.price.totalCents)}</div>
+          <div class="price">${euro(m.price.totalCents)}${m.price.savingsVsTransitPercent !== null && m.price.savingsVsTransitPercent !== undefined ? `<div class="muted small" tabindex="0" data-tip="${esc(t('ÖPNV-Einzelticket ca. {amount} – du sparst {percent} %', { amount: euro(m.price.transitFareCents), percent: num(m.price.savingsVsTransitPercent) }))}">${t('−{percent} % ggü. ÖPNV', { percent: num(m.price.savingsVsTransitPercent) })}</div>` : ''}</div>
         </div>
         <div class="muted small" style="margin-top:6px">
           ${t('{detour} Umweg · {eta} Wartezeit · {co2} kg CO₂ gespart', { detour: km(m.detourKm), eta: minutes(m.etaMin), co2: kg(m.price.co2SavedKg) })} ${info(`<table><tr><td>${t('Abholung in ca.')}</td><td>${minutes(m.etaMin)}</td></tr><tr><td>${t('Umweg für den Fahrer')}</td><td>${km(m.detourKm)}</td></tr><tr><td>${t('davon Anfahrt zum Treffpunkt')}</td><td>${km(m.pickupDetourKm)}</td></tr><tr><td>${t('CO₂-Ersparnis')}</td><td>${kg(m.price.co2SavedKg)} kg</td></tr></table><p style="margin-top:6px">${t('Fahrer fährt (ungefähr): {from} → {to}. Start und Ziel des Fahrers zeigen wir zum Schutz seiner Adresse nur ungefähr.', { from: esc(shortLabel(m.origin)), to: esc(shortLabel(m.destination)) })}</p>`, t('Details zur Fahrt'))}
@@ -948,20 +1003,34 @@ async function showMatchOnMap(m) {
   }
 }
 
+/** Vergleich mit Nahverkehr und eigenem Auto */
+function priceComparison(p) {
+  const parts = [];
+  if (p.transitFareCents) parts.push(t('ÖPNV-Einzelticket ca. {amount} – du sparst {percent} %', { amount: euro(p.transitFareCents), percent: num(p.savingsVsTransitPercent) }));
+  if (p.energyCostCents) parts.push(t('Kraftstoff bzw. Strom für die Strecke ca. {amount} – du trägst {percent} % davon', { amount: euro(p.energyCostCents), percent: num(p.energySharePercent) }));
+  return parts.length ? `<p class="muted small compare">${parts.join('<br>')} ${info(t('Orientierung für einen fairen Preis: Einzelticket im Nahverkehr eines Ballungsraums und Energiekosten eines durchschnittlichen Pkw (Richtwerte).'))}</p>` : '';
+}
+
 function priceCard(p, title) {
   const calc = p.seats > 1
     ? t('{km} × {rate} × {seats} Pers.', { km: km(p.km), rate: euro(p.ratePerKmCents), seats: num(p.seats) })
     : `${km(p.km)} × ${euro(p.ratePerKmCents)}`;
-  const split = `<table><tr><td>${calc}</td><td>${euro(p.fareCents)}</td></tr><tr><td>${t('davon an den Fahrer')}</td><td>${euro(p.driverCents)}</td></tr><tr><td>${t('davon Vermittlungsprovision')}</td><td>${euro(p.commissionCents)}</td></tr><tr><td>${t('Spende Umweltschutz')}</td><td>${euro(p.donationCents)}</td></tr></table><p style="margin-top:6px">${t('Provision nur auf die gemeinsame Strecke – nicht auf die Anfahrt zum Treffpunkt.')}</p>`;
+  const rateNote = p.recommendedRateCents && p.ratePerKmCents !== p.recommendedRateCents ? t('Der Fahrer hat {rate}/km gewählt (Empfehlung: {recommended}/km).', { rate: euro(p.ratePerKmCents), recommended: euro(p.recommendedRateCents) }) : '';
+  const split = `<table><tr><td>${calc}</td><td>${euro(p.fareCents)}</td></tr><tr><td>${t('davon an den Fahrer')}</td><td>${euro(p.driverCents - p.detourCents)}</td></tr><tr><td>${t('davon Vermittlungsprovision')}</td><td>${euro(p.commissionFullCents ?? p.commissionCents)}</td></tr><tr><td>${t('davon Umweltspende (aus der Provision)')}</td><td>${euro(p.donationCents)}</td></tr></table><p style="margin-top:6px">${t('Provision nur auf die gemeinsame Strecke – nicht auf die Anfahrt zum Treffpunkt.')}</p>${rateNote ? `<p>${rateNote}</p>` : ''}`;
   return `<div class="card"><h3>${title} ${info(TIP.price())}</h3>
     <table class="breakdown">
       <tr><td>${withTip(t('Fahrtkosten {km}', { km: km(p.km) }), split)}</td><td>${euro(p.fareCents)}</td></tr>
       ${p.detourCents ? `<tr><td>${t('Anfahrt zum Treffpunkt {km}', { km: km(p.detourKm) })} ${info(TIP.detour())}</td><td>${euro(p.detourCents)}</td></tr>` : ''}
-      <tr><td>${t('Umweltspende')}</td><td>${euro(p.donationCents)}</td></tr>
+      ${p.discountCents ? `<tr><td>${t('Vorkasse-Rabatt ({percent} % der Provision)', { percent: num(p.commissionDiscountPercent) })}</td><td>−${euro(p.discountCents)}</td></tr>` : ''}
       <tr class="total"><td>${t('Gesamt')} ${info(TIP.billing())}</td><td>${euro(p.totalCents)}</td></tr>
     </table>
+    ${priceComparison(p)}
   </div>`;
 }
+
+const paymentLabel = (ride) => (ride.payment === 'per_ride'
+  ? t('Bezahlung: je Fahrt (hinterlegtes Zahlungsmittel)')
+  : ride.commissionDiscountPercent ? t('Bezahlung: Vorkasse-Guthaben ({percent} % Rabatt auf die Provision)', { percent: num(ride.commissionDiscountPercent) }) : t('Bezahlung: Guthaben'));
 
 async function bookSelected() {
   const m = state.selected;
@@ -976,7 +1045,7 @@ async function bookSelected() {
     });
   } catch (err) {
     if (err.status === 402) {
-      toast(err.message + ' ' + t('Bitte Guthaben im Konto aufladen.'));
+      toast(err.message + ' ' + t('Bitte im Konto Vorkasse-Guthaben aufladen oder „Je Fahrt bezahlen“ aktivieren.'));
       location.hash = '#/konto';
       return;
     }
@@ -1009,6 +1078,7 @@ async function renderRiderRide(panel, ride) {
       <p>${profileLink(ride.driverId, ride.driverName)} ${ride.vehicle ? '· ' + esc(ride.vehicle) : ''} ${abortBadge(ride.partnerAbort, 'driver')}</p>
       <p class="muted small">${esc(shortLabel(ride.pickup))} → ${esc(shortLabel(ride.dropoff))}</p>
       ${ride.plannedRoute ? plannedRouteHtml(ride.plannedRoute, routeNote) : ''}
+      <p class="muted small">${paymentLabel(ride)}</p>
       ${['requested', 'accepted'].includes(ride.status) ? `<button class="secondary" id="r-cancel" style="margin-top:10px">${t('Stornieren')}</button>` : ''}
     </div>
     ${['picked_up', 'confirming'].includes(ride.status) ? confirmationCard(ride) : priceCard(ride.estimate, t('Preis (Höchstbetrag)'))}`;
@@ -1037,7 +1107,13 @@ async function loadRides() {
 
 // ---------- Fahrer ----------
 async function renderDriver(panel) {
-  if (!state.me.canDrive) return renderLicense(panel);
+  if (!state.me.canDrive) return renderDriverSetup(panel);
+  if (!rolesToday().driver) {
+    drawMap();
+    panel.innerHTML = `<div class="card"><h2>${t('Heute nicht als Fahrer unterwegs')}</h2><p class="muted">${t('Schalte oben „Fahrer“ ein, um eine Fahrt anzubieten.')}</p><button id="drive-on">${t('Heute als Fahrer fahren')}</button></div>`;
+    $('#drive-on').onclick = (e) => guard(() => setRole('driver', true), e.target);
+    return;
+  }
   const { trip } = await api('/api/trips/active');
   state.trip = trip;
   if (trip) return renderActiveTrip(panel);
@@ -1055,6 +1131,7 @@ async function renderDriver(panel) {
           <select id="d-seats">${[1, 2, 3, 4, 5, 6].map((n) => `<option value="${n}" ${n === 3 ? 'selected' : ''}>${num(n)}</option>`).join('')}</select></div>
         <div><label for="d-vehicle">${t('Fahrzeug (optional)')}</label><input id="d-vehicle" placeholder="${esc(t('z. B. blauer VW Golf'))}"></div>
       </div>
+      ${rateFieldHtml()}
       <div class="btn-row">
         <button class="secondary" id="d-preview">${t('Route anzeigen')}</button>
         <button id="d-start">${t('Online gehen')}</button>
@@ -1062,6 +1139,7 @@ async function renderDriver(panel) {
     </div>
     <div id="d-route"></div>`;
   bindPlaceFields(panel);
+  bindRateField();
   const routeBody = async () => {
     const link = $('#d-link').value.trim();
     if (link) return { googleMapsUrl: link };
@@ -1080,11 +1158,48 @@ async function renderDriver(panel) {
     }, e.target);
   $('#d-start').onclick = (e) =>
     guard(async () => {
-      await api('/api/trips', { ...(await routeBody()), seats: Number($('#d-seats').value), vehicle: $('#d-vehicle').value });
+      const body = { ...(await routeBody()), seats: Number($('#d-seats').value), vehicle: $('#d-vehicle').value, ratePerKmCents: Number($('#d-rate').value) };
+      const decl = await askDriverDeclaration();
+      if (!decl) return;
+      await api('/api/trips', { ...body, ...decl });
+      const { user } = await api('/api/me');
+      state.me = user; // u. a. für einen Monat gemerkte Bestätigung
       toast(t('Du bist online – Mitfahrer können dich jetzt finden.'));
       render();
     }, e.target);
   previewPlaces();
+}
+
+/** Kilometersatz wählen – Empfehlung (ca. 2/3 der Energiekosten) mit Orientierungswerten. */
+function rateFieldHtml() {
+  const c = state.config.pricing;
+  const rec = c.recommendedRateCents ?? c.ratePerKmCents;
+  return `<label for="d-rate">${t('Preis je Kilometer')} ${info(TIP.price())}</label>
+    <div class="rate-row"><input id="d-rate" type="range" min="1" max="${c.maxRateCents || 30}" step="1" value="${rec}"><b id="d-rate-val"></b></div>
+    <p class="muted small" id="d-rate-hint"></p>`;
+}
+
+function bindRateField() {
+  const input = $('#d-rate');
+  if (!input) return;
+  const c = state.config.pricing;
+  const rec = c.recommendedRateCents ?? c.ratePerKmCents;
+  const update = () => {
+    const rate = Number(input.value);
+    $('#d-rate-val').textContent = `${euro(rate)}/km`;
+    // Beispiel 10 km: was zahlt ein Mitfahrer im Vergleich?
+    const total = rate * 10;
+    const transit = (c.transitFares || []).find((f) => f.maxKm >= 10);
+    const share = c.energyCostPerKmCents ? Math.round((rate / c.energyCostPerKmCents) * 100) : null;
+    const lines = [
+      rate === rec ? t('Empfohlen: {rate}/km – rund zwei Drittel der Energiekosten.', { rate: euro(rec) }) : t('Empfehlung: {rate}/km', { rate: euro(rec) }),
+      t('Für 10 km zahlt ein Mitfahrer {amount}', { amount: euro(total) }) + (transit ? ' · ' + t('ÖPNV-Einzelticket ca. {amount}', { amount: euro(transit.cents) }) : '') + (share !== null ? ' · ' + t('{percent} % deiner Energiekosten', { percent: num(share) }) : ''),
+    ];
+    if (transit && total > transit.cents) lines.push(`<span class="warn-text">${t('Teurer als der Nahverkehr – das schreckt Mitfahrer eher ab.')}</span>`);
+    $('#d-rate-hint').innerHTML = lines.join('<br>');
+  };
+  input.addEventListener('input', update);
+  update();
 }
 
 async function renderActiveTrip(panel) {
@@ -1097,7 +1212,7 @@ async function renderActiveTrip(panel) {
       <h2>${t('Du bist online')}</h2>
       ${mfaHint()}
       <p><b>${esc(shortLabel(trip.origin))}</b> → <b>${esc(shortLabel(trip.destination))}</b></p>
-      <p class="muted small">${t('{km} · {free} von {seats} Plätzen frei · zurückgelegt {progress}', { km: km(trip.route.distanceKm), free: num(trip.seatsFree), seats: num(trip.seats), progress: km(trip.progressKm || 0) })}</p>
+      <p class="muted small">${t('{km} · {free} von {seats} Plätzen frei · zurückgelegt {progress}', { km: km(trip.route.distanceKm), free: num(trip.seatsFree), seats: num(trip.seats), progress: km(trip.progressKm || 0) })} · ${euro(trip.ratePerKmCents || state.config.pricing.recommendedRateCents)}/km</p>
       <div class="btn-row">
         ${tracking ? `<button class="secondary" id="d-stoptrack">${t('Standort-Übertragung stoppen')}</button>` : `<button id="d-gps">${t('GPS-Standort teilen')}</button><button class="secondary" id="d-sim">${t('Fahrt simulieren (Demo)')}</button>`}
         <button class="danger" id="d-end">${t('Fahrt beenden')}</button>
@@ -1239,20 +1354,111 @@ function pointAlong(coords, cum, along) {
 }
 
 // ---------- Führerschein-Verifizierung ----------
-function renderLicense(panel) {
+/** Fahrerprofil: Identität, Führerschein und Fahrzeug – Voraussetzung für den Fahrer-Schalter. */
+async function renderDriverSetup(panel) {
   drawMap();
-  const lic = state.me.license;
-  if (lic && lic.status === 'pending') {
-    panel.innerHTML = `<div class="card"><h2>${t('Führerschein wird geprüft')} ${info(t('Sobald dein Führerschein bestätigt ist, kannst du sofort als Fahrer online gehen.'))}</h2>
-      <p><span class="badge warn">${t('In Prüfung')}</span></p>
-      <p class="muted">${t('Nr. {number} · Klassen {classes} · gültig bis {date}', { number: esc(lic.number), classes: esc(lic.classes.join(', ')), date: fmtDate(lic.expiry) })}</p>
-      <button class="secondary" id="l-refresh">${t('Status aktualisieren')}</button></div>`;
-    $('#l-refresh').onclick = () => guard(async () => { await refreshMe(); render(); });
-    return;
-  }
+  const me = state.me;
+  const missing = me.driverMissing || [];
+  const lic = me.license;
+  const v = me.profile.vehicle;
+  const idStatus = me.identity ? me.identity.status : 'none';
+  const step = (done, title, body) => `<div class="setup-step ${done ? 'done' : ''}"><span class="setup-mark" aria-hidden="true">${done ? '✓' : '○'}</span><div><b>${title}</b>${body ? `<div class="small">${body}</div>` : ''}</div></div>`;
+  const identityBody = idStatus === 'verified'
+    ? t('Geprüft über {provider} am {date}.', { provider: esc(t(me.identity.providerName)), date: fmtDate(me.identity.verifiedAt) })
+    : `${idStatus === 'failed' ? `<span class="badge bad">${t('Prüfung nicht bestanden')}</span> ` : ''}${idStatus === 'pending' ? `<span class="badge warn">${t('Prüfung begonnen')}</span> ` : ''}<button class="secondary" id="ident-start" style="margin-top:6px">${t('Identität jetzt prüfen')}</button>`;
+  const licenseBody = !missing.includes('license')
+    ? t('Gültig bis {date}.', { date: fmtDate(lic.expiry) })
+    : lic && lic.status === 'pending' ? `<span class="badge warn">${t('In Prüfung')}</span> <button class="linkish" id="l-refresh">${t('Status aktualisieren')}</button>` : t('Bitte unten einreichen.');
   panel.innerHTML = `
     <div class="card">
-      <h2>${t('Als Fahrer legitimieren')} ${info(`<p>${t('Um Mitfahrer mitzunehmen, brauchst du einen gültigen Führerschein (mind. Klasse B).')}</p><p>${t('Die Fotos sieht nur der Betreiber zur Prüfung – danach werden sie gelöscht.')}</p>`)}</h2>
+      <h2>${t('Fahrerprofil')} ${info(`<p>${t('Um Mitfahrer mitzunehmen, brauchst du eine geprüfte Identität, einen gültigen Führerschein (mind. Klasse B) und Angaben zu deinem Fahrzeug.')}</p><p>${t('Sobald alles vollständig ist, kannst du oben den Schalter „Fahrer“ einschalten.')}</p>`)}</h2>
+      ${step(!missing.includes('identity'), t('Identität geprüft'), identityBody)}
+      ${step(!missing.includes('license'), t('Führerschein geprüft'), licenseBody)}
+      ${step(!missing.includes('vehicle'), t('Fahrzeug angegeben'), !missing.includes('vehicle') ? esc([v.color, v.brand === 'Andere' ? t('Andere') : v.brand, v.model].join(' ')) : t('Bitte unten ergänzen.'))}
+      ${missing.length ? '' : `<p class="ok-text">${t('Dein Fahrerprofil ist vollständig.')}</p><button id="setup-drive">${t('Heute als Fahrer fahren')}</button>`}
+    </div>
+    ${missing.includes('vehicle') ? vehicleFormHtml(v) : ''}
+    ${missing.includes('license') && !(lic && lic.status === 'pending') ? licenseFormHtml(lic) : ''}`;
+  const on = (id, fn) => { const el = $(id); if (el) el.onclick = (e) => guard(() => fn(e), e.target); };
+  on('#ident-start', startIdentityCheck);
+  on('#setup-drive', () => setRole('driver', true));
+  on('#l-refresh', async () => { await refreshMe(); render(); });
+  bindVehicleForm();
+  bindLicenseForm();
+}
+
+async function startIdentityCheck() {
+  const { redirectUrl } = await api('/api/identity/start', {});
+  if (redirectUrl.startsWith('#')) location.hash = redirectUrl;
+  else location.href = redirectUrl; // Anbieter (z. B. POSTIDENT) – zurück über die Ergebnis-Meldung
+}
+
+/** Simulierter Anbieter (IDENT_PROVIDER=demo). Im Livebetrieb übernimmt das z. B. POSTIDENT. */
+function renderIdentityDemo(panel) {
+  drawMap();
+  const caseId = location.hash.split('/')[2] || '';
+  panel.innerHTML = `
+    <div class="card">
+      <h2>${t('Identität prüfen')}</h2>
+      <div class="card notice small">${t('Demo: Hier würdest du zum Prüfdienst weitergeleitet, z. B. POSTIDENT der Deutschen Post (per Video-Chat, in der Filiale oder mit dem Online-Ausweis). Wir erhalten nur das Ergebnis – keine Kopie deines Ausweises.')}</div>
+      <ol class="steps">
+        <li>${t('Ausweis oder Reisepass bereithalten')}</li>
+        <li>${t('Prüfung beim Anbieter durchführen')}</li>
+        <li>${t('Ergebnis wird automatisch übermittelt')}</li>
+      </ol>
+      <div class="btn-row"><button id="idd-ok">${t('Prüfung erfolgreich abschließen (Demo)')}</button><button class="secondary" id="idd-fail">${t('Prüfung fehlschlagen lassen (Demo)')}</button></div>
+    </div>`;
+  const finish = (result) => (e) => guard(async () => {
+    const { user } = await api(`/api/identity/demo/${encodeURIComponent(caseId)}/complete`, { result });
+    state.me = user;
+    toast(result === 'success' ? t('Deine Identität ist geprüft.') : t('Die Identitätsprüfung ist fehlgeschlagen. Du kannst sie erneut starten.'));
+    location.hash = '#/fahrerprofil';
+  }, e.target);
+  $('#idd-ok').onclick = finish('success');
+  $('#idd-fail').onclick = finish('failed');
+}
+
+function vehicleFormHtml(v) {
+  return `<div class="card">
+    <h3>${t('Fahrzeug')}</h3>
+    <form id="veh-form">
+      <div class="row">
+        <div><label for="veh-brand">${t('Automarke')}</label><select id="veh-brand" required><option value="">–</option>${(state.config.brands || []).map((b) => `<option value="${esc(b)}" ${v.brand === b ? 'selected' : ''}>${esc(b === 'Andere' ? t('Andere') : b)}</option>`).join('')}</select></div>
+        <div><label for="veh-model">${t('Modell')}</label><input id="veh-model" value="${esc(v.model)}" placeholder="Golf" required></div>
+      </div>
+      <div class="row">
+        <div><label for="veh-color">${t('Farbe')}</label><input id="veh-color" value="${esc(v.color)}" placeholder="${esc(t('blau'))}" required></div>
+        <div><label for="veh-plate">${t('Ortskürzel')}</label><input id="veh-plate" value="${esc(v.plateRegion || '')}" maxlength="3" placeholder="${esc(t('z. B. HH'))}" style="text-transform:uppercase"></div>
+      </div>
+      <button style="margin-top:10px" id="veh-save">${t('Fahrzeug speichern')}</button>
+    </form>
+  </div>`;
+}
+
+function bindVehicleForm() {
+  const form = $('#veh-form');
+  if (!form) return;
+  form.onsubmit = (e) => {
+    e.preventDefault();
+    guard(async () => {
+      try {
+        const { user } = await api('/api/me/profile', { profile: { vehicle: { brand: $('#veh-brand').value, model: $('#veh-model').value, color: $('#veh-color').value, plateRegion: $('#veh-plate').value } } }, 'PUT');
+        state.me = user;
+      } catch (err) {
+        if (err.details) err.message += ' ' + err.details.join(' ');
+        err.details = null;
+        throw err;
+      }
+      toast(t('Fahrzeug gespeichert.'));
+      render();
+    }, $('#veh-save'));
+  };
+}
+
+function licenseFormHtml(lic) {
+  return `
+    <div class="card">
+      <h3>${t('Als Fahrer legitimieren')} ${info(`<p>${t('Um Mitfahrer mitzunehmen, brauchst du einen gültigen Führerschein (mind. Klasse B).')}</p><p>${t('Die Fotos sieht nur der Betreiber zur Prüfung – danach werden sie gelöscht.')}</p>`)}</h3>
       ${lic && lic.status === 'rejected' ? `<p><span class="badge bad">${t('Abgelehnt')}</span> ${esc(lic.reviewNote)}</p>` : ''}
       ${lic && lic.status === 'verified' ? `<p><span class="badge bad">${t('Abgelaufen')}</span> ${t('Bitte aktuellen Führerschein einreichen.')}</p>` : ''}
       <form id="l-form">
@@ -1269,7 +1475,12 @@ function renderLicense(panel) {
         <button class="full" style="margin-top:12px" id="l-submit">${t('Zur Prüfung einreichen')}</button>
       </form>
     </div>`;
-  $('#l-form').onsubmit = (e) => {
+}
+
+function bindLicenseForm() {
+  const form = $('#l-form');
+  if (!form) return;
+  form.onsubmit = (e) => {
     e.preventDefault();
     guard(async () => {
       try {
@@ -1292,6 +1503,35 @@ function renderLicense(panel) {
       }
     }, $('#l-submit'));
   };
+}
+
+/**
+ * Vor Fahrtantritt: Fahrtauglichkeit und Fahrerlaubnis bestätigen. Mit Häkchen gilt die
+ * Bestätigung einen Monat (danach fragt die App wieder). Liefert die Angaben oder null.
+ */
+function askDriverDeclaration() {
+  if (state.me.driverDeclarationUntil && new Date(state.me.driverDeclarationUntil) > new Date()) return Promise.resolve({});
+  return new Promise((resolve) => {
+    openModal(`<h2>${t('Vor Fahrtantritt')}</h2>
+      <p class="muted">${t('Bitte bestätige vor jeder Fahrt:')}</p>
+      <form id="decl-form">
+        <label class="check"><input type="checkbox" id="decl-fit" required><span>${t('Ich bin fahrtüchtig: kein Alkohol, keine Drogen und keine Medikamente, die das Fahren beeinträchtigen; ich bin ausgeruht und gesundheitlich in der Lage, sicher zu fahren.')}</span></label>
+        <label class="check"><input type="checkbox" id="decl-license" required><span>${t('Ich besitze eine gültige Fahrerlaubnis für dieses Fahrzeug, führe den Führerschein mit, und es besteht kein Fahrverbot.')}</span></label>
+        <label class="check decl-remember"><input type="checkbox" id="decl-remember"><span>${t('Für einen Monat nicht mehr fragen. Ich bestätige das dann stillschweigend vor jeder Fahrt und fahre nicht, wenn es einmal nicht zutrifft.')}</span></label>
+        <p class="small"><a href="#/verhaltensregeln" target="_blank">${t('Verhaltensregeln')}</a></p>
+        <div class="btn-row"><button id="decl-ok" disabled>${t('Bestätigen und losfahren')}</button><button type="button" class="secondary" id="decl-cancel">${t('Abbrechen')}</button></div>
+      </form>`);
+    const update = () => { $('#decl-ok').disabled = !($('#decl-fit').checked && $('#decl-license').checked); };
+    $('#decl-fit').onchange = update;
+    $('#decl-license').onchange = update;
+    $('#decl-cancel').onclick = () => { closeModal(); resolve(null); };
+    $('#decl-form').onsubmit = (e) => {
+      e.preventDefault();
+      const declaration = { fitToDrive: $('#decl-fit').checked, licensePresent: $('#decl-license').checked, remember: $('#decl-remember').checked };
+      closeModal();
+      resolve({ declaration });
+    };
+  });
 }
 
 function resizeImage(file, max = 1600) {
@@ -1318,6 +1558,37 @@ function abortedByText(r) {
   return `${by}: ${abortReasonLabel(r.abort.category)} – ${r.abort.reason}`;
 }
 
+/** Bezahlen in 4 Stufen: je Fahrt oder Vorkasse 10/20/50 € mit Rabatt auf die Provision. */
+function paymentCard(me) {
+  const demo = !(state.config && state.config.demoTopup === false);
+  const pkgs = (state.config && state.config.prepaidPackages) || [];
+  const tier = (n, title, sub, action, active) => `<div class="tier ${active ? 'active' : ''}"><div class="tier-head"><span class="tier-no">${t('Stufe {n}', { n: num(n) })}</span><b>${title}</b></div><div class="small">${sub}</div>${action}</div>`;
+  const pm = me.paymentMethod;
+  const perRide = tier(1, t('Je Fahrt bezahlen'), t('Kein Guthaben nötig, volle Provision.'),
+    pm ? `<div class="small">${esc(t(pm.label))} · <button class="linkish" id="pm-remove">${t('entfernen')}</button></div>`
+      : demo ? `<button class="secondary" id="pm-add">${t('Zahlungsmittel hinterlegen (Demo)')}</button>` : '', Boolean(pm) && !me.prepaidCents);
+  const prepaid = pkgs.map((p, i) => tier(i + 2, t('{amount} Vorkasse', { amount: euro(p.amountCents) }), t('{percent} % Rabatt auf die Provision', { percent: num(p.discountPercent) }),
+    demo ? `<button data-package="${esc(p.id)}">${t('{amount} einzahlen', { amount: euro(p.amountCents) })}</button>` : '', me.prepaidCents > 0 && me.prepaidDiscountPercent === p.discountPercent)).join('');
+  return `<div class="card" id="payment">
+    <h2>${t('Bezahlen')} ${info(`<p>${t('Du kannst jede Fahrt einzeln bezahlen oder Guthaben beim Betreiber im Voraus einzahlen. Vorkasse lohnt sich: Du erhältst einen Rabatt auf die Vermittlungsprovision – der Fahrer bekommt trotzdem seinen vollen Anteil.')}</p><p>${t('Der Rabatt gilt, solange Vorkasse-Guthaben vorhanden ist (älteste Einzahlung zuerst). Restguthaben wird bei Kontolöschung ausgezahlt.')}</p>${demo ? `<p>${t('Demo-Zahlung. Im Livebetrieb läuft die Zahlung über einen Zahlungsdienstleister.')}</p>` : ''}`)}</h2>
+    <p class="small">${me.prepaidCents ? t('Vorkasse-Guthaben: <b>{amount}</b> · aktueller Rabatt: <b>{percent} %</b> auf die Provision', { amount: euro(me.prepaidCents), percent: num(me.prepaidDiscountPercent) }) : t('Kein Vorkasse-Guthaben.')}</p>
+    <div class="tiers">${perRide}${prepaid}</div>
+  </div>`;
+}
+
+function bindPaymentCard(root) {
+  root.querySelectorAll('[data-package]').forEach((b) => (b.onclick = () => guard(async () => {
+    const { user } = await api('/api/wallet/topup', { packageId: b.dataset.package });
+    state.me = user;
+    toast(t('Vorkasse eingezahlt – {percent} % Rabatt auf die Provision.', { percent: num(user.prepaidDiscountPercent) }));
+    render();
+  }, b)));
+  const add = $('#pm-add');
+  if (add) add.onclick = () => guard(async () => { state.me = (await api('/api/wallet/payment-method', {})).user; toast(t('Zahlungsmittel hinterlegt.')); render(); }, add);
+  const rm = $('#pm-remove');
+  if (rm) rm.onclick = () => guard(async () => { state.me = (await api('/api/wallet/payment-method', {}, 'DELETE')).user; render(); }, rm);
+}
+
 async function renderAccount(panel) {
   drawMap();
   const [{ transactions }] = await Promise.all([api('/api/wallet/transactions'), loadRides()]);
@@ -1334,16 +1605,15 @@ async function renderAccount(panel) {
         <div class="stat"><b>${me.abortStats.asDriver.rides || me.abortStats.asRider.rides ? `${quote(me.abortStats.asDriver)} / ${quote(me.abortStats.asRider)}` : '–'}</b><span>${t('Fahrtabbruchsquote Fahrer / Mitfahrer')} ${info(`<p>${t('Anteil abgebrochener Fahrten an allen deinen Fahrten.')}</p><table><tr><td>${t('als Fahrer')}</td><td>${t('{aborted} von {rides}', { aborted: num(me.abortStats.asDriver.aborted), rides: num(me.abortStats.asDriver.rides) })}</td></tr><tr><td>${t('als Mitfahrer')}</td><td>${t('{aborted} von {rides}', { aborted: num(me.abortStats.asRider.aborted), rides: num(me.abortStats.asRider.rides) })}</td></tr></table><p style="margin-top:6px">${t('Sichtbar in deinem Profil für Fahrtpartner.')}</p>`)}</span></div>
         <div class="stat"><b>${me.canDrive ? t('ja') : t('nein')}</b><span>${t('Fahrer verifiziert')}</span></div>
       </div>
-      ${state.config && state.config.demoTopup === false ? '' : `<h3 style="margin-top:14px">${t('Guthaben aufladen')} ${info(t('Demo-Zahlung. Im Livebetrieb läuft die Zahlung über einen Zahlungsdienstleister.'))}</h3>
-      <div class="btn-row">${[1000, 2000, 5000].map((c) => `<button class="secondary" data-topup="${c}">+ ${euro(c)}</button>`).join('')}</div>`}
     </div>
+    ${paymentCard(me)}
     <div class="card">
       <h2>${t('Fahrten')}</h2>
       ${done.length ? done.map((r) => `
         <div class="match">
           <div class="top"><span>${r.role === 'rider' ? t('Mitgefahren bei <b>{name}</b>', { name: esc(r.driverName) }) : t('Mitgenommen: <b>{name}</b>', { name: esc(r.riderName) })}${r.abort ? ` <span class="badge warn" tabindex="0" data-tip="${esc(abortedByText(r))}">${t('Fahrtabbruch')}</span>` : ''}</span>
             <b>${r.role === 'rider' ? '−' + euro(r.final.totalCents) : '+' + euro(r.final.driverCents)}</b></div>
-          <div class="muted small">${fmtDate(r.completedAt)} · ${km(r.final.km)} · ${kg(r.final.co2SavedKg)} kg CO₂ ${info(`<table><tr><td>${t('Abgerechnet')}</td><td>${km(r.final.km)}</td></tr><tr><td>${t('Grundlage')}</td><td>${basisLabel(r.final.billing)}</td></tr>${r.final.plannedKm ? `<tr><td>${t('Geplante Route')}</td><td>${km(r.final.plannedKm)}</td></tr><tr><td>${t('Gefahren (GPS)')}</td><td>${r.final.trackedKm > 0.2 ? km(r.final.trackedKm) : '–'}</td></tr>` : ''}${r.final.detourCents ? `<tr><td>${t('Anfahrt zum Treffpunkt')}</td><td>${t('{km} · {amount} (ohne Provision)', { km: km(r.final.detourKm), amount: euro(r.final.detourCents) })}</td></tr>` : ''}<tr><td>${t('CO₂ gespart')}</td><td>${kg(r.final.co2SavedKg)} kg</td></tr><tr><td>${t('Umweltspende')}</td><td>${euro(r.final.donationCents)}</td></tr></table><p style="margin-top:6px">${fmtDateTime(r.completedAt)}</p>`, t('Details zur Abrechnung'))}</div>
+          <div class="muted small">${fmtDate(r.completedAt)} · ${km(r.final.km)} · ${kg(r.final.co2SavedKg)} kg CO₂ ${info(`<table><tr><td>${t('Abgerechnet')}</td><td>${km(r.final.km)}</td></tr><tr><td>${t('Grundlage')}</td><td>${basisLabel(r.final.billing)}</td></tr>${r.final.plannedKm ? `<tr><td>${t('Geplante Route')}</td><td>${km(r.final.plannedKm)}</td></tr><tr><td>${t('Gefahren (GPS)')}</td><td>${r.final.trackedKm > 0.2 ? km(r.final.trackedKm) : '–'}</td></tr>` : ''}${r.final.detourCents ? `<tr><td>${t('Anfahrt zum Treffpunkt')}</td><td>${t('{km} · {amount} (ohne Provision)', { km: km(r.final.detourKm), amount: euro(r.final.detourCents) })}</td></tr>` : ''}${r.final.discountCents ? `<tr><td>${t('Vorkasse-Rabatt ({percent} % der Provision)', { percent: num(r.final.commissionDiscountPercent) })}</td><td>−${euro(r.final.discountCents)}</td></tr>` : ''}<tr><td>${t('CO₂ gespart')}</td><td>${kg(r.final.co2SavedKg)} kg</td></tr><tr><td>${t('davon Umweltspende (aus der Provision)')}</td><td>${euro(r.final.donationCents)}</td></tr></table>${r.role === 'rider' ? `<p>${paymentLabel(r)}</p>` : ''}<p style="margin-top:6px">${fmtDateTime(r.completedAt)}</p>`, t('Details zur Abrechnung'))}</div>
           <div class="small">${ridePointsLine(r.myPoints)}</div>
           ${r.role === 'rider' ? riderGuestbookLine(r) : ''}
           ${r.myRating ? `<div class="muted small">${t('Deine Bewertung: <b>{score}</b>/10', { score: num(r.myRating.score) })}${r.myRating.aspects && r.myRating.aspects.length ? ` · ${t('Gründe: {list}', { list: r.myRating.aspects.map((id) => esc(aspectLabel(r.role === 'rider' ? 'driver' : 'rider', id))).join(', ') })}` : ''}</div>` : `<form class="nps-form" data-rate-form="${r.id}">${npsWidget(t('Wie wahrscheinlich ist es, dass du {name} weiterempfiehlst?', { name: r.role === 'rider' ? r.driverName : r.riderName }), r.role === 'rider' ? 'driver' : 'rider')}<div class="btn-row"><button data-submit disabled>${t('Bewertung senden')}</button></div></form>`}
@@ -1353,9 +1623,7 @@ async function renderAccount(panel) {
       <h2>${t('Kontobewegungen')}</h2>
       <table class="breakdown">${transactions.map((tx) => `<tr><td>${esc(tMsg(tx.note))}<br><span class="muted small">${fmtDateTime(tx.at)}</span></td><td>${euro(tx.amountCents)}</td></tr>`).join('') || `<tr><td class="muted">${t('Keine Buchungen')}</td><td></td></tr>`}</table>
     </div>`;
-  panel.querySelectorAll('[data-topup]').forEach((b) =>
-    (b.onclick = () => guard(async () => { await api('/api/wallet/topup', { amountCents: Number(b.dataset.topup) }); toast(t('Guthaben aufgeladen.')); render(); }, b)),
-  );
+  bindPaymentCard(panel);
   bindGuestbookButtons(panel);
   bindNpsForms(panel, '[data-rate-form]', async (form, body) => {
     await api(`/api/rides/${form.dataset.rateForm}/rate`, body);
@@ -1461,6 +1729,7 @@ function profileHtml(p) {
       <div><h2 style="margin:0">${esc(p.name)}</h2>
         <div class="chips">
           ${p.verifiedDriver ? `<span class="badge ok">${t('Führerschein geprüft')}</span>` : ''}
+          ${p.identityVerified ? `<span class="badge ok">${t('Identität geprüft')}</span>` : ''}
           ${p.mfaEnabled ? `<span class="badge ok">${t('2FA gesichert')}</span>` : ''}
           ${npsBadge(p.nps)}
           ${p.abortStats && (p.verifiedDriver || p.abortStats.asDriver.rides) ? abortBadge(p.abortStats.asDriver, 'driver', true) : ''}
@@ -1622,6 +1891,14 @@ async function renderProfile(panel) {
 
     ${await myGuestbookCard()}
 
+    <div class="card" id="identity">
+      <h2>${t('Identität')} ${info(`<p>${t('Mit einer geprüften Identität wissen deine Fahrtpartner, dass du wirklich du bist. Für Fahrer ist sie Pflicht.')}</p><p>${t('Die Prüfung übernimmt ein externer Dienst, z. B. POSTIDENT der Deutschen Post (Video-Chat, Filiale oder Online-Ausweis). Wir speichern nur das Ergebnis, das Verfahren und das Datum – keine Ausweiskopie.')}</p>`)}</h2>
+      ${me.identity.status === 'verified'
+        ? `<p><span class="badge ok">${t('Identität geprüft')}</span> <span class="muted small">${t('Geprüft über {provider} am {date}.', { provider: esc(t(me.identity.providerName)), date: fmtDate(me.identity.verifiedAt) })}</span></p>`
+        : `<p>${me.identity.status === 'failed' ? `<span class="badge bad">${t('Prüfung nicht bestanden')}</span>` : me.identity.status === 'pending' ? `<span class="badge warn">${t('Prüfung begonnen')}</span>` : `<span class="badge">${t('Nicht geprüft')}</span>`}</p><button id="ident-start-profile">${t('Identität jetzt prüfen')}</button>`}
+      <p class="small" style="margin-top:8px"><a href="#/fahrerprofil">${t('Fahrerprofil')}</a> · ${me.canDrive ? t('vollständig') : t('Es fehlt: {missing}', { missing: missingText() })}</p>
+    </div>
+
     <div class="card" id="security">
       <h2>${t('Sicherheit & Anmeldung')} ${info(`<p><b>${t('Zwei-Faktor-Anmeldung (2FA)')}</b></p><p>${t('Beim Anmelden brauchst du zusätzlich einen 6-stelligen Code aus einer Authenticator-App (z. B. Google oder Microsoft Authenticator, Authy, 1Password). Selbst wer dein Passwort kennt, kommt so nicht in dein Konto.')}</p><p>${t('Backup-Codes helfen, wenn das Handy weg ist – jeder gilt einmal.')}</p>`)}</h2>
       ${me.mfaEnabled
@@ -1712,6 +1989,7 @@ async function renderProfile(panel) {
 
   const on = (id, fn) => { const el = $(id); if (el) el.onclick = (e) => guard(() => fn(e), e.target); };
   on('#mfa-on', startMfaSetup);
+  on('#ident-start-profile', startIdentityCheck);
   on('#mfa-codes', async () => {
     const creds = await askCredentials(t('Neue Backup-Codes'), t('Die bisherigen Backup-Codes werden ungültig.'));
     if (!creds) return;
@@ -1817,6 +2095,10 @@ function renderPrivacyPolicy(panel) {
         <li>${t('<b>Konto:</b> Name, E-Mail, Passwort (nur als scrypt-Hash), Zeitpunkt der Einwilligung. Zweck: Nutzerkonto, Vertragsdurchführung (Art. 6 Abs. 1 lit. b DSGVO).')}</li>
         <li>${t('<b>Profil (freiwillig):</b> Foto, Über-mich-Text, Telefonnummer, Sprachen, Sprache der Oberfläche, Vorlieben, Fahrzeug. Zweck: Vertrauen und Absprachen zwischen Fahrtpartnern (Art. 6 Abs. 1 lit. b, lit. a DSGVO). Sichtbarkeit steuerst du in den Privatsphäre-Einstellungen.')}</li>
         <li>${t('<b>Führerschein (nur Fahrer):</b> Name, Geburtsdatum, Führerscheinnummer, Klassen, Ablaufdatum, Fotos von Vorder- und Rückseite. Zweck: Sicherheit der Mitfahrer, Prüfung der Fahrberechtigung (Art. 6 Abs. 1 lit. b und f DSGVO). <b>Die Fotos werden direkt nach der Prüfung gelöscht</b>; gespeichert bleiben nur Nummer (anderen nie sichtbar), Klassen, Ablaufdatum und Prüfergebnis.')}</li>
+        <li>${t('<b>Identitätsprüfung:</b> Die Prüfung führt ein externer Dienst durch (z. B. POSTIDENT der Deutschen Post, Online-Ausweis, IDnow). Von ihm erhalten wir nur das Ergebnis, das Verfahren und das Datum – keine Ausweiskopie und keine Ausweisnummer. Zweck: Sicherheit und Vertrauen zwischen Fahrtpartnern; für Fahrer erforderlich (Art. 6 Abs. 1 lit. b und f DSGVO). Für die Prüfung beim Dienst gilt dessen Datenschutzerklärung.')}</li>
+        <li>${t('<b>Bestätigung vor Fahrtantritt:</b> Zeitpunkt der Bestätigung von Fahrtauglichkeit und Fahrerlaubnis und ggf. ihre Gültigkeit für einen Monat. Zweck: Sicherheit der Mitfahrer und Nachweis (Art. 6 Abs. 1 lit. b und f DSGVO). Gesundheitsdaten fragen wir nicht ab.')}</li>
+        <li>${t('<b>Bezahlung:</b> Vorkasse-Guthaben mit Rabattstufe, gewählte Zahlungsart; Kartendaten verarbeitet ausschließlich der Zahlungsdienstleister. Zweck: Abrechnung (Art. 6 Abs. 1 lit. b und c DSGVO).')}</li>
+        <li>${t('<b>Rollen:</b> ob du heute als Fahrer und/oder Mitfahrer unterwegs bist (Schiebeschalter), um dir die passenden Funktionen anzuzeigen (Art. 6 Abs. 1 lit. b DSGVO).')}</li>
         <li>${t('<b>Standortdaten:</b> Abholort und Ziel von Mitfahrern; Route und – nur während einer aktiv angebotenen Fahrt und nur nach deinem Start der Standortfreigabe – der GPS-Standort von Fahrern. Zweck: Vermittlung und Abrechnung nach gefahrenen Kilometern (Art. 6 Abs. 1 lit. b DSGVO). Andere Mitglieder sehen Start und Ziel eines Fahrers nur vergröbert; den Live-Standort sehen nur bestätigte Mitfahrer.')}</li>
         <li>${t('<b>Fahrten und Zahlungen:</b> Buchungen, gefahrene km, Preise, Provision ({percent} %), Umweltspende ({donation} pro Fahrt), Bewertungen. Zweck: Abrechnung und gesetzliche Aufbewahrung (Art. 6 Abs. 1 lit. b und c DSGVO).', { percent: num(cfg.commissionPercent), donation: euro(cfg.donationCentsPerRide) })}</li>
         <li>${t('<b>Gästebuch (freiwillig):</b> Nach Fahrten über 1 Stunde oder 100 km können Mitfahrer ein positives Erlebnis teilen. Veröffentlicht werden nur Text, Monat und Art der Fahrt – ohne Namen. Intern speichern wir, wer den Eintrag verfasst hat, damit du ihn löschen kannst und Missbrauch verhindert wird (Art. 6 Abs. 1 lit. a DSGVO, Einwilligung; jederzeit widerrufbar durch Löschen). Fahrer können Einträge ausblenden oder das Gästebuch abschalten.')}</li>
@@ -2088,7 +2370,7 @@ const languages = () => (state.config && state.config.languages) || ['Deutsch', 
 state.filters = {};
 
 function activeFilterCount(f) {
-  return ['minNps', 'nonSmoker', 'pets', 'chat', 'music', 'language', 'mfa', 'safeDriving', 'maxEtaMin'].filter((k) => f[k] !== undefined && f[k] !== '' && f[k] !== false).length + (f.includeNew === false ? 1 : 0);
+  return ['minNps', 'nonSmoker', 'pets', 'chat', 'music', 'language', 'mfa', 'identity', 'safeDriving', 'maxEtaMin'].filter((k) => f[k] !== undefined && f[k] !== '' && f[k] !== false).length + (f.includeNew === false ? 1 : 0);
 }
 
 function filterPanel() {
@@ -2107,6 +2389,7 @@ function filterPanel() {
       <label class="check"><input type="checkbox" id="flt-smoke" ${f.nonSmoker ? 'checked' : ''}><span>${t('Nichtraucher')}</span></label>
       <label class="check"><input type="checkbox" id="flt-pets" ${f.pets ? 'checked' : ''}><span>${t('Tiere erlaubt')}</span></label>
       <label class="check"><input type="checkbox" id="flt-mfa" ${f.mfa ? 'checked' : ''}><span>${t('2FA-gesichert')}</span></label>
+      <label class="check"><input type="checkbox" id="flt-identity" ${f.identity ? 'checked' : ''}><span>${t('Identität geprüft')} ${info(t('Nur Fahrer, deren Identität ein Prüfdienst (z. B. POSTIDENT) bestätigt hat.'))}</span></label>
       <label class="check"><input type="checkbox" id="flt-safe" ${f.safeDriving ? 'checked' : ''}><span>${t('Sichere Fahrweise')} ${info(t('Höchstens 10 % der Bewertungen des Fahrers nennen „Fahrweise“ als Grund (ab 3 Bewertungen).'))}</span></label>
     </div>
     <div class="row">
@@ -2128,6 +2411,7 @@ function bindFilterPanel(root) {
     if ($('#flt-smoke').checked) f.nonSmoker = true;
     if ($('#flt-pets').checked) f.pets = true;
     if ($('#flt-mfa').checked) f.mfa = true;
+    if ($('#flt-identity').checked) f.identity = true;
     if ($('#flt-safe').checked) f.safeDriving = true;
     if (v('#flt-chat')) f.chat = v('#flt-chat');
     if (v('#flt-music')) f.music = v('#flt-music');
@@ -2166,6 +2450,7 @@ function prefIcons(m) {
   if (p.chat === 'lieber ruhig') chips.push(t('ruhige Fahrt'));
   if (p.chat === 'gerne') chips.push(t('gesprächig'));
   if (p.music === 'gerne') chips.push(t('Musik'));
+  if (m.driverIdentityVerified) chips.push(t('ID geprüft'));
   if (m.driverMfa) chips.push('2FA');
   if (p.languages && p.languages.length > 1) chips.push(esc(p.languages.map((l) => t(l)).join(', ')));
   return chips.length ? `<span class="pref-chips">${chips.map((c) => `<span class="pref">${c}</span>`).join('')}</span>` : '';
@@ -2222,11 +2507,14 @@ function renderTerms(panel) {
       <ul>
         <li>${t('Teilnehmen dürfen volljährige Personen mit wahrheitsgemäßen Angaben. Jede Person darf nur ein Konto führen.')}</li>
         <li>${t('Zugangsdaten sind geheim zu halten. Wir empfehlen die Zwei-Faktor-Anmeldung, für Fahrer und den Betreiber dringend.')}</li>
+        <li>${t('Für alle Teilnehmer gelten die <a href="#/verhaltensregeln">Verhaltensregeln</a>, die auf gegenseitiger Rücksichtnahme beruhen. Sie sind Teil dieser Bedingungen.')}</li>
       </ul>
 
       <h3>${t('4. Pflichten der Fahrer')}</h3>
       <ul>
         <li>${t('Gültige Fahrerlaubnis (mindestens Klasse B), die vor dem ersten Angebot geprüft wird; Änderungen (z. B. Entzug, Ablauf) sind unverzüglich mitzuteilen.')}</li>
+        <li>${t('Geprüfte Identität über einen vom Betreiber beauftragten Prüfdienst (z. B. POSTIDENT) und vollständige Angaben zum Fahrzeug.')}</li>
+        <li>${t('Vor jedem Fahrtantritt bestätigt der Fahrer, dass er fahrtüchtig ist und eine gültige Fahrerlaubnis besitzt und mitführt. Die Bestätigung kann für einen Monat erteilt werden; sie gilt dann für jede Fahrt in diesem Zeitraum. Trifft sie einmal nicht zu, darf er nicht fahren.')}</li>
         <li>${t('Verkehrssicheres, zugelassenes und haftpflichtversichertes Fahrzeug; Einhaltung der Verkehrsregeln.')}</li>
         <li>${t('Fahren nur auf der eigenen Route; keine gewerbliche Personenbeförderung über die Plattform.')}</li>
       </ul>
@@ -2239,10 +2527,13 @@ function renderTerms(panel) {
 
       <h3>${t('6. Preise und Zahlung')}</h3>
       <ul>
-        <li>${t('Grundlage ist die vor der Fahrt von beiden bestätigte schnellste Route. Kilometersatz derzeit {rate}/km.', { rate: euro(pr.ratePerKmCents) })}</li>
+        <li>${t('joinmyride.com ist eine Plattform für private Fahrgemeinschaften und keine Fahrdienstleistung. Mitfahrer beteiligen sich an den Kosten der Fahrt; der Fahrer erzielt keinen Gewinn.')}</li>
+        <li>${t('Grundlage ist die vor der Fahrt von beiden bestätigte schnellste Route. Der Mitfahrer beteiligt sich mit rund zwei Dritteln an den Energiekosten (Kraftstoff bzw. Strom); daraus ergibt sich der empfohlene Kilometersatz von derzeit {rate}/km. Der Fahrer kann den Satz anpassen, höchstens jedoch bis zu den Betriebskosten des Fahrzeugs von {max}/km.', { rate: euro(pr.recommendedRateCents ?? pr.ratePerKmCents), max: euro(pr.maxRateCents ?? pr.costPerKmCents ?? 30) })}</li>
+        <li>${t('Fahrer verpflichten sich, insgesamt nicht mehr als die Betriebskosten der Fahrt einzunehmen (§ 1 Abs. 2 Nr. 1 PBefG). Die Anzeige von Nahverkehrspreis und Energiekosten hilft, einen angemessenen Preis zu wählen.')}</li>
         <li>${t('Mit dem Fahrtantritt (Einsteigen) ist der Preis der geplanten Route fällig – auch wenn die Fahrt früher endet. Umwege gehen nicht zulasten des Mitfahrers.')}</li>
         <li>${t('Die Anfahrt zum Treffpunkt wird zum gleichen Satz berechnet und vollständig an den Fahrer ausgezahlt; auf sie erhebt der Betreiber keine Provision.')}</li>
-        <li>${t('Der Betreiber erhält eine Vermittlungsprovision von {percent} % auf die gemeinsame Strecke. Je Fahrt werden {donation} an [Organisation] für den Umweltschutz gespendet.', { percent: num(pr.commissionPercent), donation: euro(pr.donationCentsPerRide) })}</li>
+        <li>${t('Der Betreiber erhält eine im Preis enthaltene Vermittlungsprovision von {percent} % auf die gemeinsame Strecke. Daraus spendet er je Fahrt {donation} an [Organisation] für den Umweltschutz.', { percent: num(pr.commissionPercent), donation: euro(pr.donationCentsPerRide) })}</li>
+        <li>${t('Bezahlt wird je Fahrt über ein hinterlegtes Zahlungsmittel oder aus Vorkasse-Guthaben beim Betreiber. Vorkasse gibt es in den Stufen {packages}; dafür gewährt der Betreiber den genannten Rabatt auf seine Provision, solange Vorkasse-Guthaben vorhanden ist. Nicht verbrauchtes Guthaben wird bei Kontolöschung ausgezahlt.', { packages: ((c.prepaidPackages || []).map((p) => t('{amount} (−{percent} %)', { amount: euro(p.amountCents), percent: num(p.discountPercent) })).join(', ')) || '–' })}</li>
         <li>${t('Bezahlt wird, sobald der Fahrer den Mitfahrer abgesetzt und der Mitfahrer die Fahrt bewertet hat; ohne Rückmeldung nach 24 Stunden.')}</li>
       </ul>
 
@@ -2263,7 +2554,7 @@ function renderTerms(panel) {
         <li>${t('In der Regel erhält der Teilnehmer zunächst eine <b>Verwarnung</b> mit Gelegenheit zur Stellungnahme an [kontakt@joinmyride.com].')}</li>
         <li>${t('Bleibt die Quote hoch oder gibt es Hinweise auf Missbrauch (z. B. abgesprochene Abbrüche), kann der Betreiber das Konto <b>befristet</b> (in der Regel 7 bis 30 Tage) sperren, im Wiederholungsfall oder bei schwerem Missbrauch <b>unbefristet</b>.')}</li>
       </ul>
-      <p>${t('<b>9.2 Weitere Gründe.</b> Eine Sperrung ist außerdem möglich bei falschen Angaben, Fahren ohne gültige Fahrerlaubnis, Gefährdung oder Belästigung anderer, Manipulation von Bewertungen oder Zahlungen sowie sonstigen erheblichen Verstößen gegen diese Bedingungen.')}</p>
+      <p>${t('<b>9.2 Weitere Gründe.</b> Eine Sperrung ist außerdem möglich bei falschen Angaben, Fahren ohne gültige Fahrerlaubnis oder in fahruntüchtigem Zustand, Gefährdung oder Belästigung anderer, erheblichen oder wiederholten Verstößen gegen die Verhaltensregeln, Manipulation von Bewertungen oder Zahlungen sowie sonstigen erheblichen Verstößen gegen diese Bedingungen.')}</p>
       <p>${t('<b>9.3 Folgen.</b> Während einer Sperre kann der Teilnehmer keine Fahrten anbieten, suchen oder buchen; seine aktiven Angebote werden beendet und offene Anfragen storniert. Bereits begonnene Fahrten können abgeschlossen werden. Guthaben, Abrechnungen, Datenexport und Kontolöschung bleiben zugänglich. Befristete Sperren enden automatisch. Der Teilnehmer wird über Grund und Dauer informiert und kann widersprechen; der Betreiber entscheidet erneut.')}</p>
 
       <h3>${t('10. Haftung')}</h3>
@@ -2277,6 +2568,49 @@ function renderTerms(panel) {
 
       <h3>${t('13. Schlussbestimmungen')}</h3>
       <p>${t('Es gilt deutsches Recht unter Ausschluss des UN-Kaufrechts; zwingende Verbraucherschutzvorschriften des Wohnsitzstaats bleiben unberührt. [Online-Streitbeilegung / Verbraucherschlichtung anpassen]')}</p>
+    </div>`;
+}
+
+// ---------- Verhaltensregeln: Rücksichtnahme für alle ----------
+const CONDUCT = {
+  all: [
+    [N_('Respekt und Freundlichkeit'), N_('Begrüßt euch, bleibt höflich und respektvoll. Beleidigungen, Belästigung und Diskriminierung – etwa wegen Herkunft, Hautfarbe, Geschlecht, Religion, Behinderung, Alter oder sexueller Orientierung – haben keinen Platz.')],
+    [N_('Pünktlich und verlässlich'), N_('Sei rechtzeitig am Treffpunkt. Verspätungen und Absagen teilst du so früh wie möglich mit. Buche bzw. bestätige nur Fahrten, die du wirklich antrittst.')],
+    [N_('Absprechen statt voraussetzen'), N_('Musik, Lautstärke, Temperatur, Gespräche, Essen und Pausen stimmt ihr gemeinsam ab. Wer Ruhe möchte, bekommt sie.')],
+    [N_('Rauchfrei'), N_('Im Auto wird nicht geraucht oder gedampft – auch nicht in Pausen im Fahrzeug.')],
+    [N_('Privatsphäre achten'), N_('Keine Fotos oder Videos von anderen ohne Zustimmung. Telefonnummern, Adressen und Gespräche bleiben vertraulich.')],
+    [N_('Hilfsbereit sein'), N_('Nimm Rücksicht auf Kinder, ältere Menschen und Menschen mit Behinderung. Biete Hilfe beim Ein- und Aussteigen oder mit dem Gepäck an.')],
+    [N_('Fair bewerten'), N_('Bewerte ehrlich und sachlich, nur die gemeinsame Fahrt. Keine Gegen- oder Rachebewertungen. Ernste Probleme meldest du über „Problem melden“.')],
+    [N_('Kosten teilen, nicht verdienen'), N_('Keine Bargeldzahlungen nebenher, keine Werbung oder Verkaufsgespräche. joinmyride.com ist eine private Fahrgemeinschaft, kein Fahrdienst.')],
+  ],
+  driver: [
+    [N_('Sicher fahren'), N_('Halte die Verkehrsregeln ein, fahre vorausschauend und mit angepasster Geschwindigkeit, kein Handy am Steuer. Fahre nur fahrtüchtig: kein Alkohol, keine Drogen, ausgeruht.')],
+    [N_('Gepflegtes Fahrzeug'), N_('Das Auto ist verkehrssicher und sauber, für jeden Mitfahrer gibt es einen Sitz mit Gurt. Kindersitze sprecht ihr vorher ab.')],
+    [N_('Route und Haltepunkte'), N_('Folge der bestätigten Route; Umwege nur nach Absprache. Halte zum Ein- und Aussteigen nur dort, wo es sicher und erlaubt ist.')],
+    [N_('Umweltbewusst fahren'), N_('Gleichmäßig und spritsparend fahren schont Klima, Nerven und Geldbeutel.')],
+  ],
+  rider: [
+    [N_('Das Auto respektieren'), N_('Hinterlasse das Fahrzeug so, wie du es vorgefunden hast. Essen und Trinken nur nach Absprache. Lege immer den Gurt an.')],
+    [N_('Gepäck und Tiere ankündigen'), N_('Größeres Gepäck, Tiere oder einen Kinderwagen sprichst du vor der Buchung ab.')],
+    [N_('Den Fahrer nicht ablenken'), N_('Dränge nicht zur Eile und lenke den Fahrer nicht ab – Sicherheit geht vor.')],
+  ],
+};
+
+function renderConduct(panel) {
+  drawMap();
+  const list = (items) => `<ol class="conduct">${items.map(([title, text]) => `<li><b>${t(title)}</b><br>${t(text)}</li>`).join('')}</ol>`;
+  panel.innerHTML = `
+    <div class="card legal">
+      <h2>${t('Verhaltensregeln')}</h2>
+      <p>${t('Gemeinsam fahren funktioniert, wenn alle aufeinander Rücksicht nehmen. Diese Regeln gelten für alle Fahrer und Mitfahrer und sind Teil der <a href="#/nutzungsbedingungen">Nutzungsbedingungen</a>.')}</p>
+      <h3>${t('Für alle')}</h3>
+      ${list(CONDUCT.all)}
+      <h3>${t('Für Fahrer')}</h3>
+      ${list(CONDUCT.driver)}
+      <h3>${t('Für Mitfahrer')}</h3>
+      ${list(CONDUCT.rider)}
+      <h3>${t('Wenn etwas schiefläuft')}</h3>
+      <p>${t('Sprecht Probleme zuerst freundlich an. Bei Gefahr oder ernsten Verstößen: „Problem melden“ oder die Fahrt abbrechen; im Notfall 112 anrufen. Der Betreiber kann bei Verstößen verwarnen und nach Ziffer 9 der Nutzungsbedingungen sperren.')}</p>
     </div>`;
 }
 

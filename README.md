@@ -178,27 +178,57 @@ Eigenes Menü **Funfacts** (auch ohne Anmeldung): Wo und in welchen Autos sitzen
 * **Betreiber-Bereich → „Fahrtabbruchsquote – Prüfung“:** Liste aller Teilnehmer über dem Grenzwert (je Rolle mit Quote) und der gesperrten Teilnehmer; Aktionen *Verwarnen*, *Sperren* (7 Tage / 30 Tage / unbefristet, mit Begründung) und *Entsperren*. Es wird **nie automatisch** gesperrt.
 * **Wirkung einer Sperre:** keine Angebote, keine Suche, keine Buchung; aktive Angebote ohne Mitfahrer an Bord werden beendet, offene Anfragen storniert; laufende Fahrten können abgeschlossen werden. Konto, Guthaben, Datenexport und Löschung bleiben zugänglich. Befristete Sperren enden automatisch. Gesperrte und verwarnte Teilnehmer sehen einen Hinweis über jeder Seite.
 
-## Abrechnung
+## Startseite und App
+
+* **`/`** – Startseite mit der Idee in Kürze: *Du fährst sowieso. Nimm jemanden mit.* Ziel eingeben, nette Gesellschaft mitnehmen, der Umwelt etwas Gutes tun. Der Fahrer stellt Auto und Fahrt, der Mitfahrer trägt rund zwei Drittel der Energiekosten – alle gewinnen: leerere Straßen, besser genutzte Ressourcen, weniger CO₂. Die Beispielrechnung kommt aus der aktuellen Preiskonfiguration.
+* **`/app`** – die eigentliche Anwendung mit Anmeldung (`/app#/registrieren` öffnet direkt die Registrierung).
+
+## Preis: Empfehlung statt Grenze
+
+joinmyride.com ist eine Plattform für **private Fahrgemeinschaften**, keine Fahrdienstleistung wie Taxi oder Uber.
+
+* **Empfehlung:** Der Mitfahrer beteiligt sich mit rund **2/3 an Kraftstoff bzw. Strom**. Bei 12 ct Energiekosten je km ergibt das **8 ct/km** (einstellbar).
+* **Der Fahrer wählt** beim Online-Gehen seinen Satz mit einem Schieberegler. Die App zeigt dazu den Preis für 10 km, den Vergleich mit einem ÖPNV-Einzelticket und den Anteil an den Energiekosten – und warnt, wenn der Preis über dem Nahverkehr liegt. Es gibt keine Deckelung nach ÖPNV oder Anteil; einzige Obergrenze ist der gesetzliche Rahmen: höchstens die **Betriebskosten je km** (Standard 30 ct, § 1 Abs. 2 Nr. 1 PBefG).
+* Mitfahrer sehen bei jedem Angebot den Vergleich mit dem Nahverkehr und, falls der Fahrer abweicht, die Empfehlung.
 
 ```
 abgerechnete km = geplante Route (fällig mit dem Einsteigen) – bei Fahrtabbruch: gefahrene Strecke (GPS), höchstens die geplante Route
-Fahrpreis       = abgerechnete km × Kilometersatz (Standard 0,25 €/km) × Personen
-Provision       = Fahrpreis × 10 %                       → Betreiber
+Fahrpreis       = abgerechnete km × Kilometersatz des Fahrers × Personen
 Anfahrt         = Umweg zum Treffpunkt (km) × Kilometersatz → zu 100 % Fahrer, KEINE Provision
-Fahreranteil    = Fahrpreis − Provision + Anfahrt         → Fahrer
-Spende          = 0,01 € pro Fahrt                       → Umweltschutz
-Mitfahrer zahlt = Fahrpreis + Anfahrt + Spende
+Provision       = Fahrpreis × 10 % (im Preis enthalten)      → Betreiber, davon 1 Cent Umweltspende
+Rabatt          = 6 / 10 / 20 % der Provision bei Vorkasse   → senkt den Preis, nicht den Fahreranteil
+Fahreranteil    = Fahrpreis − volle Provision + Anfahrt      → Fahrer
+Mitfahrer zahlt = Fahrpreis + Anfahrt − Rabatt
 ```
 
-* **Anfahrt zum Treffpunkt:** der Weg von der Route des Fahrers zum Abholort (Abstand × Straßenfaktor 1,3). Sie wird bei der Buchung festgelegt und von beiden bestätigt, einmal pro Fahrt berechnet (nicht pro Person), im Journal als eigene Buchung („Anfahrt zum Treffpunkt … (ohne Provision)“) geführt und zählt nicht zur CO₂-Ersparnis.
+* **Anfahrt zum Treffpunkt:** der Weg von der Route des Fahrers zum Abholort (Abstand × Straßenfaktor 1,3), einmal pro Fahrt, als eigene Buchung im Journal, ohne CO₂-Gutschrift.
+* **Fällig mit dem Fahrtantritt:** Mit „Eingestiegen“ wird der Preis der geplanten Route fällig – auch wenn die Fahrt früher endet. Umwege zahlt der Mitfahrer nie. Der Preis der geplanten Route ist der **Höchstbetrag**.
+* Alle Beträge in ganzen Cent; jede Buchung landet im Journal (`ledger`). Mitfahrer-Zahlung = Fahrer + Betreiber + Spende (durch Tests abgesichert).
 
-* **Fällig mit dem Fahrtantritt:** Mit „Eingestiegen“ wird der Preis der geplanten Route fällig – auch wenn die Fahrt früher endet. So lohnt es sich nicht, dass Fahrer und Mitfahrer sich absprechen und die Fahrt vorzeitig beenden, um Provision oder Kosten zu sparen.
-* **Umwege zahlt der Mitfahrer nie**: Ist die gefahrene Strecke länger als geplant, gilt die geplante Route.
-* Der Preis der geplanten Route ist damit der **Höchstbetrag**. Er wird bei der Annahme durch den Fahrer auf dem Guthaben reserviert; abgebucht wird erst nach beiden Bestätigungen.
-* Alle Beträge in ganzen Cent; jede Buchung landet im Journal (`ledger`). Mitfahrer-Zahlung = Fahrer + Provision + Spende (durch Tests abgesichert).
-* CO₂-Ersparnis: 150 g pro geteiltem Personen-km (eine ersetzte Pkw-Fahrt).
+## Bezahlen in 4 Stufen
 
-Alle Werte sind über `.env` einstellbar (siehe `.env.example`).
+| Stufe | Bezahlung | Rabatt auf die Provision |
+|---|---|---|
+| 1 | je Fahrt (hinterlegtes Zahlungsmittel) | – |
+| 2 | 10 € Vorkasse | 6 % |
+| 3 | 20 € Vorkasse | 10 % |
+| 4 | 50 € Vorkasse | 20 % |
+
+Vorkasse-Guthaben wird in der Reihenfolge der Einzahlung verbraucht; der Rabatt der ältesten noch nicht verbrauchten Einzahlung gilt. Reicht das Guthaben nicht, wird automatisch je Fahrt bezahlt (falls ein Zahlungsmittel hinterlegt ist). Restguthaben wird bei Kontolöschung ausgezahlt. Zahlungsmittel und Aufladen sind im Prototyp Demo-Funktionen (`ALLOW_DEMO_TOPUP`).
+
+## Rollen für heute, Fahrerprofil, Pop-up vor Fahrtantritt
+
+* **Schiebeschalter oben:** Jeder stellt für die heutige Nutzung ein, ob er **Mitfahrer** und/oder **Fahrer** ist; die Navigation passt sich an. An einem neuen Tag ist man zunächst nur Mitfahrer.
+* Der **Fahrer-Schalter ist ausgegraut**, solange im Fahrerprofil etwas fehlt (geprüfte Identität, geprüfter Führerschein, Fahrzeug mit Marke/Modell/Farbe). Ein Klick führt zur Checkliste unter `#/fahrerprofil`.
+* **Vor Fahrtantritt** bestätigt der Fahrer Fahrtauglichkeit und Fahrerlaubnis. Mit Häkchen gilt die Bestätigung **einen Monat**; ohne fragt die App vor jeder Fahrt. Der Server lehnt Fahrten ohne Bestätigung ab (HTTP 428).
+
+## Identitätsprüfung
+
+Ablauf anbieterunabhängig (`src/identity.js`): Prüfung starten → Weiterleitung zum Prüfdienst → signierte Ergebnis-Meldung an `POST /api/identity/webhook` (`HMAC-SHA256(caseId|result|timestamp)`, höchstens 10 Minuten alt). Gespeichert werden nur Ergebnis, Verfahren und Datum – keine Ausweiskopie. Für **POSTIDENT** (Deutsche Post), Online-Ausweis (eID), IDnow oder Veriff wird ein Vertrag benötigt und ein kleiner Adapter, der deren Ergebnis in dieses Format übersetzt. `IDENT_PROVIDER=demo` simuliert den Ablauf. Geprüfte Mitglieder tragen das Abzeichen „Identität geprüft“; Mitfahrer können danach filtern.
+
+## Verhaltensregeln
+
+Unter `#/verhaltensregeln` (auch auf der Startseite verlinkt): Regeln für alle, für Fahrer und für Mitfahrer, die auf gegenseitiger Rücksichtnahme beruhen. Sie sind Teil der Nutzungsbedingungen und werden bei der Registrierung akzeptiert; Verstöße können zur Verwarnung oder Sperre führen (Ziffer 9).
 
 ## Google Maps
 
@@ -215,7 +245,7 @@ Die Oberfläche gibt es auf **Deutsch** (Ausgangssprache) und in den **10 meistg
 - **Zahlen, Beträge, Datumsangaben** werden im Format der gewählten Sprache angezeigt (Euro bleibt die Währung).
 - **Server-Meldungen** (Fehler, Buchungstexte, Bezeichnungen wie Bewertungsgründe oder Level) übersetzt die Oberfläche; der Server selbst bleibt deutsch.
 - **Rechtstexte** sind übersetzt, mit dem Hinweis, dass die deutsche Fassung verbindlich ist. Vor dem Livegang sollten Nutzungsbedingungen und Datenschutzerklärung zusätzlich fachkundig übersetzt bzw. geprüft werden.
-- **Neue Texte:** in `public/app.js` immer `t('…')` bzw. `tn(n, 'Singular', 'Plural')` verwenden, dann `npm run i18n:extract` und die neuen Schlüssel in `public/i18n/*.json` ergänzen. `npm run i18n:check` (und `npm test`) prüft Vollständigkeit, Platzhalter, HTML und Links jeder Sprache.
+- **Neue Texte:** in `public/app.js` immer `t('…')` bzw. `tn(n, 'Singular', 'Plural')` verwenden, dann `npm run i18n:extract` und `npm run i18n:placeholders`. Solange sich die Inhalte noch stark ändern, stehen neue Texte in den anderen Sprachen vorläufig als **Lorem ipsum** (Platzhalter, HTML und Links bleiben erhalten); die Übersetzung folgt, wenn die Texte stabil sind. `npm run i18n:check` (und `npm test`) prüft Vollständigkeit, Platzhalter, HTML und Links jeder Sprache.
 
 ## Projektstruktur
 
@@ -225,6 +255,7 @@ src/app.js           REST-API (Konten, Führerschein, Fahrten, Matching, Buchung
 src/matching.js      Fahrer-Suche und Bewertung
 src/pricing.js       Kilometerabrechnung, Provision, Spende, CO₂
 src/license.js       Führerschein-Prüfung
+src/identity.js      Identitätsprüfung (Anbieter-Ablauf, signierte Ergebnis-Meldung)
 src/profile.js       Profile, Anzeigenamen, Privatsphäre-Regeln
 src/mfa.js           TOTP, Backup-Codes, Verschlüsselung der 2FA-Schlüssel
 src/nps.js           Bewertung nach NPS-Logik
@@ -237,7 +268,7 @@ src/feedback.js      Gründe bei Bewertungen, Tipps, anonymes Lern-Feedback
 src/routing.js       Google Maps / OSM, Google-Maps-Link-Parser
 src/geo.js           Distanzen, Polylines, Projektion auf Routen
 src/db.js            JSON-Dateispeicher (data/db.json)
-public/              Frontend (HTML/CSS/JS, kein Build-Schritt)
+public/              Frontend (HTML/CSS/JS, kein Build-Schritt): start.html = Startseite, index.html = App
 public/i18n/         Übersetzungen der Oberfläche (_source.json = deutsche Ausgangstexte)
 scripts/i18n.js      Ausgangstexte einsammeln und Übersetzungen prüfen
 test/                node:test – Unit-Tests + kompletter API-Ablauf

@@ -6,7 +6,8 @@ const path = require('node:path');
 const { hashPassword, verifyPassword, createSession, userFromRequest, sessionCookie, requestSessionKey, isSecure } = require('./auth');
 const { validateLicense, canDrive } = require('./license');
 const { findMatches } = require('./matching');
-const { computeFare, billableKm } = require('./pricing');
+const { computeFare, billableKm, recommendedRateCents, maxRateCents, PREPAID_PACKAGES, prepaidDiscountPercent, consumePrepaid, prepaidRemainingCents } = require('./pricing');
+const identity = require('./identity');
 const { haversineKm, projectOntoRoute, cumulativeKm, isLatLng, simplify } = require('./geo');
 const mfa = require('./mfa');
 const nps = require('./nps');
@@ -55,6 +56,8 @@ class HttpError extends Error {
 }
 
 function createApp({ store, config, routing }) {
+  // Identitätsprüfung: ohne Einstellung der Demo-Ablauf
+  const identCfg = { provider: 'demo', webhookSecret: '', startUrl: '', ...(config.identity || {}) };
   const db = store.data;
   const routes = [];
   const on = (method, pattern, handler, opts = {}) => {
@@ -86,7 +89,16 @@ function createApp({ store, config, routing }) {
     points: g.points,
     level: { name: g.level.name, rank: g.level.rank },
     co2SavedKg: Math.round((u.co2SavedKg || 0) * 100) / 100,
-    canDrive: canDrive(u),
+    // Fahrerprofil vollständig (Identität, Führerschein, Fahrzeug) – Voraussetzung für den Fahrer-Schalter
+    canDrive: driverMissing(u).length === 0,
+    driverMissing: driverMissing(u),
+    licenseValid: canDrive(u),
+    identity: identity.identityStatus(u),
+    driverDeclarationUntil: declarationValidUntil(u),
+    roles: u.roles || null,
+    prepaidCents: prepaidRemainingCents(u),
+    prepaidDiscountPercent: prepaidDiscountPercent(u),
+    paymentMethod: u.paymentMethod ? { type: u.paymentMethod.type, label: u.paymentMethod.label, addedAt: u.paymentMethod.addedAt } : null,
     mfaEnabled: Boolean(u.mfa && u.mfa.enabled),
     backupCodesLeft: u.mfa && u.mfa.enabled ? u.mfa.backupHashes.length : 0,
     hasPhoto: Boolean(profileOf(u).photo),
@@ -183,6 +195,22 @@ function createApp({ store, config, routing }) {
   const book = (account, amountCents, type, rideId, note) => {
     db.ledger.push({ id: store.id('tx'), at: now(), account, amountCents, type, rideId, note });
   };
+  /** Was im Fahrerprofil noch fehlt: 'identity' | 'license' | 'vehicle'. */
+  function driverMissing(u) {
+    const missing = [];
+    if (!identity.isVerified(u)) missing.push('identity');
+    if (!canDrive(u)) missing.push('license');
+    const v = profileOf(u).vehicle;
+    if (!(v.brand && v.model && v.color)) missing.push('vehicle');
+    return missing;
+  }
+  /** Bestätigung von Fahrtauglichkeit und Fahrerlaubnis, die für einen Monat gemerkt wurde. */
+  function declarationValidUntil(u) {
+    const d = u.driverDeclaration;
+    return d && d.until && new Date(d.until) > new Date() ? d.until : null;
+  }
+  /** Verfügbares Guthaben (abzüglich Reservierungen) */
+  const availableCents = (u) => u.walletCents - u.reservedCents;
   /** Hochgeladene Datei ausliefern; fehlt sie, gibt es 404 statt eines Serverfehlers. */
   const sendUpload = (res, file, cacheControl) => {
     let data;
@@ -209,7 +237,7 @@ function createApp({ store, config, routing }) {
     let settlementPreview = null;
     if (['picked_up', 'confirming', 'disputed'].includes(ride.status)) {
       const b = billableKm(ride.plannedKm, ride.trackedKm, { aborted: Boolean(ride.abort) });
-      settlementPreview = { plannedKm: ride.plannedKm, trackedKm: ride.trackedKm, billedKm: b.km, basis: b.basis, price: computeFare(b.km, config.pricing, ride.seats, { pickupDetourKm: ride.pickupDetourKm || 0 }) };
+      settlementPreview = { plannedKm: ride.plannedKm, trackedKm: ride.trackedKm, billedKm: b.km, basis: b.basis, price: computeFare(b.km, config.pricing, ride.seats, { pickupDetourKm: ride.pickupDetourKm || 0, commissionDiscountPercent: ride.commissionDiscountPercent || 0, ratePerKmCents: ride.ratePerKmCents }) };
     }
     return {
       ...ride,
@@ -285,7 +313,9 @@ function createApp({ store, config, routing }) {
 
   // ---------- Öffentliche Konfiguration ----------
   on('GET', '/api/config', () => ({
-    pricing: config.pricing,
+    pricing: { ...config.pricing, ratePerKmCents: recommendedRateCents(config.pricing), recommendedRateCents: recommendedRateCents(config.pricing), maxRateCents: maxRateCents(config.pricing) },
+    prepaidPackages: PREPAID_PACKAGES,
+    identityProvider: { id: identCfg.provider, name: (identity.PROVIDERS[identCfg.provider] || {}).name || identCfg.provider },
     routingProvider: config.googleMapsApiKey ? 'google' : 'openstreetmap',
     maxDetourKm: config.matching.maxDetourKm,
     points: config.points,
@@ -735,6 +765,11 @@ function createApp({ store, config, routing }) {
       mfa: null,
       mfaPending: null,
       license: null,
+      identity: null,
+      driverDeclaration: null,
+      roles: null,
+      paymentMethod: null,
+      prepaidLots: [],
       isAdmin: false,
       walletCents: 0,
       reservedCents: 0,
@@ -744,15 +779,86 @@ function createApp({ store, config, routing }) {
     return { ok: true, payoutCents };
   });
 
-  // Demo-Guthaben. Produktiv: Zahlungsdienstleister (z. B. Stripe Connect), siehe README.
+  // Vorkasse-Guthaben in Stufen (10/20/50 €) mit Rabatt auf die Provision.
+  // Demo-Zahlung. Produktiv: Zahlungsdienstleister (z. B. Stripe Connect), siehe README.
   on('POST', '/api/wallet/topup', ({ user, body }) => {
     need(config.allowDemoTopup !== false, 403, 'Guthaben wird über den Zahlungsdienstleister aufgeladen.');
-    const amount = Math.round(Number(body.amountCents));
-    need(Number.isInteger(amount) && amount >= 100 && amount <= 50000, 400, 'Betrag zwischen 1 € und 500 € wählen.');
-    user.walletCents += amount;
-    book(`user:${user.id}`, amount, 'topup', null, 'Guthaben aufgeladen');
+    const pkg = PREPAID_PACKAGES.find((p) => p.id === body.packageId || p.amountCents === Number(body.amountCents));
+    need(pkg, 400, 'Bitte eine Vorkasse-Stufe wählen (10 €, 20 € oder 50 €).');
+    user.walletCents += pkg.amountCents;
+    user.prepaidLots = [...(user.prepaidLots || []).filter((l) => l.remainingCents > 0), { id: store.id('pre'), at: now(), amountCents: pkg.amountCents, remainingCents: pkg.amountCents, discountPercent: pkg.discountPercent }];
+    book(`user:${user.id}`, pkg.amountCents, 'topup', null, `Vorkasse ${pkg.amountCents / 100} € (${pkg.discountPercent} % Rabatt auf die Provision)`);
     return { user: publicUser(user) };
   });
+
+  // Stufe 1: je Fahrt bezahlen – Zahlungsmittel hinterlegen (Demo; produktiv beim Zahlungsdienstleister)
+  on('POST', '/api/wallet/payment-method', ({ user }) => {
+    need(config.allowDemoTopup !== false, 403, 'Zahlungsmittel werden beim Zahlungsdienstleister hinterlegt.');
+    user.paymentMethod = { type: 'demo', label: 'Demo-Karte •••• 4242', addedAt: now() };
+    return { user: publicUser(user) };
+  });
+  on('DELETE', '/api/wallet/payment-method', ({ user }) => {
+    need(!Object.values(db.rides).some((r) => r.riderId === user.id && r.payment === 'per_ride' && OPEN.includes(r.status)), 409, 'Für eine offene Fahrt wird das Zahlungsmittel noch benötigt.');
+    user.paymentMethod = null;
+    return { user: publicUser(user) };
+  });
+
+  // Rollen für die heutige Nutzung (Schiebeschalter): Mitfahrer und/oder Fahrer.
+  on('PUT', '/api/me/roles', ({ user, body }) => {
+    const date = String(body.date || '').slice(0, 10);
+    need(/^\d{4}-\d{2}-\d{2}$/.test(date), 400, 'Datum fehlt.');
+    const rider = body.rider === true;
+    const driver = body.driver === true;
+    need(rider || driver, 400, 'Mindestens eine Rolle muss aktiv sein.');
+    need(!driver || driverMissing(user).length === 0, 409, 'Fahrerprofil unvollständig.');
+    if (!driver) need(!Object.values(db.trips).some((t) => t.driverId === user.id && t.status === 'active'), 409, 'Bitte zuerst deine laufende Fahrt als Fahrer beenden.');
+    if (!rider) need(!Object.values(db.rides).some((r) => r.riderId === user.id && OPEN.includes(r.status)), 409, 'Bitte zuerst deine offene Mitfahrt abschließen.');
+    user.roles = { date, rider, driver };
+    return { user: publicUser(user) };
+  });
+
+  // ---------- Identitätsprüfung ----------
+  on('POST', '/api/identity/start', ({ user }) => {
+    need(!identity.isVerified(user), 409, 'Deine Identität ist bereits geprüft.');
+    throttle('ident:' + user.id, 10);
+    const provider = identCfg.provider;
+    need(provider === 'demo' || identCfg.startUrl, 503, 'Die Identitätsprüfung ist noch nicht eingerichtet.');
+    for (const [id, c] of Object.entries(db.identityCases)) if (Date.parse(c.createdAt) < Date.now() - identity.CASE_TTL_MS) delete db.identityCases[id];
+    const c = { id: store.id('idc'), userId: user.id, provider, status: 'started', createdAt: now() };
+    db.identityCases[c.id] = c;
+    user.identity = { status: 'pending', provider, caseId: c.id, startedAt: c.createdAt };
+    const redirectUrl = provider === 'demo' ? `#/identitaet/${c.id}` : identCfg.startUrl.replace('{caseId}', encodeURIComponent(c.id));
+    return { caseId: c.id, provider, redirectUrl, user: publicUser(user) };
+  });
+
+  const finishIdentityCase = (c, result) => {
+    const u = db.users[c.userId];
+    c.status = result === 'success' ? 'verified' : 'failed';
+    c.finishedAt = now();
+    if (!u || u.deleted) return;
+    // Nur Ergebnis, Verfahren und Zeitpunkt speichern – keine Ausweisdaten
+    u.identity = result === 'success'
+      ? { status: 'verified', provider: c.provider, verifiedAt: c.finishedAt }
+      : { status: 'failed', provider: c.provider, failedAt: c.finishedAt };
+  };
+
+  // Demo-Anbieter: simuliert die erfolgreiche Prüfung (nur wenn IDENT_PROVIDER=demo)
+  on('POST', '/api/identity/demo/:caseId/complete', ({ user, params, body }) => {
+    need(identCfg.provider === 'demo', 404, 'Nicht gefunden.');
+    const c = db.identityCases[params.caseId];
+    need(c && c.userId === user.id && c.status === 'started', 404, 'Prüfvorgang nicht gefunden.');
+    finishIdentityCase(c, body.result === 'failed' ? 'failed' : 'success');
+    return { user: publicUser(user) };
+  });
+
+  // Ergebnis-Meldung des Anbieters (signiert, siehe src/identity.js)
+  on('POST', '/api/identity/webhook', ({ body }) => {
+    need(identity.verifySignature(identCfg.webhookSecret, body), 401, 'Ungültige Signatur.');
+    const c = db.identityCases[String(body.caseId)];
+    need(c, 404, 'Prüfvorgang nicht gefunden.');
+    if (c.status === 'started') finishIdentityCase(c, body.result === 'success' ? 'success' : 'failed');
+    return { ok: true, result: c.status };
+  }, { public: true });
 
   on('GET', '/api/wallet/transactions', ({ user }) => ({
     transactions: db.ledger.filter((t) => t.account === `user:${user.id}`).slice(-50).reverse(),
@@ -793,14 +899,31 @@ function createApp({ store, config, routing }) {
   // ---------- Fahrer: Fahrt anbieten ----------
   on('POST', '/api/trips', async ({ user, body }) => {
     need(canDrive(user), 403, 'Bitte zuerst einen gültigen Führerschein verifizieren lassen.');
+    need(identity.isVerified(user), 403, 'Bitte zuerst deine Identität prüfen lassen.');
+    need(!driverMissing(user).includes('vehicle'), 403, 'Bitte im Profil Automarke, Modell und Farbe deines Fahrzeugs angeben.');
     needNotSuspended(user);
     need(!Object.values(db.trips).some((t) => t.driverId === user.id && t.status === 'active'), 409, 'Du hast bereits eine aktive Fahrt.');
+    // Vor Fahrtantritt: Fahrtauglichkeit und Fahrerlaubnis bestätigen (oder für einen Monat gemerkt)
+    const decl = body.declaration || {};
+    let declaredAt = null;
+    if (decl.fitToDrive === true && decl.licensePresent === true) {
+      declaredAt = now();
+      const until = new Date();
+      until.setMonth(until.getMonth() + 1);
+      user.driverDeclaration = { at: declaredAt, until: decl.remember === true ? until.toISOString() : null };
+    } else {
+      need(declarationValidUntil(user), 428, 'Bitte vor Fahrtantritt Fahrtauglichkeit und Fahrerlaubnis bestätigen.');
+      declaredAt = user.driverDeclaration.at;
+    }
     routingQuota(user);
     let { origin, destination } = body;
     if (body.googleMapsUrl) ({ origin, destination } = await routing.parseGoogleMapsLink(body.googleMapsUrl));
     need(origin && destination, 400, 'Start und Ziel angeben.');
     const seats = Math.round(Number(body.seats) || 1);
     need(seats >= 1 && seats <= 8, 400, 'Zwischen 1 und 8 Plätze anbieten.');
+    // Kilometersatz: Empfehlung oder selbst gewählt – höchstens die Betriebskosten (keine Gewinnerzielung)
+    const rate = body.ratePerKmCents === undefined || body.ratePerKmCents === '' ? recommendedRateCents(config.pricing) : Math.round(Number(body.ratePerKmCents));
+    need(Number.isInteger(rate) && rate >= 1 && rate <= maxRateCents(config.pricing), 400, `Kilometersatz zwischen 1 und ${maxRateCents(config.pricing)} Cent wählen.`);
     const r = await routing.route(origin, destination);
     const trip = {
       id: store.id('trp'),
@@ -811,9 +934,11 @@ function createApp({ store, config, routing }) {
       route: { coords: r.coords, distanceKm: r.distanceKm, durationMin: r.durationMin, provider: r.provider },
       seats,
       seatsFree: seats,
+      ratePerKmCents: rate,
       vehicle: String(body.vehicle || (({ color, brand, model, plateRegion }) => [color, brand, model].filter(Boolean).join(' ') + (plateRegion ? ` (${plateRegion})` : ''))(profileOf(user).vehicle)).trim().slice(0, 80),
       position: r.origin,
       progressKm: 0,
+      declaration: { fitToDrive: true, licensePresent: true, confirmedAt: declaredAt },
       createdAt: now(),
     };
     db.trips[trip.id] = trip;
@@ -916,6 +1041,7 @@ function createApp({ store, config, routing }) {
       })
       .slice(0, config.matching.maxResults);
     const plannedRoute = matches.length ? await plannedRouteFor(pickup, dropoff) : null;
+    const discount = prepaidDiscountPercent(user);
     return {
       plannedRoute,
       activeDrivers: trips.length,
@@ -929,8 +1055,9 @@ function createApp({ store, config, routing }) {
         ...m,
         plannedKm: plannedRoute.distanceKm,
         plannedDurationMin: plannedRoute.durationMin,
-        price: computeFare(plannedRoute.distanceKm, config.pricing, seats, { pickupDetourKm: m.pickupDetourKm }),
+        price: computeFare(plannedRoute.distanceKm, config.pricing, seats, { pickupDetourKm: m.pickupDetourKm, ratePerKmCents: db.trips[m.tripId].ratePerKmCents, commissionDiscountPercent: discount }),
         driverName: displayName(db.users[m.driverId], user),
+        driverIdentityVerified: identity.isVerified(db.users[m.driverId]),
         origin: coarsePlace(m.origin),
         destination: coarsePlace(m.destination),
       })),
@@ -965,9 +1092,16 @@ function createApp({ store, config, routing }) {
     if (body.plannedKm !== undefined && Math.abs(Number(body.plannedKm) - plannedRoute.distanceKm) > 0.5) {
       throw new HttpError(409, 'Die geplante Route hat sich geändert. Bitte erneut suchen und bestätigen.');
     }
-    const estimate = computeFare(plannedRoute.distanceKm, config.pricing, seats, { pickupDetourKm: match.pickupDetourKm });
+    const fareOpts = { pickupDetourKm: match.pickupDetourKm, ratePerKmCents: trip.ratePerKmCents };
+    // Bezahlung: aus Vorkasse-Guthaben (mit Rabatt auf die Provision) oder je Fahrt mit hinterlegtem Zahlungsmittel
+    let payment = 'wallet';
+    let estimate = computeFare(plannedRoute.distanceKm, config.pricing, seats, { ...fareOpts, commissionDiscountPercent: prepaidDiscountPercent(user) });
     // Da nie mehr als die geplante Route berechnet wird, ist der geplante Preis zugleich der Höchstbetrag.
-    need(user.walletCents - user.reservedCents >= estimate.totalCents, 402, `Nicht genug Guthaben. Benötigt werden ${(estimate.totalCents / 100).toFixed(2).replace('.', ',')} €.`);
+    if (availableCents(user) < estimate.totalCents) {
+      estimate = computeFare(plannedRoute.distanceKm, config.pricing, seats, fareOpts);
+      need(user.paymentMethod, 402, `Nicht genug Guthaben. Benötigt werden ${(estimate.totalCents / 100).toFixed(2).replace('.', ',')} €.`);
+      payment = 'per_ride';
+    }
     const ride = {
       id: store.id('rid'),
       tripId: trip.id,
@@ -983,6 +1117,9 @@ function createApp({ store, config, routing }) {
       pickupAlongKm: match.pickupAlongKm,
       detourKm: match.detourKm,
       estimate,
+      payment,
+      ratePerKmCents: estimate.ratePerKmCents,
+      commissionDiscountPercent: estimate.commissionDiscountPercent,
       maxChargeCents: estimate.totalCents,
       reservedCents: 0,
       trackedKm: 0,
@@ -1024,9 +1161,14 @@ function createApp({ store, config, routing }) {
     const trip = db.trips[ride.tripId];
     need(trip.status === 'active' && trip.seatsFree >= ride.seats, 409, 'Keine freien Plätze mehr.');
     const rider = db.users[ride.riderId];
-    need(rider.walletCents - rider.reservedCents >= ride.maxChargeCents, 402, 'Der Mitfahrer hat nicht genug Guthaben.');
-    rider.reservedCents += ride.maxChargeCents;
-    ride.reservedCents = ride.maxChargeCents;
+    if (ride.payment === 'per_ride') {
+      // Je Fahrt: Betrag wird beim Zahlungsdienstleister vorgemerkt (Demo: nur geprüft)
+      need(rider.paymentMethod, 402, 'Der Mitfahrer hat kein Zahlungsmittel hinterlegt.');
+    } else {
+      need(availableCents(rider) >= ride.maxChargeCents, 402, 'Der Mitfahrer hat nicht genug Guthaben.');
+      rider.reservedCents += ride.maxChargeCents;
+      ride.reservedCents = ride.maxChargeCents;
+    }
     trip.seatsFree -= ride.seats;
     ride.confirmations.driverRoute = now();
     ride.status = 'accepted';
@@ -1060,19 +1202,30 @@ function createApp({ store, config, routing }) {
    */
   const settle = (ride, confirmedBy, kmOverride) => {
     const basis = kmOverride !== undefined ? { km: kmOverride, basis: 'betreiber' } : billableKm(ride.plannedKm, ride.trackedKm, { aborted: Boolean(ride.abort) });
-    const fare = computeFare(basis.km, config.pricing, ride.seats, { pickupDetourKm: ride.pickupDetourKm || 0 });
+    const fare = computeFare(basis.km, config.pricing, ride.seats, {
+      pickupDetourKm: ride.pickupDetourKm || 0,
+      commissionDiscountPercent: ride.commissionDiscountPercent || 0,
+      ratePerKmCents: ride.ratePerKmCents,
+    });
     const rider = db.users[ride.riderId];
     const driver = db.users[ride.driverId];
     releaseReservation(ride);
     freeSeats(ride);
 
-    rider.walletCents -= fare.totalCents;
-    driver.walletCents += fare.driverCents;
     const abortNote = ride.abort ? ' (Fahrtabbruch)' : '';
+    if (ride.payment === 'per_ride') {
+      // Je Fahrt: Abbuchung beim Zahlungsdienstleister, das Guthaben bleibt unberührt
+      book(`user:${rider.id}`, fare.totalCents, 'card_charge', ride.id, 'Zahlung je Fahrt');
+    } else {
+      rider.walletCents -= fare.totalCents;
+      consumePrepaid(rider, fare.totalCents);
+    }
+    driver.walletCents += fare.driverCents;
     book(`user:${rider.id}`, -fare.totalCents, 'ride_payment', ride.id, `Mitfahrt ${fmtKm(fare.km)} km${abortNote}`);
     book(`user:${driver.id}`, fare.driverCents - fare.detourCents, 'ride_earning', ride.id, `Fahreranteil ${fmtKm(fare.km)} km`);
     if (fare.detourCents) book(`user:${driver.id}`, fare.detourCents, 'pickup_detour', ride.id, `Anfahrt zum Treffpunkt ${fmtKm(fare.detourKm)} km (ohne Provision)`);
-    book('platform', fare.commissionCents, 'commission', ride.id, `Provision ${config.pricing.commissionPercent} %`);
+    // Die Umweltspende zahlt der Betreiber aus seiner Provision
+    book('platform', fare.platformCents, 'commission', ride.id, `Provision ${config.pricing.commissionPercent} %`);
     book('donation', fare.donationCents, 'donation', ride.id, 'Spende Umweltschutz');
 
     rider.co2SavedKg = (rider.co2SavedKg || 0) + fare.co2SavedKg;
@@ -1454,7 +1607,8 @@ function sendJson(res, status, data, secure = false) {
 async function serveStatic(pathname, req, res, secure) {
   let rel;
   try {
-    rel = pathname === '/' ? 'index.html' : decodeURIComponent(pathname).replace(/^\/+/, '');
+    // Startseite (Vorstellung) unter /, die App unter /app
+    rel = pathname === '/' ? 'start.html' : pathname === '/app' || pathname === '/app/' ? 'index.html' : decodeURIComponent(pathname).replace(/^\/+/, '');
   } catch {
     throw new HttpError(400, 'Ungültige Adresse.');
   }
