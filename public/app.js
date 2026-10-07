@@ -967,7 +967,7 @@ async function renderMatches() {
         <div class="top">
           <div>${profileLink(m.driverId, m.driverName)} ${i === 0 ? `<span class="badge best" tabindex="0" data-tip="${esc(t('Sortiert nach dem kürzesten Umweg des Fahrers – so entstehen die wenigsten zusätzlichen Kilometer.'))}">${t('Kürzester Umweg')}</span>` : ''}<br>
             ${npsBadge(m.driverNps)} ${abortBadge(m.driverAbort, 'driver')} ${prefIcons(m)}<br><span class="muted small">${esc(m.vehicle || t('Pkw'))} · ${t('{n} frei', { n: num(m.seatsFree) })}</span></div>
-          <div class="price">${euro(m.price.totalCents)}${m.price.savingsVsTransitPercent !== null && m.price.savingsVsTransitPercent !== undefined ? `<div class="muted small" tabindex="0" data-tip="${esc(t('ÖPNV-Einzelticket ca. {amount} – du sparst {percent} %', { amount: euro(m.price.transitFareCents), percent: num(m.price.savingsVsTransitPercent) }))}">${t('−{percent} % ggü. ÖPNV', { percent: num(m.price.savingsVsTransitPercent) })}</div>` : ''}</div>
+          <div class="price">${euro(m.price.totalCents)}${transitHint(m.price)}</div>
         </div>
         <div class="muted small" style="margin-top:6px">
           ${t('{detour} Umweg · {eta} Wartezeit · {co2} kg CO₂ gespart', { detour: km(m.detourKm), eta: minutes(m.etaMin), co2: kg(m.price.co2SavedKg) })} ${info(`<table><tr><td>${t('Abholung in ca.')}</td><td>${minutes(m.etaMin)}</td></tr><tr><td>${t('Umweg für den Fahrer')}</td><td>${km(m.detourKm)}</td></tr><tr><td>${t('davon Anfahrt zum Treffpunkt')}</td><td>${km(m.pickupDetourKm)}</td></tr><tr><td>${t('CO₂-Ersparnis')}</td><td>${kg(m.price.co2SavedKg)} kg</td></tr></table><p style="margin-top:6px">${t('Fahrer fährt (ungefähr): {from} → {to}. Start und Ziel des Fahrers zeigen wir zum Schutz seiner Adresse nur ungefähr.', { from: esc(shortLabel(m.origin)), to: esc(shortLabel(m.destination)) })}</p>`, t('Details zur Fahrt'))}
@@ -1004,6 +1004,14 @@ async function showMatchOnMap(m) {
 }
 
 /** Vergleich mit Nahverkehr und eigenem Auto */
+/** Kurzer Vergleich mit dem ÖPNV-Einzelticket – günstiger oder teurer (nur Orientierung). */
+function transitHint(p) {
+  const pct = p.savingsVsTransitPercent;
+  if (pct === null || pct === undefined || !p.transitFareCents) return '';
+  const label = pct >= 0 ? t('{percent} % günstiger als ÖPNV', { percent: num(pct) }) : t('{percent} % teurer als ÖPNV', { percent: num(-pct) });
+  return `<div class="muted small" tabindex="0" data-tip="${esc(t('ÖPNV-Einzelticket ca. {amount}', { amount: euro(p.transitFareCents) }))}">${label}</div>`;
+}
+
 /** Vergleich mit eigenem Auto und Nahverkehr (Richtwerte, nur zur Orientierung) */
 function priceComparison(p) {
   const parts = [];
