@@ -83,6 +83,7 @@ const placeholders = (s) => [...String(s).matchAll(/\{(\w+)\}/g)].map((m) => m[1
 const tags = (s) => [...String(s).matchAll(/<\/?([a-z]+)\b[^>]*>/gi)].map((m) => m[0].replace(/\s+/g, ' ').replace(/^<\/?(\w+).*$/, (all, n) => (all.startsWith('</') ? '/' : '') + n.toLowerCase())).sort();
 const hrefs = (s) => [...String(s).matchAll(/href="([^"]*)"/g)].map((m) => m[1]).sort();
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+const brandCount = (s) => String(s).split('joinmyride.com').length - 1;
 
 /** Prüft eine Übersetzung gegen die Ausgangstexte; liefert eine Liste von Fehlern. */
 function checkCatalog(source, catalog) {
@@ -104,6 +105,7 @@ function checkCatalog(source, catalog) {
     if (!same(placeholders(tr), placeholders(src))) errors.push(`Platzhalter: ${key} → ${tr}`);
     if (!same(tags(tr), tags(src))) errors.push(`HTML: ${key} → ${tr}`);
     if (!same(hrefs(tr), hrefs(src))) errors.push(`Links: ${key} → ${tr}`);
+    if (brandCount(tr) !== brandCount(src)) errors.push(`Markenname joinmyride.com: ${key} → ${tr}`);
   }
   for (const key of Object.keys(catalog)) if (!(key in source)) errors.push(`überzählig: ${key}`);
   return errors;
@@ -124,12 +126,14 @@ function check() {
   return !failed;
 }
 
+/** Markenname – in jeder Sprache unverändert und zusammengeschrieben */
+const BRAND = 'joinmyride.com';
 const LOREM = 'lorem ipsum dolor sit amet consectetur adipiscing elit sed do eiusmod tempor incididunt ut labore et dolore magna aliqua'.split(' ');
 /** Lorem-ipsum-Platzhalter mit denselben Platzhaltern, HTML-Tags und Links wie der deutsche Text. */
 function loremFor(text) {
   let i = 0;
-  return String(text).split(/(<[^>]+>|\{\w+\})/).map((part) => {
-    if (!part || part.startsWith('<') || /^\{\w+\}$/.test(part)) return part;
+  return String(text).split(/(<[^>]+>|\{\w+\}|joinmyride\.com)/).map((part) => {
+    if (!part || part.startsWith('<') || /^\{\w+\}$/.test(part) || part === BRAND) return part;
     const words = part.trim().split(/\s+/).filter(Boolean).length;
     if (!words) return part;
     const lorem = Array.from({ length: words }, () => LOREM[i++ % LOREM.length]).join(' ');

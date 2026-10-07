@@ -307,3 +307,7 @@ table.breakdown tr.total td { border-top: 1px solid var(--line); font-weight: 70
 .conduct li { margin: 6px 0; }
 .decl-remember { background: var(--mint-50); border-radius: 10px; padding: 6px 8px; }
 @media (max-width: 640px) { .roles { order: 3; width: 100%; } }
+
+/* Marke immer als ein Wort: kein Umbruch, keine Abstände zwischen den farbigen Teilen */
+.brand-text { white-space: nowrap; letter-spacing: 0; word-spacing: 0; }
+.brand-text b, .brand-text .tld { margin: 0; padding: 0; letter-spacing: 0; }

@@ -11,7 +11,7 @@ const path = require('node:path');
 const { Store } = require('../src/db');
 const { createApp } = require('../src/app');
 const { UI_LANGUAGES, UI_LANGUAGE_CODES } = require('../src/profile');
-const { extract, checkCatalog, SOURCE_FILE, I18N_DIR } = require('../scripts/i18n');
+const { extract, checkCatalog, loremFor, SOURCE_FILE, I18N_DIR } = require('../scripts/i18n');
 
 const config = {
   adminEmail: 'chef@example.org',
@@ -47,6 +47,13 @@ test('Prüfung erkennt fehlende Platzhalter, HTML und Pluralformen', () => {
   const source = { 'Hallo {name}': 'Hallo {name}', '<b>fett</b>': '<b>fett</b>', '{n} Punkte': { one: '{n} Punkt', other: '{n} Punkte' } };
   const errors = checkCatalog(source, { 'Hallo {name}': 'Hello', '<b>fett</b>': 'bold', '{n} Punkte': '{n} points' });
   assert.equal(errors.length, 3, errors.join('\n'));
+});
+
+test('Markenname joinmyride.com bleibt in jeder Sprache zusammengeschrieben erhalten', () => {
+  const source = { 'joinmyride.com – Teilen': 'joinmyride.com – Teilen' };
+  assert.equal(checkCatalog(source, { 'joinmyride.com – Teilen': 'Join My Ride – share' }).length, 1);
+  assert.deepEqual(checkCatalog(source, { 'joinmyride.com – Teilen': 'joinmyride.com – share' }), []);
+  assert.match(loremFor('Willkommen bei joinmyride.com, {name}!'), /joinmyride\.com.*\{name\}/);
 });
 
 test('Sprache der Oberfläche: bei Registrierung übernommen, im Profil änderbar, ungültige abgelehnt', async (t) => {

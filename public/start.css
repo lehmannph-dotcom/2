@@ -97,3 +97,7 @@ section { padding: clamp(48px, 7vw, 96px) clamp(16px, 6vw, 96px); }
   .lang-select { max-width: 50%; }
 }
 body { overflow-x: hidden; }
+
+/* Marke immer als ein Wort: kein Umbruch, keine Abstände zwischen den farbigen Teilen */
+.brand-text { white-space: nowrap; letter-spacing: 0; word-spacing: 0; }
+.brand-text b, .brand-text .tld { margin: 0; padding: 0; letter-spacing: 0; }
