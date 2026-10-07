@@ -1,6 +1,6 @@
 # joinmyride.com – Teilen statt Leerfahren
 
-**joinmyride.com** ist eine Ad-hoc-Mitfahrzentrale: Wer ohnehin fährt, wird mit seiner Route (eingegeben oder als **Google-Maps-Link**) spontan zum Fahrtenanbieter. Mitfahrer geben ihr Ziel ein, die App findet den **besten Fahrer** auf dem Weg. Abgerechnet werden die **gefahrenen Kilometer** – der Großteil geht an den Fahrer, eine Provision an den Betreiber und **1 Cent pro Fahrt an den Umweltschutz**.
+**joinmyride.com** ist eine Ad-hoc-Mitfahrzentrale: Wer ohnehin fährt, wird mit seiner Route (eingegeben oder als **Google-Maps-Link**) spontan zum Fahrtenanbieter. Mitfahrer geben ihr Ziel ein, die App findet den **besten Fahrer** auf dem Weg. Abgerechnet werden die **gefahrenen Kilometer** – je Kilometer 8 ct an den Fahrer, 5 ct Vermittlungsprovision an den Betreiber und **5 ct an den Umweltschutz**.
 
 ## Schnellstart
 
@@ -188,19 +188,21 @@ Eigenes Menü **Funfacts** (auch ohne Anmeldung): Wo und in welchen Autos sitzen
 joinmyride.com ist eine Plattform für **private Fahrgemeinschaften**, keine Fahrdienstleistung wie Taxi oder Uber.
 
 * Der Fahrer stellt Auto und Fahrt, der Mitfahrer beteiligt sich mit rund **2/3 an Kraftstoff bzw. Strom**.
-* Gerechnet wird mit **Durchschnittswerten**, nicht mit einem selbst gewählten Preis: Ø-Kraftstoffpreis 1,75 €/l × Ø-Verbrauch 7 l/100 km = 12,25 ct/km Energiekosten → **8 ct/km** für den Mitfahrer. Der Betreiber aktualisiert die Durchschnittswerte (`AVG_FUEL_PRICE_CENTS_PER_LITER`, `AVG_CONSUMPTION_L_PER_100KM`); für eine bestätigte Fahrt gilt der Satz zum Zeitpunkt der Buchung.
+* Gerechnet wird mit **Durchschnittswerten**, nicht mit einem selbst gewählten Preis: Ø-Kraftstoffpreis 1,75 €/l × Ø-Verbrauch 7 l/100 km = 12,25 ct/km Energiekosten → **8 ct/km** an den Fahrer. Dazu kommen je km **5 ct Vermittlungsprovision** und **5 ct Umweltspende** (`COMMISSION_PER_KM_CENTS`, `DONATION_PER_KM_CENTS`). Der Betreiber aktualisiert die Durchschnittswerte (`AVG_FUEL_PRICE_CENTS_PER_LITER`, `AVG_CONSUMPTION_L_PER_100KM`); für eine bestätigte Fahrt gilt der Satz zum Zeitpunkt der Buchung.
 * Fahrer legen keinen eigenen Preis fest. So zahlt jeder für dieselbe Strecke denselben Preis, und das Entgelt bleibt unter den Betriebskosten (§ 1 Abs. 2 Nr. 1 PBefG).
 * Zur Orientierung zeigt die App bei jedem Angebot den Vergleich mit einem ÖPNV-Einzelticket und den Anteil an den Energiekosten – als Hilfe, nicht als Grenze.
 
 ```
-abgerechnete km = geplante Route (fällig mit dem Einsteigen) – bei Fahrtabbruch: gefahrene Strecke (GPS), höchstens die geplante Route
-Fahrpreis       = abgerechnete km × Kilometersatz (aus Durchschnittswerten) × Personen
-Anfahrt         = Umweg zum Treffpunkt (km) × Kilometersatz → zu 100 % Fahrer, KEINE Provision
-Provision       = Fahrpreis × 10 % (im Preis enthalten)      → Betreiber, davon 1 Cent Umweltspende
-Rabatt          = 6 / 10 / 20 % der Provision bei Vorkasse   → senkt den Preis, nicht den Fahreranteil
-Fahreranteil    = Fahrpreis − volle Provision + Anfahrt      → Fahrer
-Mitfahrer zahlt = Fahrpreis + Anfahrt − Rabatt
+abgerechnete km  = geplante Route (fällig mit dem Einsteigen) – bei Fahrtabbruch: gefahrene Strecke (GPS), höchstens die geplante Route
+Fahreranteil     = km × 8 ct (Durchschnittswerte) × Personen      → Fahrer
+Provision        = km × 5 ct × Personen                           → Betreiber
+Umweltspende     = km × 5 ct × Personen                           → Umweltschutz
+Anfahrt          = Umweg zum Treffpunkt (km) × 8 ct               → zu 100 % Fahrer, ohne Provision und Spende
+Rabatt           = 6 / 10 / 20 % der Provision bei Vorkasse       → senkt den Preis, nicht den Fahreranteil
+Mitfahrer zahlt  = Fahreranteil + Provision − Rabatt + Umweltspende + Anfahrt   (zusammen 18 ct/km)
 ```
+
+Beispiel 20 km: Fahrer 1,60 € + Provision 1,00 € + Umweltspende 1,00 € = **3,60 €** (ÖPNV-Einzelticket ca. 3,80 €).
 
 * **Anfahrt zum Treffpunkt:** der Weg von der Route des Fahrers zum Abholort (Abstand × Straßenfaktor 1,3), einmal pro Fahrt, als eigene Buchung im Journal, ohne CO₂-Gutschrift.
 * **Fällig mit dem Fahrtantritt:** Mit „Eingestiegen“ wird der Preis der geplanten Route fällig – auch wenn die Fahrt früher endet. Umwege zahlt der Mitfahrer nie. Der Preis der geplanten Route ist der **Höchstbetrag**.

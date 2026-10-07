@@ -61,6 +61,8 @@ section { padding: clamp(48px, 7vw, 96px) clamp(16px, 6vw, 96px); }
 .example dl div { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--line); }
 .example dt { color: var(--muted); }
 .example dd { margin: 0; font-weight: 700; font-variant-numeric: tabular-nums; }
+.example dl div.sum { border-bottom: 2px solid var(--green-900); }
+.example dl div.sum dt { color: var(--green-900); font-weight: 700; }
 .fine { font-size: .82rem; color: var(--muted); margin: 12px 0 0; }
 .checks-list { list-style: none; padding: 0; margin: 0; display: grid; gap: 12px; font-size: 1.05rem; }
 

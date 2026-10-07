@@ -28,7 +28,7 @@ const fakeRouting = {
 
 const config = {
   adminEmail: 'chef@example.org',
-  pricing: { ratePerKmCents: 25, commissionPercent: 10, donationCentsPerRide: 1, co2GramsPerCarKm: 150 },
+  pricing: { ratePerKmCents: 25, commissionPerKmCents: 5, donationPerKmCents: 5, co2GramsPerCarKm: 150 },
   rides: { autoConfirmHours: 24 },
   points: { unratedFactor: 7 },
   funfacts: { minDrivers: 2, minRatings: 3 },
@@ -109,7 +109,7 @@ test('kompletter Ablauf: Führerschein → Fahrt → Match → Buchung → GPS �
   const plan = (await rider('POST', '/api/match', { pickup, dropoff })).plannedRoute;
   assert.ok(Math.abs(plan.distanceKm - 17) < 0.5);
   assert.ok(plan.coords.length > 2);
-  assert.equal(matches[0].price.fareCents, Math.round(plan.distanceKm * 25));
+  assert.equal(matches[0].price.driverFareCents, Math.round(plan.distanceKm * 25));
 
   // Ohne Bestätigung der Route keine Buchung
   assert.equal((await rider('POST', '/api/rides', { tripId: trip.id, pickup, dropoff })).status, 400);
@@ -158,8 +158,8 @@ test('kompletter Ablauf: Führerschein → Fahrt → Match → Buchung → GPS �
   assert.ok(Math.abs(done.final.km - done.final.plannedKm) < 0.01, String(done.final.km));
   assert.ok(Math.abs(done.final.trackedKm - 10) < 0.1);
   assert.ok(done.final.plannedKm > 16);
-  assert.equal(done.final.fareCents, Math.round(done.final.km * 25));
-  assert.equal(done.final.donationCents, 1);
+  assert.equal(done.final.driverFareCents, Math.round(done.final.km * 25));
+  assert.equal(done.final.donationCents, Math.round(done.final.km * 5), 'Umweltspende 5 ct je km');
 
   const riderMe = (await rider('GET', '/api/me')).user;
   const driverMe = (await driver('GET', '/api/me')).user;
@@ -173,7 +173,7 @@ test('kompletter Ablauf: Führerschein → Fahrt → Match → Buchung → GPS �
   assert.equal(done.final.totalCents, done.final.fareCents + done.final.detourCents - done.final.discountCents);
   const stats = await admin('GET', '/api/admin/stats');
   assert.equal(stats.commissionCents, done.final.platformCents);
-  assert.equal(stats.donationCents, 1);
+  assert.equal(stats.donationCents, done.final.donationCents);
   assert.equal(stats.ridesCompleted, 1);
   // Geld geht nicht verloren: Mitfahrer zahlt = Fahrer + Provision + Spende
   assert.equal(done.final.totalCents, done.final.driverCents + stats.commissionCents + stats.donationCents);
@@ -460,12 +460,12 @@ test('Anfahrt zum Treffpunkt geht ohne Provision an den Fahrer; Filter kommen au
   await driver('POST', `/api/rides/${ride.id}/confirm`, {});
   const done = (await rider('POST', `/api/rides/${ride.id}/confirm`, { nps: 9 })).ride;
   assert.equal(done.final.detourCents, price.detourCents);
-  assert.equal(done.final.commissionFullCents, Math.round((done.final.fareCents * 10) / 100), 'Provision nur auf gemeinsame Strecke');
+  assert.equal(done.final.commissionFullCents, Math.round(done.final.km * 5), 'Provision 5 ct je km, nur auf die gemeinsame Strecke');
   const tx = (await driver('GET', '/api/wallet/transactions')).transactions;
   assert.equal(tx.find((x) => x.type === 'pickup_detour').amountCents, price.detourCents);
   const dMe = (await driver('GET', '/api/me')).user;
   assert.equal(dMe.walletCents, done.final.driverCents);
-  assert.equal(done.final.driverCents, done.final.fareCents - done.final.commissionFullCents + done.final.detourCents, 'Rabatt geht nicht zulasten des Fahrers');
+  assert.equal(done.final.driverCents, done.final.driverFareCents + done.final.detourCents, 'Rabatt geht nicht zulasten des Fahrers');
   assert.equal((await admin('GET', '/api/admin/stats')).commissionCents, done.final.platformCents);
 });
 

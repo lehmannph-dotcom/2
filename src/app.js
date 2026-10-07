@@ -1221,8 +1221,7 @@ function createApp({ store, config, routing }) {
     book(`user:${rider.id}`, -fare.totalCents, 'ride_payment', ride.id, `Mitfahrt ${fmtKm(fare.km)} km${abortNote}`);
     book(`user:${driver.id}`, fare.driverCents - fare.detourCents, 'ride_earning', ride.id, `Fahreranteil ${fmtKm(fare.km)} km`);
     if (fare.detourCents) book(`user:${driver.id}`, fare.detourCents, 'pickup_detour', ride.id, `Anfahrt zum Treffpunkt ${fmtKm(fare.detourKm)} km (ohne Provision)`);
-    // Die Umweltspende zahlt der Betreiber aus seiner Provision
-    book('platform', fare.platformCents, 'commission', ride.id, `Provision ${config.pricing.commissionPercent} %`);
+    book('platform', fare.platformCents, 'commission', ride.id, `Provision ${fmtKm(fare.km)} km`);
     book('donation', fare.donationCents, 'donation', ride.id, 'Spende Umweltschutz');
 
     rider.co2SavedKg = (rider.co2SavedKg || 0) + fare.co2SavedKg;

@@ -8,12 +8,14 @@
  * einem selbst gewählten Satz – so zahlen alle für dieselbe Strecke denselben fairen Preis.
  * Vergleichswerte (Nahverkehr, Energiekosten) helfen bei der Einordnung, sind aber keine Grenze.
  *
- *   Fahrpreis        = km × Kilometersatz × Personen
- *   Anfahrt          = Umweg-km zum Treffpunkt × Kilometersatz → zu 100 % an den Fahrer
- *   Provision        = Fahrpreis × Provisionssatz (im Preis enthalten; daraus 1 Cent Umweltspende)
+ *   Fahreranteil     = km × Kilometersatz × Personen + Anfahrt   → Fahrer
+ *   Anfahrt          = Umweg-km zum Treffpunkt × Kilometersatz   → zu 100 % an den Fahrer
+ *   Provision        = km × Provision je km × Personen           → Betreiber (abzüglich Rabatt)
+ *   Umweltspende     = km × Spende je km × Personen              → Umweltschutz
  *   Rabatt           = Prozent der Provision bei Bezahlung aus Vorkasse-Guthaben
- *   Fahreranteil     = Fahrpreis − volle Provision + Anfahrt   (Rabatt geht nicht zulasten des Fahrers)
- *   Gesamt (Mitfahrer zahlt) = Fahrpreis + Anfahrt − Rabatt
+ *   Gesamt (Mitfahrer zahlt) = Fahreranteil + Provision − Rabatt + Umweltspende
+ *
+ * Provision und Spende fallen nur auf die gemeinsame Strecke an, nicht auf die Anfahrt.
  *
  * Alle Beträge in ganzen Cent.
  */
@@ -57,14 +59,15 @@ function computeFare(km, pricing, seats = 1, { pickupDetourKm = 0, commissionDis
   const energyPerKm = energyCostPerKmCents(pricing);
   const billedKm = Math.max(0, Math.round(km * 100) / 100);
   const detourKm = pickupDetourKm >= 0.1 ? Math.round(pickupDetourKm * 100) / 100 : 0;
-  const fareCents = Math.round(billedKm * rate * seats);
+  const driverFareCents = Math.round(billedKm * rate * seats);
   const detourCents = Math.round(detourKm * rate);
-
-  const commissionFullCents = Math.round((fareCents * pricing.commissionPercent) / 100);
+  const commissionFullCents = Math.round(billedKm * (pricing.commissionPerKmCents || 0) * seats);
   const discountPercent = Math.max(0, Math.min(100, commissionDiscountPercent || 0));
   const discountCents = Math.round((commissionFullCents * discountPercent) / 100);
   const commissionCents = commissionFullCents - discountCents;
-  const donationCents = fareCents > 0 ? pricing.donationCentsPerRide : 0;
+  const donationCents = Math.round(billedKm * (pricing.donationPerKmCents || 0) * seats);
+  // Fahrtkosten der gemeinsamen Strecke (ohne Anfahrt, vor Rabatt)
+  const fareCents = driverFareCents + commissionFullCents + donationCents;
   const totalCents = fareCents + detourCents - discountCents;
   const transitTotal = transitFareCents(billedKm, pricing);
   const energyCents = energyPerKm ? Math.round((billedKm + detourKm) * energyPerKm) : null;
@@ -72,23 +75,27 @@ function computeFare(km, pricing, seats = 1, { pickupDetourKm = 0, commissionDis
     km: billedKm,
     seats,
     ratePerKmCents: rate,
+    commissionPerKmCents: pricing.commissionPerKmCents || 0,
+    donationPerKmCents: pricing.donationPerKmCents || 0,
+    totalPerKmCents: rate + (pricing.commissionPerKmCents || 0) + (pricing.donationPerKmCents || 0),
+    driverFareCents,
     fareCents,
     commissionFullCents,
     commissionDiscountPercent: discountPercent,
     discountCents,
     commissionCents,
-    // Spende aus der Provision: Der Betreiber behält Provision − Spende
-    platformCents: commissionCents - donationCents,
+    platformCents: commissionCents,
     detourKm,
     detourCents,
-    driverCents: fareCents - commissionFullCents + detourCents,
+    driverCents: driverFareCents + detourCents,
     donationCents,
     totalCents,
     // Orientierung für einen angemessenen Preis
     transitFareCents: transitTotal === null ? null : transitTotal * seats,
     savingsVsTransitPercent: transitTotal ? Math.round((1 - totalCents / (transitTotal * seats)) * 100) : null,
     energyCostCents: energyCents,
-    energySharePercent: energyCents ? Math.round((totalCents / energyCents) * 100) : null,
+    // Anteil des Mitfahrers an den Energiekosten (was der Fahrer erhält)
+    energySharePercent: energyCents ? Math.round(((driverFareCents + detourCents) / energyCents) * 100) : null,
     co2SavedKg: co2SavedKg(billedKm * seats, pricing),
   };
 }

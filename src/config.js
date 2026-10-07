@@ -35,8 +35,9 @@ module.exports = {
     avgConsumptionLitersPer100Km: num('AVG_CONSUMPTION_L_PER_100KM', 7),
     riderEnergySharePercent: num('RIDER_ENERGY_SHARE_PERCENT', 67),
     ...(process.env.RATE_PER_KM_CENTS ? { ratePerKmCents: num('RATE_PER_KM_CENTS', 8) } : {}),
-    commissionPercent: num('COMMISSION_PERCENT', 10),  // im Preis enthalten
-    donationCentsPerRide: num('DONATION_CENTS_PER_RIDE', 1), // aus der Provision gezahlt
+    // Zusätzlich je Kilometer (je Person, nur gemeinsame Strecke):
+    commissionPerKmCents: num('COMMISSION_PER_KM_CENTS', 5), // Vermittlungsprovision → Betreiber
+    donationPerKmCents: num('DONATION_PER_KM_CENTS', 5),     // Umweltspende → Umweltschutz
     // Vergleich mit dem Nahverkehr (nur Orientierung, keine Grenze):
     transitDiscountPercent: num('TRANSIT_DISCOUNT_PERCENT', 30),
     // Richtwerte Einzelticket in deutschen Ballungsräumen (2026) – an den regionalen Tarif anpassen.

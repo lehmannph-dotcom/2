@@ -23,7 +23,7 @@ const routing = {
 const config = {
   adminEmail: 'chef@example.org',
   pricing: {
-    avgFuelPriceCentsPerLiter: 175, avgConsumptionLitersPer100Km: 7, riderEnergySharePercent: 67, commissionPercent: 10, donationCentsPerRide: 1, co2GramsPerCarKm: 150,
+    avgFuelPriceCentsPerLiter: 175, avgConsumptionLitersPer100Km: 7, riderEnergySharePercent: 67, commissionPerKmCents: 5, donationPerKmCents: 5, co2GramsPerCarKm: 150,
     transitFares: [{ maxKm: 3, cents: 260 }, { maxKm: 20, cents: 380 }, { maxKm: 45, cents: 500 }], transitPerKmBeyondCents: 18,
   },
   identity: { provider: 'demo', webhookSecret: 'geheim-webhook' },
@@ -200,5 +200,5 @@ test('Kilometersatz kommt aus Durchschnittswerten – Fahrer können ihn nicht s
   assert.equal(m.matches[0].price.ratePerKmCents, 8);
   const { ride } = await r('POST', '/api/rides', { tripId: trip.id, pickup, dropoff, confirmPlannedRoute: true });
   assert.equal(ride.ratePerKmCents, 8);
-  assert.equal(ride.estimate.fareCents, Math.round(ride.plannedKm * 8));
+  assert.equal(ride.estimate.driverFareCents, Math.round(ride.plannedKm * 8));
 });

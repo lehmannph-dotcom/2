@@ -60,6 +60,7 @@ const MSG_TEMPLATES = [
   N_('Fahreranteil {km} km'),
   N_('Anfahrt zum Treffpunkt {km} km (ohne Provision)'),
   N_('Provision {n} %'),
+  N_('Provision {km} km'),
 ];
 let msgPatterns = null;
 const reEscape = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -142,7 +143,7 @@ async function chooseLanguage(code) {
 function applyStaticTexts() {
   document.title = t('joinmyride.com – Teilen statt Leerfahren');
   const desc = document.querySelector('meta[name=description]');
-  if (desc) desc.content = t('joinmyride.com – die Ad-hoc-Mitfahrzentrale: Fahrer bieten ihre Google-Maps-Route an, Mitfahrer teilen die Kosten pro Kilometer. 1 Cent jeder Fahrt geht an den Umweltschutz.');
+  if (desc) desc.content = t('joinmyride.com – die Ad-hoc-Mitfahrzentrale: Fahrer bieten ihre Google-Maps-Route an, Mitfahrer teilen die Kosten pro Kilometer. 5 Cent je Kilometer gehen an den Umweltschutz.');
   document.querySelectorAll('[data-i18n]').forEach((el) => (el.textContent = t(el.dataset.i18n)));
   document.querySelectorAll('[data-i18n-aria]').forEach((el) => el.setAttribute('aria-label', t(el.dataset.i18nAria)));
   const sel = document.getElementById('lang-select');
@@ -694,8 +695,9 @@ const PLANNED_STYLE = { color: '#2f7350', weight: 4, dash: '10 8', opacity: 0.9 
 const TIP = {
   billing: (who = 'du') => `<p><b>${t('So wird abgerechnet')}</b></p><p>${t('Grundlage ist die <b>schnellste Route laut Plan</b>, die ihr beide vorab bestätigt habt.')}</p><p>${who === 'du' ? t('Mit dem <b>Einsteigen</b> wird der Preis der geplanten Route fällig – auch wenn die Fahrt früher endet. Ist die Strecke länger (Umweg), bleibt es beim geplanten Preis – Umwege zahlst du nie.') : t('Mit dem <b>Einsteigen</b> wird der Preis der geplanten Route fällig – auch wenn die Fahrt früher endet. Ist die Strecke länger (Umweg), bleibt es beim geplanten Preis – Umwege zahlt der Mitfahrer nie.')}</p><p>${t('Nur bei einem <b>begründeten Fahrtabbruch</b> wird die bis dahin gefahrene Strecke (GPS) berechnet. Abbrüche erscheinen als Fahrtabbruchsquote im Profil beider Beteiligten.')}</p>`,
   price: () => {
-    const c = (state.config && state.config.pricing) || { ratePerKmCents: 8, energyCostPerKmCents: 12.25, avgFuelPriceCentsPerLiter: 175, avgConsumptionLitersPer100Km: 7, riderEnergySharePercent: 67, commissionPercent: 10, donationCentsPerRide: 1 };
-    return `<p><b>${t('Fair geteilt – kein Fahrdienst')}</b></p><p>${t('Der Fahrer stellt Auto und Zeit, der Mitfahrer beteiligt sich mit rund {share} % an Kraftstoff bzw. Strom. Gerechnet wird mit Durchschnittswerten – so zahlt jeder für dieselbe Strecke denselben fairen Preis.', { share: num(c.riderEnergySharePercent ?? 67) })}</p><table><tr><td>${t('Ø-Kraftstoffpreis')}</td><td>${euro(c.avgFuelPriceCentsPerLiter || 0)}/l</td></tr><tr><td>${t('Ø-Verbrauch')}</td><td>${num(c.avgConsumptionLitersPer100Km || 0, 1)} l/100 km</td></tr><tr><td>${t('Ø-Energiekosten')}</td><td>${euro(c.energyCostPerKmCents || 0)}/km</td></tr><tr><td>${t('Kilometersatz')}</td><td>${euro(c.ratePerKmCents)}/km</td></tr><tr><td>${t('an den Fahrer')}</td><td>${num(100 - c.commissionPercent)} %</td></tr><tr><td>${t('Vermittlungsprovision (enthalten)')}</td><td>${num(c.commissionPercent)} %</td></tr><tr><td>${t('Anfahrt zum Treffpunkt')}</td><td>${t('100 % Fahrer')}</td></tr></table><p style="margin-top:6px">${t('Die Umweltspende von {donation} je Fahrt zahlt der Betreiber aus seiner Provision. Mit Vorkasse-Guthaben sparst du bis zu 20 % der Provision.', { donation: euro(c.donationCentsPerRide) })}</p><p>${t('Der Preis der geplanten Route ist der Höchstbetrag. Er wird reserviert und erst nach der Fahrt abgebucht.')}</p>`;
+    const c = (state.config && state.config.pricing) || { ratePerKmCents: 8, energyCostPerKmCents: 12.25, avgFuelPriceCentsPerLiter: 175, avgConsumptionLitersPer100Km: 7, riderEnergySharePercent: 67, commissionPerKmCents: 5, donationPerKmCents: 5 };
+    const total = c.ratePerKmCents + (c.commissionPerKmCents || 0) + (c.donationPerKmCents || 0);
+    return `<p><b>${t('Fair geteilt – kein Fahrdienst')}</b></p><p>${t('Der Fahrer stellt Auto und Zeit, der Mitfahrer beteiligt sich mit rund {share} % an Kraftstoff bzw. Strom. Gerechnet wird mit Durchschnittswerten – so zahlt jeder für dieselbe Strecke denselben fairen Preis.', { share: num(c.riderEnergySharePercent ?? 67) })}</p><table><tr><td>${t('Ø-Kraftstoffpreis')}</td><td>${euro(c.avgFuelPriceCentsPerLiter || 0)}/l</td></tr><tr><td>${t('Ø-Verbrauch')}</td><td>${num(c.avgConsumptionLitersPer100Km || 0, 1)} l/100 km</td></tr><tr><td>${t('Ø-Energiekosten')}</td><td>${euro(c.energyCostPerKmCents || 0)}/km</td></tr><tr><td>${t('Fahreranteil')}</td><td>${euro(c.ratePerKmCents)}/km</td></tr><tr><td>${t('Vermittlungsprovision')}</td><td>${euro(c.commissionPerKmCents || 0)}/km</td></tr><tr><td>${t('Umweltspende')}</td><td>${euro(c.donationPerKmCents || 0)}/km</td></tr><tr><td><b>${t('Zusammen')}</b></td><td>${euro(total)}/km</td></tr><tr><td>${t('Anfahrt zum Treffpunkt')}</td><td>${t('100 % Fahrer')}</td></tr></table><p style="margin-top:6px">${t('Provision und Umweltspende fallen nur auf die gemeinsame Strecke an, nicht auf die Anfahrt zum Treffpunkt. Mit Vorkasse-Guthaben sparst du bis zu 20 % der Provision.')}</p><p>${t('Der Preis der geplanten Route ist der Höchstbetrag. Er wird reserviert und erst nach der Fahrt abgebucht.')}</p>`;
   },
   payment: (isRider) => `<p><b>${t('Wann wird bezahlt?')}</b></p><p>${isRider ? t('Sobald der Fahrer dich abgesetzt <b>und</b> du die Fahrt bewertet hast – Reihenfolge egal.') : t('Sobald der Fahrer den Mitfahrer abgesetzt <b>und</b> der Mitfahrer die Fahrt bewertet hat – Reihenfolge egal.')}</p><p>${t('Die Bewertung ändert den Preis nicht. Ohne Rückmeldung gilt die Fahrt nach 24 h als bestätigt.')}</p>`,
   points: () => `<p><b>${t('Punkte = Faktor × eingesparte kg CO₂')}</b></p><p>${t('Der Faktor ist die Bewertung, die du vom jeweils anderen bekommst:')}</p><table><tr><td>10 · 9 · 8 · 7</td><td>×10 · ×9 · ×8 · ×7</td></tr><tr><td>6 · 5 · 4</td><td>×1</td></tr><tr><td>3 · 2 · 1 · 0</td><td>×0</td></tr></table>`,
@@ -1012,13 +1014,16 @@ function priceComparison(p) {
 }
 
 function priceCard(p, title) {
-  const calc = p.seats > 1
-    ? t('{km} × {rate} × {seats} Pers.', { km: km(p.km), rate: euro(p.ratePerKmCents), seats: num(p.seats) })
-    : `${km(p.km)} × ${euro(p.ratePerKmCents)}`;
-  const split = `<table><tr><td>${calc}</td><td>${euro(p.fareCents)}</td></tr><tr><td>${t('davon an den Fahrer')}</td><td>${euro(p.driverCents - p.detourCents)}</td></tr><tr><td>${t('davon Vermittlungsprovision')}</td><td>${euro(p.commissionFullCents ?? p.commissionCents)}</td></tr><tr><td>${t('davon Umweltspende (aus der Provision)')}</td><td>${euro(p.donationCents)}</td></tr></table><p style="margin-top:6px">${t('Provision nur auf die gemeinsame Strecke – nicht auf die Anfahrt zum Treffpunkt.')}</p>`;
+  // „12,0 km × 0,08 €“ bzw. mit Personenzahl
+  const perKm = (cents) => (p.seats > 1
+    ? t('{km} × {rate} × {seats} Pers.', { km: km(p.km), rate: euro(cents), seats: num(p.seats) })
+    : `${km(p.km)} × ${euro(cents)}`);
+  const row = (label, calc, cents, tip) => `<tr><td>${label}${tip ? ' ' + info(tip) : ''}<br><span class="muted small">${calc}</span></td><td>${euro(cents)}</td></tr>`;
   return `<div class="card"><h3>${title} ${info(TIP.price())}</h3>
     <table class="breakdown">
-      <tr><td>${withTip(t('Fahrtkosten {km}', { km: km(p.km) }), split)}</td><td>${euro(p.fareCents)}</td></tr>
+      ${row(t('Fahreranteil (Kraftstoff bzw. Strom)'), perKm(p.ratePerKmCents), p.driverFareCents ?? p.fareCents)}
+      ${p.commissionPerKmCents ? row(t('Vermittlungsprovision'), perKm(p.commissionPerKmCents), p.commissionFullCents) : ''}
+      ${p.donationPerKmCents ? row(t('Umweltspende'), perKm(p.donationPerKmCents), p.donationCents, t('Geht vollständig an [Organisation] für den Umweltschutz.')) : ''}
       ${p.detourCents ? `<tr><td>${t('Anfahrt zum Treffpunkt {km}', { km: km(p.detourKm) })} ${info(TIP.detour())}</td><td>${euro(p.detourCents)}</td></tr>` : ''}
       ${p.discountCents ? `<tr><td>${t('Vorkasse-Rabatt ({percent} % der Provision)', { percent: num(p.commissionDiscountPercent) })}</td><td>−${euro(p.discountCents)}</td></tr>` : ''}
       <tr class="total"><td>${t('Gesamt')} ${info(TIP.billing())}</td><td>${euro(p.totalCents)}</td></tr>
@@ -1149,7 +1154,7 @@ async function renderDriver(panel) {
   $('#d-preview').onclick = (e) =>
     guard(async () => {
       const { route } = await api('/api/route/preview', await routeBody());
-      const share = Math.round(route.distanceKm * state.config.pricing.ratePerKmCents * (1 - state.config.pricing.commissionPercent / 100)) * Number($('#d-seats').value);
+      const share = Math.round(route.distanceKm * state.config.pricing.ratePerKmCents) * Number($('#d-seats').value);
       $('#d-route').innerHTML = `<div class="card"><h3>${esc(shortLabel(route.origin))} → ${esc(shortLabel(route.destination))}</h3>
         <p class="muted">${km(route.distanceKm)} · ${t('ca. {min}', { min: minutes(route.durationMin) })} ${info(`<p>${t('Quelle: {provider}', { provider: esc(route.provider) })}</p><p>${t('Bei voll besetzten Plätzen könntest du bis zu <b>{amount}</b> deiner Fahrtkosten teilen.', { amount: euro(share) })}</p>`)}</p></div>`;
       drawMap({ routes: [{ coords: route.coords }], points: [{ ...route.origin, color: '#4a9a6e', text: 'S' }, { ...route.destination, color: '#1c3a2a', text: 'Z' }] });
@@ -1171,7 +1176,7 @@ async function renderDriver(panel) {
 /** Fester Kilometersatz aus Durchschnittswerten – zur Information für den Fahrer. */
 function rateInfoHtml() {
   const c = state.config.pricing;
-  return `<p class="muted small rate-info">${t('Preis für Mitfahrer: {rate}/km – rund zwei Drittel der durchschnittlichen Energiekosten.', { rate: euro(c.ratePerKmCents) })} ${info(TIP.price())}</p>`;
+  return `<p class="muted small rate-info">${t('Du erhältst {rate}/km je Mitfahrer – rund zwei Drittel der durchschnittlichen Energiekosten. Dazu zahlt der Mitfahrer je {commission}/km Vermittlungsprovision und {donation}/km Umweltspende.', { rate: euro(c.ratePerKmCents), commission: euro(c.commissionPerKmCents || 0), donation: euro(c.donationPerKmCents || 0) })} ${info(TIP.price())}</p>`;
 }
 
 async function renderActiveTrip(panel) {
@@ -1585,7 +1590,7 @@ async function renderAccount(panel) {
         <div class="match">
           <div class="top"><span>${r.role === 'rider' ? t('Mitgefahren bei <b>{name}</b>', { name: esc(r.driverName) }) : t('Mitgenommen: <b>{name}</b>', { name: esc(r.riderName) })}${r.abort ? ` <span class="badge warn" tabindex="0" data-tip="${esc(abortedByText(r))}">${t('Fahrtabbruch')}</span>` : ''}</span>
             <b>${r.role === 'rider' ? '−' + euro(r.final.totalCents) : '+' + euro(r.final.driverCents)}</b></div>
-          <div class="muted small">${fmtDate(r.completedAt)} · ${km(r.final.km)} · ${kg(r.final.co2SavedKg)} kg CO₂ ${info(`<table><tr><td>${t('Abgerechnet')}</td><td>${km(r.final.km)}</td></tr><tr><td>${t('Grundlage')}</td><td>${basisLabel(r.final.billing)}</td></tr>${r.final.plannedKm ? `<tr><td>${t('Geplante Route')}</td><td>${km(r.final.plannedKm)}</td></tr><tr><td>${t('Gefahren (GPS)')}</td><td>${r.final.trackedKm > 0.2 ? km(r.final.trackedKm) : '–'}</td></tr>` : ''}${r.final.detourCents ? `<tr><td>${t('Anfahrt zum Treffpunkt')}</td><td>${t('{km} · {amount} (ohne Provision)', { km: km(r.final.detourKm), amount: euro(r.final.detourCents) })}</td></tr>` : ''}${r.final.discountCents ? `<tr><td>${t('Vorkasse-Rabatt ({percent} % der Provision)', { percent: num(r.final.commissionDiscountPercent) })}</td><td>−${euro(r.final.discountCents)}</td></tr>` : ''}<tr><td>${t('CO₂ gespart')}</td><td>${kg(r.final.co2SavedKg)} kg</td></tr><tr><td>${t('davon Umweltspende (aus der Provision)')}</td><td>${euro(r.final.donationCents)}</td></tr></table>${r.role === 'rider' ? `<p>${paymentLabel(r)}</p>` : ''}<p style="margin-top:6px">${fmtDateTime(r.completedAt)}</p>`, t('Details zur Abrechnung'))}</div>
+          <div class="muted small">${fmtDate(r.completedAt)} · ${km(r.final.km)} · ${kg(r.final.co2SavedKg)} kg CO₂ ${info(`<table><tr><td>${t('Abgerechnet')}</td><td>${km(r.final.km)}</td></tr><tr><td>${t('Grundlage')}</td><td>${basisLabel(r.final.billing)}</td></tr>${r.final.plannedKm ? `<tr><td>${t('Geplante Route')}</td><td>${km(r.final.plannedKm)}</td></tr><tr><td>${t('Gefahren (GPS)')}</td><td>${r.final.trackedKm > 0.2 ? km(r.final.trackedKm) : '–'}</td></tr>` : ''}${r.final.detourCents ? `<tr><td>${t('Anfahrt zum Treffpunkt')}</td><td>${t('{km} · {amount} (ohne Provision)', { km: km(r.final.detourKm), amount: euro(r.final.detourCents) })}</td></tr>` : ''}${r.final.discountCents ? `<tr><td>${t('Vorkasse-Rabatt ({percent} % der Provision)', { percent: num(r.final.commissionDiscountPercent) })}</td><td>−${euro(r.final.discountCents)}</td></tr>` : ''}<tr><td>${t('CO₂ gespart')}</td><td>${kg(r.final.co2SavedKg)} kg</td></tr>${r.final.commissionCents ? `<tr><td>${t('Vermittlungsprovision')}</td><td>${euro(r.final.commissionCents)}</td></tr>` : ''}<tr><td>${t('Umweltspende')}</td><td>${euro(r.final.donationCents)}</td></tr></table>${r.role === 'rider' ? `<p>${paymentLabel(r)}</p>` : ''}<p style="margin-top:6px">${fmtDateTime(r.completedAt)}</p>`, t('Details zur Abrechnung'))}</div>
           <div class="small">${ridePointsLine(r.myPoints)}</div>
           ${r.role === 'rider' ? riderGuestbookLine(r) : ''}
           ${r.myRating ? `<div class="muted small">${t('Deine Bewertung: <b>{score}</b>/10', { score: num(r.myRating.score) })}${r.myRating.aspects && r.myRating.aspects.length ? ` · ${t('Gründe: {list}', { list: r.myRating.aspects.map((id) => esc(aspectLabel(r.role === 'rider' ? 'driver' : 'rider', id))).join(', ') })}` : ''}</div>` : `<form class="nps-form" data-rate-form="${r.id}">${npsWidget(t('Wie wahrscheinlich ist es, dass du {name} weiterempfiehlst?', { name: r.role === 'rider' ? r.driverName : r.riderName }), r.role === 'rider' ? 'driver' : 'rider')}<div class="btn-row"><button data-submit disabled>${t('Bewertung senden')}</button></div></form>`}
@@ -2051,7 +2056,7 @@ const legalTranslationNote = () => (I18N.lang === 'de' ? '' : `<div class="card 
 
 function renderPrivacyPolicy(panel) {
   drawMap();
-  const cfg = state.config ? state.config.pricing : { donationCentsPerRide: 1, commissionPercent: 10 };
+  const cfg = state.config ? state.config.pricing : { commissionPerKmCents: 5, donationPerKmCents: 5 };
   panel.innerHTML = `
     <div class="card legal">
       <h2>${t('Datenschutzerklärung')}</h2>
@@ -2072,7 +2077,7 @@ function renderPrivacyPolicy(panel) {
         <li>${t('<b>Bezahlung:</b> Vorkasse-Guthaben mit Rabattstufe, gewählte Zahlungsart; Kartendaten verarbeitet ausschließlich der Zahlungsdienstleister. Zweck: Abrechnung (Art. 6 Abs. 1 lit. b und c DSGVO).')}</li>
         <li>${t('<b>Rollen:</b> ob du heute als Fahrer und/oder Mitfahrer unterwegs bist (Schiebeschalter), um dir die passenden Funktionen anzuzeigen (Art. 6 Abs. 1 lit. b DSGVO).')}</li>
         <li>${t('<b>Standortdaten:</b> Abholort und Ziel von Mitfahrern; Route und – nur während einer aktiv angebotenen Fahrt und nur nach deinem Start der Standortfreigabe – der GPS-Standort von Fahrern. Zweck: Vermittlung und Abrechnung nach gefahrenen Kilometern (Art. 6 Abs. 1 lit. b DSGVO). Andere Mitglieder sehen Start und Ziel eines Fahrers nur vergröbert; den Live-Standort sehen nur bestätigte Mitfahrer.')}</li>
-        <li>${t('<b>Fahrten und Zahlungen:</b> Buchungen, gefahrene km, Preise, Provision ({percent} %), Umweltspende ({donation} pro Fahrt), Bewertungen. Zweck: Abrechnung und gesetzliche Aufbewahrung (Art. 6 Abs. 1 lit. b und c DSGVO).', { percent: num(cfg.commissionPercent), donation: euro(cfg.donationCentsPerRide) })}</li>
+        <li>${t('<b>Fahrten und Zahlungen:</b> Buchungen, gefahrene km, Preise, Vermittlungsprovision ({commission} je km), Umweltspende ({donation} je km), Bewertungen. Zweck: Abrechnung und gesetzliche Aufbewahrung (Art. 6 Abs. 1 lit. b und c DSGVO).', { commission: euro(cfg.commissionPerKmCents || 0), donation: euro(cfg.donationPerKmCents || 0) })}</li>
         <li>${t('<b>Gästebuch (freiwillig):</b> Nach Fahrten über 1 Stunde oder 100 km können Mitfahrer ein positives Erlebnis teilen. Veröffentlicht werden nur Text, Monat und Art der Fahrt – ohne Namen. Intern speichern wir, wer den Eintrag verfasst hat, damit du ihn löschen kannst und Missbrauch verhindert wird (Art. 6 Abs. 1 lit. a DSGVO, Einwilligung; jederzeit widerrufbar durch Löschen). Fahrer können Einträge ausblenden oder das Gästebuch abschalten.')}</li>
         <li>${t('<b>Funfacts:</b> Aus den Bewertungen erstellen wir zusammengefasste Statistiken nach Ortskürzel des Kennzeichens und Automarke (freiwillige Profilangaben; das vollständige Kennzeichen speichern wir nicht). Eine Stadt oder Marke wird erst ab mehreren Fahrern und Bewertungen angezeigt, sodass kein Rückschluss auf Einzelne möglich ist (Art. 6 Abs. 1 lit. f DSGVO).')}</li>
         <li>${t('<b>Bewertungen und Punkte:</b> Bewertungen (0–10, optionale Gründe wie Sauberkeit oder Fahrweise und optionaler Kommentar). Gründe und Kommentare sieht der Bewertete nur gesammelt und anonym ab mindestens drei Rückmeldungen, ohne Datum oder Zuordnung zu einer Fahrt – sie dienen dazu, dass Fahrer und Mitfahrer dazulernen können. Daraus berechnen wir NPS, Punkte, Level und Abzeichen. Zweck: Vertrauen zwischen Fahrtpartnern, Qualität, Motivation zum Teilen von Fahrten (Art. 6 Abs. 1 lit. b und f DSGVO). Einzelbewertungen sieht nur, wer sie abgegeben hat; andere sehen nur Zusammenfassungen. In der <b>Bestenliste</b> erscheinst du nur mit deiner Einwilligung (Art. 6 Abs. 1 lit. a DSGVO), die du jederzeit widerrufen kannst.')}</li>
@@ -2459,7 +2464,7 @@ async function feedbackCard() {
 function renderTerms(panel) {
   drawMap();
   const c = state.config || {};
-  const pr = c.pricing || { ratePerKmCents: 25, commissionPercent: 10, donationCentsPerRide: 1 };
+  const pr = c.pricing || { ratePerKmCents: 8, commissionPerKmCents: 5, donationPerKmCents: 5 };
   const ap = c.abortPolicy || { maxQuote: 20, minRides: 5 };
   const reasons = (c.abortReasons || []).map((r) => esc(t(r.label))).join(', ');
   panel.innerHTML = `
@@ -2504,7 +2509,7 @@ function renderTerms(panel) {
         <li>${t('Fahrer legen keinen eigenen Preis fest und nehmen keine zusätzlichen Zahlungen an. So bleibt das Entgelt unter den Betriebskosten der Fahrt (§ 1 Abs. 2 Nr. 1 PBefG).')}</li>
         <li>${t('Mit dem Fahrtantritt (Einsteigen) ist der Preis der geplanten Route fällig – auch wenn die Fahrt früher endet. Umwege gehen nicht zulasten des Mitfahrers.')}</li>
         <li>${t('Die Anfahrt zum Treffpunkt wird zum gleichen Satz berechnet und vollständig an den Fahrer ausgezahlt; auf sie erhebt der Betreiber keine Provision.')}</li>
-        <li>${t('Der Betreiber erhält eine im Preis enthaltene Vermittlungsprovision von {percent} % auf die gemeinsame Strecke. Daraus spendet er je Fahrt {donation} an [Organisation] für den Umweltschutz.', { percent: num(pr.commissionPercent), donation: euro(pr.donationCentsPerRide) })}</li>
+        <li>${t('Zusätzlich zum Fahreranteil zahlt der Mitfahrer je Kilometer der gemeinsamen Strecke eine Vermittlungsprovision von {commission} an den Betreiber und eine Umweltspende von {donation}, die vollständig an [Organisation] für den Umweltschutz weitergegeben wird. Auf die Anfahrt zum Treffpunkt fallen beide nicht an.', { commission: euro(pr.commissionPerKmCents || 0), donation: euro(pr.donationPerKmCents || 0) })}</li>
         <li>${t('Bezahlt wird je Fahrt über ein hinterlegtes Zahlungsmittel oder aus Vorkasse-Guthaben beim Betreiber. Vorkasse gibt es in den Stufen {packages}; dafür gewährt der Betreiber den genannten Rabatt auf seine Provision, solange Vorkasse-Guthaben vorhanden ist. Nicht verbrauchtes Guthaben wird bei Kontolöschung ausgezahlt.', { packages: ((c.prepaidPackages || []).map((p) => t('{amount} (−{percent} %)', { amount: euro(p.amountCents), percent: num(p.discountPercent) })).join(', ')) || '–' })}</li>
         <li>${t('Bezahlt wird, sobald der Fahrer den Mitfahrer abgesetzt und der Mitfahrer die Fahrt bewertet hat; ohne Rückmeldung nach 24 Stunden.')}</li>
       </ul>
