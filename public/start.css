@@ -55,11 +55,19 @@ section { padding: clamp(48px, 7vw, 96px) clamp(16px, 6vw, 96px); }
 .split { display: grid; grid-template-columns: 1fr 1fr; gap: 48px; align-items: center; }
 .example .example-title { font-weight: 700; margin: 0 0 12px; }
 .share-bar { display: flex; height: 14px; border-radius: 999px; overflow: hidden; background: var(--line); margin-bottom: 16px; }
-.share-bar .part-driver { width: 66%; background: var(--green-600); }
-.share-bar .part-commission { width: 17%; background: var(--sage-500); }
-.share-bar .part-donation { width: 17%; background: var(--mint-300); }
+.share-bar .part-driver { width: 83%; background: var(--green-600); }
+.share-bar .part-commission { width: 17%; background: var(--mint-300); }
 .example dl div.sub dt { padding-inline-start: 14px; font-size: .92rem; }
 .example dl div.sub dd { font-weight: 500; color: var(--muted); }
+.example-table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.example-table th { font-size: .78rem; color: var(--muted); font-weight: 600; text-align: end; padding: 0 0 6px; }
+.example-table td { padding: 7px 0; border-bottom: 1px solid var(--line); text-align: end; white-space: nowrap; }
+.example-table td:first-child { text-align: start; white-space: normal; color: var(--muted); padding-inline-end: 10px; }
+.example-table td:nth-child(2) { color: var(--muted); padding-inline-start: 12px; }
+.example-table td:last-child { font-weight: 700; padding-inline-start: 12px; }
+.example-table tr.sub td:first-child { padding-inline-start: 14px; font-size: .92rem; }
+.example-table tr.sub td { font-weight: 500; }
+.example-table tr.sum td { border-bottom: 2px solid var(--green-900); color: var(--green-900); font-weight: 700; }
 .example dl { margin: 0; }
 .example dl div { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--line); }
 .example dt { color: var(--muted); }

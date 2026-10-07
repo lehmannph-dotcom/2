@@ -15,7 +15,7 @@ const { extract, checkCatalog, SOURCE_FILE, I18N_DIR } = require('../scripts/i18
 
 const config = {
   adminEmail: 'chef@example.org',
-  pricing: { ratePerKmCents: 25, commissionPerKmCents: 5, donationPerKmCents: 5, co2GramsPerCarKm: 150 },
+  pricing: { ratePerKmCents: 25, commissionPerKmCents: 5, co2GramsPerCarKm: 150 },
   rides: { autoConfirmHours: 24 },
   points: { unratedFactor: 7 },
   funfacts: { minDrivers: 2, minRatings: 3 },

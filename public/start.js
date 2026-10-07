@@ -50,28 +50,28 @@
     fillExample();
   }
 
-  /** Beispiel 20 km: Buchung, weitere Person derselben Buchung, Aufteilung, Vergleich mit dem eigenen Auto */
+  /** Beispiel 20 km: Buchung und weitere Person derselben Buchung, je km und gesamt */
   function fillExample() {
     const p = config && config.pricing;
     if (!p) return;
     const km = 20;
-    const driver = km * p.ratePerKmCents;
-    const commission = km * (p.commissionPerKmCents || 0);
-    const donation = km * (p.donationPerKmCents || 0);
-    const rider = driver + commission + donation;
-    const extra = km * ((p.extraRatePerKmCents ?? p.ratePerKmCents) + (p.extraCommissionPerKmCents ?? 0) + (p.extraDonationPerKmCents ?? 0));
+    const rate = p.ratePerKmCents;
+    const commission = p.commissionPerKmCents || 0;
+    const extraRate = p.extraRatePerKmCents ?? rate;
+    const extraCommission = p.extraCommissionPerKmCents ?? commission;
     const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
-    set('ex-rider', euro(rider));
-    set('ex-driver', euro(driver));
-    set('ex-commission', euro(commission));
-    set('ex-donation', euro(donation));
-    set('ex-extra', euro(extra));
-    set('ex-owncar', p.ownCarCostPerKmCents ? euro(km * p.ownCarCostPerKmCents) : '–');
+    const pair = (id, perKm) => { set(id + '-km', euro(perKm)); set(id, euro(perKm * km)); };
+    pair('ex-driver', rate);
+    pair('ex-commission', commission);
+    pair('ex-rider', rate + commission);
+    pair('ex-extra-driver', extraRate);
+    pair('ex-extra-commission', extraCommission);
+    pair('ex-extra', extraRate + extraCommission);
+    if (p.ownCarCostPerKmCents) pair('ex-owncar', p.ownCarCostPerKmCents);
     // Balken: Aufteilung des Preises einer Buchung
-    const width = (sel, part) => { const el = document.querySelector(sel); if (el) el.style.width = `${(part / rider) * 100}%`; };
-    width('.share-bar .part-driver', driver);
+    const width = (sel, part) => { const el = document.querySelector(sel); if (el) el.style.width = `${(part / (rate + commission)) * 100}%`; };
+    width('.share-bar .part-driver', rate);
     width('.share-bar .part-commission', commission);
-    width('.share-bar .part-donation', donation);
   }
 
   document.getElementById('lang-select').addEventListener('change', (e) => {

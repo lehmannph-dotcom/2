@@ -1,6 +1,6 @@
 # joinmyride.com – Teilen statt Leerfahren
 
-**joinmyride.com** ist eine Ad-hoc-Mitfahrzentrale: Wer ohnehin fährt, wird mit seiner Route (eingegeben oder als **Google-Maps-Link**) spontan zum Fahrtenanbieter. Mitfahrer geben ihr Ziel ein, die App findet den **besten Fahrer** auf dem Weg. Abgerechnet werden die **gefahrenen Kilometer** – je Kilometer 20 ct an den Fahrer, 5 ct Vermittlungsprovision und **5 ct für den Umweltschutz**; mitgebrachte Personen derselben Buchung zahlen 10 + 2 + 2 ct. Der Fahrer zahlt nichts.
+**joinmyride.com** ist eine Ad-hoc-Mitfahrzentrale: Wer ohnehin fährt, wird mit seiner Route (eingegeben oder als **Google-Maps-Link**) spontan zum Fahrtenanbieter. Mitfahrer geben ihr Ziel ein, die App findet den **besten Fahrer** auf dem Weg. Abgerechnet werden die **gefahrenen Kilometer** – je Kilometer **25 ct an den Fahrer** und 5 ct Vermittlungsprovision; mitgebrachte Personen derselben Buchung zahlen 12 + 2 ct. Der Fahrer zahlt nichts.
 
 ## Schnellstart
 
@@ -25,7 +25,7 @@ Für den Produktivbetrieb `APP_SECRET` setzen (verschlüsselt die 2FA-Schlüssel
 |---|---|
 | **Fahrer** | Registrieren → Führerschein einreichen (Nummer, Klassen, Ablaufdatum, Geburtsdatum, Fotos Vorder-/Rückseite) → Betreiber bestätigt → Route oder Google-Maps-Link eingeben → **online** → Anfragen annehmen → „Eingestiegen“ → GPS teilen → „Am Ziel abgesetzt“ |
 | **Mitfahrer** | Guthaben aufladen → Abholort + Ziel (Adresse, Standort oder Kartenklick) → Liste der besten Fahrer mit Preis, Wartezeit, Umweg und CO₂-Ersparnis → buchen → Live-Position des Fahrers verfolgen → bewerten |
-| **Betreiber** | Führerscheine prüfen (Fotos ansehen, bestätigen/ablehnen), Provisionseinnahmen, gesammelte Spenden, geteilte km und CO₂-Ersparnis einsehen |
+| **Betreiber** | Führerscheine prüfen (Fotos ansehen, bestätigen/ablehnen), Provisionseinnahmen, geteilte km und CO₂-Ersparnis einsehen |
 
 ## Profile
 
@@ -185,34 +185,33 @@ Eigenes Menü **Funfacts** (auch ohne Anmeldung): Wo und in welchen Autos sitzen
 
 ## Preis: fair geteilt, feste Sätze
 
-joinmyride.com ist eine Plattform für **private Fahrgemeinschaften**, keine Fahrdienstleistung wie Taxi oder Uber. Der Fahrer stellt Auto und Fahrleistung und **zahlt nichts**. Der Mitfahrer übernimmt die Fahrzeugkosten seiner Strecke.
+joinmyride.com ist eine Plattform für **private Fahrgemeinschaften**, keine Fahrdienstleistung wie Taxi oder Uber. Der Fahrer stellt Auto und Fahrleistung und **zahlt nichts**. Der Mitfahrer übernimmt die Fahrzeugkosten seiner Strecke; dazu kommt die Vermittlungsprovision.
 
-| je km und Person | Fahrer | Vermittlungsprovision | Umweltspende | zusammen |
-|---|---|---|---|---|
-| jede Buchung (1. Person) | 20 ct | 5 ct | 5 ct | **30 ct** |
-| jede weitere Person **derselben** Buchung | 10 ct | 2 ct | 2 ct | **14 ct** |
+| je km und Person | Fahrer | Vermittlungsprovision | zusammen |
+|---|---|---|---|
+| jede Buchung (1. Person) | 25 ct | 5 ct | **30 ct** |
+| jede weitere Person **derselben** Buchung | 12 ct | 2 ct | **14 ct** |
 
-* **Ermäßigt** sind nur die 2. und jede weitere Person einer gemeinsamen Buchung – sie steigen zusammen am gleichen Ort ein. Eine **weitere, unabhängige Buchung** – ein separater, unabhängiger Streckenabschnitt mit eigenem Ein- und Ausstieg – zahlt den normalen Tarif.
+* **Ermäßigt** sind nur die 2. und jede weitere Person einer gemeinsamen Buchung – sie steigen zusammen am gleichen Ort ein. Ein separater, unabhängiger Streckenabschnitt für eine **weitere unabhängige Buchung** zahlt den normalen Tarif.
 * Fahrer legen keinen eigenen Preis fest. Die Sätze werden bei der Buchung festgehalten und sind in `.env` einstellbar (`RATE_PER_KM_CENTS`, `EXTRA_RATE_PER_KM_CENTS` usw.).
-* **Anfahrt zum Treffpunkt:** einmal je Buchung zum vollen Fahrersatz, zu 100 % an den Fahrer, ohne Provision und Spende.
+* **Anfahrt zum Treffpunkt:** einmal je Buchung zum vollen Fahrersatz, zu 100 % an den Fahrer, ohne Provision.
 * **Vergleich** (nur Orientierung): eigenes Auto mit Vollkosten (Richtwert 50 ct/km) und ÖPNV-Einzelticket.
 
-Beispiel 20 km: eine Person **6,00 €** (Fahrer 4,00 € · Vermittlung 1,00 € · Umwelt 1,00 €), gemeinsame Buchung zu zweit **8,80 €**; ein separater, unabhängiger Streckenabschnitt für eine weitere unabhängige Buchung zahlt wieder 6,00 €.
+Beispiel 20 km: eine Person **6,00 €** (Fahrer 5,00 € · Vermittlung 1,00 €), gemeinsame Buchung zu zweit **8,80 €** (Fahrer 7,40 € · Vermittlung 1,40 €); ein separater, unabhängiger Streckenabschnitt für eine weitere unabhängige Buchung zahlt wieder 6,00 €.
 
-> Rechtlicher Hinweis: Ohne Genehmigung nach dem PBefG darf das Gesamtentgelt die Betriebskosten der Fahrt nicht übersteigen. Mit einer Buchung (20 ct/km) ist das in der Regel erfüllt; mit mehreren unabhängigen Buchungen auf überlappenden Streckenabschnitten (z. B. 2 × 20 ct/km) vor dem Livegang rechtlich prüfen lassen.
+> Rechtlicher Hinweis: Ohne Genehmigung nach dem PBefG darf das Gesamtentgelt die Betriebskosten der Fahrt nicht übersteigen. Bei 25 ct/km je Buchung und mehreren unabhängigen Buchungen auf überlappenden Streckenabschnitten vor dem Livegang rechtlich prüfen lassen.
 
 ```
 abgerechnete km  = geplante Route (fällig mit dem Einsteigen) – bei Fahrtabbruch: gefahrene Strecke (GPS), höchstens die geplante Route
-Fahreranteil     = km × (20 ct 1. Person + 10 ct je weitere Person derselben Buchung)   → Fahrer
-Provision        = km × ( 5 ct erste Person +  2 ct je weitere Person)   → Betreiber
-Umweltspende     = km × ( 5 ct erste Person +  2 ct je weitere Person)   → Umweltschutz
-Anfahrt          = Umweg zum Treffpunkt (km) × 20 ct                      → zu 100 % Fahrer
-Rabatt           = 6 / 10 / 20 % der Provision bei Vorkasse              → senkt den Preis, nicht den Fahreranteil
-Mitfahrer zahlt  = Fahreranteil + Provision − Rabatt + Umweltspende + Anfahrt
+Fahreranteil     = km × (25 ct 1. Person + 12 ct je weitere Person derselben Buchung)   → Fahrer
+Provision        = km × ( 5 ct 1. Person +  2 ct je weitere Person derselben Buchung)   → Betreiber
+Anfahrt          = Umweg zum Treffpunkt (km) × 25 ct                                     → zu 100 % Fahrer
+Rabatt           = 6 / 10 / 20 % der Provision bei Vorkasse   → senkt den Preis, nicht den Fahreranteil
+Mitfahrer zahlt  = Fahreranteil + Provision − Rabatt + Anfahrt
 ```
 
 * **Fällig mit dem Fahrtantritt:** Mit „Eingestiegen“ wird der Preis der geplanten Route fällig – auch wenn die Fahrt früher endet. Umwege zahlt der Mitfahrer nie. Der Preis der geplanten Route ist der **Höchstbetrag**.
-* Alle Beträge in ganzen Cent; jede Buchung landet im Journal (`ledger`). Mitfahrer-Zahlung = Fahrer + Betreiber + Spende (durch Tests abgesichert).
+* Alle Beträge in ganzen Cent; jede Buchung landet im Journal (`ledger`). Mitfahrer-Zahlung = Fahrer + Betreiber (durch Tests abgesichert).
 
 ## Bezahlen in 4 Stufen
 
@@ -262,7 +261,7 @@ Die Oberfläche gibt es auf **Deutsch** (Ausgangssprache) und in den **10 meistg
 server.js            HTTP-Server
 src/app.js           REST-API (Konten, Führerschein, Fahrten, Matching, Buchungen, Abrechnung, Admin)
 src/matching.js      Fahrer-Suche und Bewertung
-src/pricing.js       Kilometerabrechnung, Provision, Spende, CO₂
+src/pricing.js       Kilometerabrechnung, Provision, Vorkasse-Rabatt, CO₂
 src/license.js       Führerschein-Prüfung
 src/identity.js      Identitätsprüfung (Anbieter-Ablauf, signierte Ergebnis-Meldung)
 src/profile.js       Profile, Anzeigenamen, Privatsphäre-Regeln
@@ -288,14 +287,13 @@ test/                node:test – Unit-Tests + kompletter API-Ablauf
 Dieser Code ist ein funktionsfähiger Prototyp. Für den echten Betrieb fehlen bewusst Dinge, die Verträge, Lizenzen oder Rechtsberatung erfordern:
 
 1. **Zahlungen:** Das Guthaben-Aufladen ist eine Demo. Für echtes Geld einen Zahlungsdienstleister mit Marktplatz-Funktion nutzen (z. B. Stripe Connect, Mangopay, Adyen for Platforms) – sie übernehmen die Auszahlung an Fahrer, KYC und die Trennung der Gelder. Ein Plattformbetreiber, der fremdes Geld selbst verwahrt und weiterleitet, braucht sonst ggf. eine Erlaubnis nach dem ZAG.
-2. **Personenbeförderungsgesetz:** Genehmigungsfrei ist nur die Mitnahme, bei der das Entgelt die **Betriebskosten der Fahrt nicht übersteigt** (§ 1 Abs. 2 Nr. 1 PBefG). Den Kilometersatz deshalb nicht über die tatsächlichen Kosten setzen (die Provision ist im Preis enthalten, nicht obendrauf). Rechtlich prüfen lassen, insbesondere zur Provision.
+2. **Personenbeförderungsgesetz:** Genehmigungsfrei ist nur die Mitnahme, bei der das Entgelt die **Betriebskosten der Fahrt nicht übersteigt** (§ 1 Abs. 2 Nr. 1 PBefG). Die Sätze (25 ct/km an den Fahrer) gegen die tatsächlichen Betriebskosten prüfen; die Vermittlungsprovision kommt hinzu. Rechtlich prüfen lassen, insbesondere zur Provision.
 3. **Führerscheinprüfung:** Aktuell manuelle Sichtprüfung durch den Betreiber. Für Skalierung einen Identdienst anbinden (z. B. IDnow, Veriff, Onfido) und Führerscheine regelmäßig erneut prüfen. Führerscheinfotos sind personenbezogene Daten → DSGVO (Verarbeitungsverzeichnis, Löschfristen, Verschlüsselung).
 4. **Versicherung:** Klären, wie Mitfahrer abgesichert sind (Kfz-Haftpflicht des Fahrers deckt Insassen grundsätzlich ab, bei gewerblicher Nutzung aber nicht zwingend).
-5. **Spende:** Empfängerorganisation festlegen und die gesammelten Beträge (Admin-Übersicht) regelmäßig überweisen; transparent ausweisen.
-6. **Technik:** JSON-Datei durch eine Datenbank (z. B. PostgreSQL/PostGIS) ersetzen, Push-Benachrichtigungen statt Polling, Google-Maps-Nutzungsbedingungen beachten (Google-Daten auf Google-Karten anzeigen oder Maps JavaScript API verwenden).
-7. **Rechtliches:** Impressum und Datenschutzerklärung (Vorlagen in der App) ausfüllen und prüfen lassen, AGB ergänzen, Auftragsverarbeitungsverträge (Hosting, Zahlungsdienst) abschließen, Verarbeitungsverzeichnis anlegen.
-8. **Domain & Betrieb:** joinmyride.com mit HTTPS (z. B. hinter einem Reverse-Proxy mit `X-Forwarded-Proto`), `APP_SECRET` sicher setzen, regelmäßige Backups von `data/`.
-9. **Konfiguration für den Livebetrieb:** `ALLOW_DEMO_TOPUP=0` (schaltet das Demo-Aufladen ab) und – nur hinter einem eigenen Reverse-Proxy – `TRUST_PROXY=1`, damit `X-Forwarded-For`/`X-Forwarded-Proto` ausgewertet werden. Ohne Proxy bleibt `TRUST_PROXY` aus, sonst könnten Clients ihre IP für das Rate-Limiting fälschen.
+5. **Technik:** JSON-Datei durch eine Datenbank (z. B. PostgreSQL/PostGIS) ersetzen, Push-Benachrichtigungen statt Polling, Google-Maps-Nutzungsbedingungen beachten (Google-Daten auf Google-Karten anzeigen oder Maps JavaScript API verwenden).
+6. **Rechtliches:** Impressum und Datenschutzerklärung (Vorlagen in der App) ausfüllen und prüfen lassen, AGB ergänzen, Auftragsverarbeitungsverträge (Hosting, Zahlungsdienst) abschließen, Verarbeitungsverzeichnis anlegen.
+7. **Domain & Betrieb:** joinmyride.com mit HTTPS (z. B. hinter einem Reverse-Proxy mit `X-Forwarded-Proto`), `APP_SECRET` sicher setzen, regelmäßige Backups von `data/`.
+8. **Konfiguration für den Livebetrieb:** `ALLOW_DEMO_TOPUP=0` (schaltet das Demo-Aufladen ab) und – nur hinter einem eigenen Reverse-Proxy – `TRUST_PROXY=1`, damit `X-Forwarded-For`/`X-Forwarded-Proto` ausgewertet werden. Ohne Proxy bleibt `TRUST_PROXY` aus, sonst könnten Clients ihre IP für das Rate-Limiting fälschen.
 
 ## Sicherheit und Performance (Code-Review)
 

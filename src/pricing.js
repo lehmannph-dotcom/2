@@ -4,19 +4,19 @@
  * Preismodell: private Fahrgemeinschaft – keine Fahrdienstleistung.
  *
  * Der Fahrer stellt Auto und Fahrleistung und zahlt nichts. Der Mitfahrer übernimmt die
- * Fahrzeugkosten seiner Strecke; dazu kommen Vermittlungsprovision und Umweltspende.
+ * Fahrzeugkosten seiner Strecke; dazu kommt die Vermittlungsprovision des Betreibers.
  * Jede Buchung zahlt den normalen Tarif. Ermäßigt sind nur die 2. und jede weitere Person
  * DERSELBEN Buchung – sie steigen gemeinsam am gleichen Ort ein:
  *
- *                                     Fahrer   Provision   Umwelt   zusammen (je km und Person)
- *   Buchung (1. Person)                20 ct      5 ct      5 ct       30 ct
- *   jede weitere Person der Buchung    10 ct      2 ct      2 ct       14 ct
+ *                                     Fahrer   Provision   zusammen (je km und Person)
+ *   Buchung (1. Person)                25 ct      5 ct       30 ct
+ *   jede weitere Person der Buchung    12 ct      2 ct       14 ct
  *
  *   Anfahrt zum Treffpunkt  = Umweg-km × normaler Fahrersatz, einmal je Buchung → zu 100 % an den Fahrer
  *   Rabatt                  = Prozent der Provision bei Bezahlung aus Vorkasse-Guthaben
- *   Gesamt (Mitfahrer zahlt) = Fahreranteil + Provision − Rabatt + Umweltspende + Anfahrt
+ *   Gesamt (Mitfahrer zahlt) = Fahreranteil + Provision − Rabatt + Anfahrt
  *
- * Provision und Spende fallen nur auf die gemeinsame Strecke an, nicht auf die Anfahrt.
+ * Die Provision fällt nur auf die gemeinsame Strecke an, nicht auf die Anfahrt.
  * Die Sätze werden bei der Buchung festgehalten (tariff), damit spätere Änderungen eine bestätigte
  * Fahrt nicht verändern. Alle Beträge in ganzen Cent.
  */
@@ -42,14 +42,11 @@ function kmRateCents(pricing) {
 function tariffOf(pricing) {
   const rate = kmRateCents(pricing);
   const commission = pricing.commissionPerKmCents || 0;
-  const donation = pricing.donationPerKmCents || 0;
   return {
     ratePerKmCents: rate,
     commissionPerKmCents: commission,
-    donationPerKmCents: donation,
     extraRatePerKmCents: pricing.extraRatePerKmCents ?? rate,
     extraCommissionPerKmCents: pricing.extraCommissionPerKmCents ?? commission,
-    extraDonationPerKmCents: pricing.extraDonationPerKmCents ?? donation,
   };
 }
 
@@ -79,7 +76,6 @@ function computeFare(km, pricing, seats = 1, { pickupDetourKm = 0, commissionDis
   const perKm = (base, more) => base * first + more * extra; // Summe je km über alle Personen
   const driverPerKm = perKm(tf.ratePerKmCents, tf.extraRatePerKmCents);
   const commissionPerKm = perKm(tf.commissionPerKmCents, tf.extraCommissionPerKmCents);
-  const donationPerKm = perKm(tf.donationPerKmCents, tf.extraDonationPerKmCents);
 
   const driverFareCents = Math.round(billedKm * driverPerKm);
   const detourCents = Math.round(detourKm * tf.ratePerKmCents);
@@ -87,9 +83,8 @@ function computeFare(km, pricing, seats = 1, { pickupDetourKm = 0, commissionDis
   const discountPercent = Math.max(0, Math.min(100, commissionDiscountPercent || 0));
   const discountCents = Math.round((commissionFullCents * discountPercent) / 100);
   const commissionCents = commissionFullCents - discountCents;
-  const donationCents = Math.round(billedKm * donationPerKm);
   // Fahrtkosten der gemeinsamen Strecke (ohne Anfahrt, vor Rabatt)
-  const fareCents = driverFareCents + commissionFullCents + donationCents;
+  const fareCents = driverFareCents + commissionFullCents;
   const totalCents = fareCents + detourCents - discountCents;
   const transit = transitFareCents(billedKm, pricing);
   const ownCar = pricing.ownCarCostPerKmCents ? Math.round(billedKm * pricing.ownCarCostPerKmCents) : null;
@@ -101,8 +96,7 @@ function computeFare(km, pricing, seats = 1, { pickupDetourKm = 0, commissionDis
     ratePerKmCents: tf.ratePerKmCents,
     driverPerKmCents: driverPerKm,
     commissionPerKmCents: commissionPerKm,
-    donationPerKmCents: donationPerKm,
-    totalPerKmCents: driverPerKm + commissionPerKm + donationPerKm,
+    totalPerKmCents: driverPerKm + commissionPerKm,
     driverFareCents,
     fareCents,
     commissionFullCents,
@@ -113,7 +107,6 @@ function computeFare(km, pricing, seats = 1, { pickupDetourKm = 0, commissionDis
     detourKm,
     detourCents,
     driverCents: driverFareCents + detourCents,
-    donationCents,
     totalCents,
     // Vergleichswerte (Orientierung): ÖPNV-Einzeltickets und eigenes Auto (Vollkosten) für alle Personen
     transitFareCents: transit === null ? null : transit * seats,

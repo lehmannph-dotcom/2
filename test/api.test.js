@@ -28,7 +28,7 @@ const fakeRouting = {
 
 const config = {
   adminEmail: 'chef@example.org',
-  pricing: { ratePerKmCents: 25, commissionPerKmCents: 5, donationPerKmCents: 5, co2GramsPerCarKm: 150 },
+  pricing: { ratePerKmCents: 25, commissionPerKmCents: 5, co2GramsPerCarKm: 150 },
   rides: { autoConfirmHours: 24 },
   points: { unratedFactor: 7 },
   funfacts: { minDrivers: 2, minRatings: 3 },
@@ -159,7 +159,7 @@ test('kompletter Ablauf: Führerschein → Fahrt → Match → Buchung → GPS �
   assert.ok(Math.abs(done.final.trackedKm - 10) < 0.1);
   assert.ok(done.final.plannedKm > 16);
   assert.equal(done.final.driverFareCents, Math.round(done.final.km * 25));
-  assert.equal(done.final.donationCents, Math.round(done.final.km * 5), 'Umweltspende 5 ct je km');
+  assert.equal(done.final.commissionFullCents, Math.round(done.final.km * 5), 'Provision 5 ct je km');
 
   const riderMe = (await rider('GET', '/api/me')).user;
   const driverMe = (await driver('GET', '/api/me')).user;
@@ -168,15 +168,14 @@ test('kompletter Ablauf: Führerschein → Fahrt → Match → Buchung → GPS �
   assert.equal(driverMe.walletCents, done.final.driverCents);
   assert.ok(riderMe.co2SavedKg > 1);
 
-  // Vorkasse 20 € → 10 % Rabatt auf die Provision; die Spende zahlt der Betreiber aus der Provision
+  // Vorkasse 20 € → 10 % Rabatt auf die Provision
   assert.equal(done.final.commissionDiscountPercent, 10);
   assert.equal(done.final.totalCents, done.final.fareCents + done.final.detourCents - done.final.discountCents);
   const stats = await admin('GET', '/api/admin/stats');
   assert.equal(stats.commissionCents, done.final.platformCents);
-  assert.equal(stats.donationCents, done.final.donationCents);
   assert.equal(stats.ridesCompleted, 1);
-  // Geld geht nicht verloren: Mitfahrer zahlt = Fahrer + Provision + Spende
-  assert.equal(done.final.totalCents, done.final.driverCents + stats.commissionCents + stats.donationCents);
+  // Geld geht nicht verloren: Mitfahrer zahlt = Fahrer + Provision
+  assert.equal(done.final.totalCents, done.final.driverCents + stats.commissionCents);
 
   // NPS des Fahrers; der Fahrer sieht die Bewertung nicht im Einzelnen
   assert.deepEqual((await driver('GET', '/api/me')).user.nps, { score: 100, count: 1, promoters: 1, passives: 0, detractors: 0 });

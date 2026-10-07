@@ -1224,7 +1224,6 @@ function createApp({ store, config, routing }) {
     book(`user:${driver.id}`, fare.driverCents - fare.detourCents, 'ride_earning', ride.id, `Fahreranteil ${fmtKm(fare.km)} km`);
     if (fare.detourCents) book(`user:${driver.id}`, fare.detourCents, 'pickup_detour', ride.id, `Anfahrt zum Treffpunkt ${fmtKm(fare.detourKm)} km (ohne Provision)`);
     book('platform', fare.platformCents, 'commission', ride.id, `Provision ${fmtKm(fare.km)} km`);
-    book('donation', fare.donationCents, 'donation', ride.id, 'Spende Umweltschutz');
 
     rider.co2SavedKg = (rider.co2SavedKg || 0) + fare.co2SavedKg;
     driver.co2SavedKg = (driver.co2SavedKg || 0) + fare.co2SavedKg;
@@ -1349,7 +1348,6 @@ function createApp({ store, config, routing }) {
     const completed = Object.values(db.rides).filter((r) => r.status === 'completed');
     return {
       commissionCents: sum('platform'),
-      donationCents: sum('donation'),
       ridesCompleted: completed.length,
       kmShared: Math.round(completed.reduce((s, r) => s + r.final.km, 0) * 10) / 10,
       co2SavedKg: Math.round(completed.reduce((s, r) => s + r.final.co2SavedKg, 0) * 100) / 100,

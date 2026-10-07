@@ -30,12 +30,10 @@ module.exports = {
   pricing: {
     // Private Fahrgemeinschaft, siehe src/pricing.js: Der Fahrer stellt Auto und Fahrleistung und zahlt
     // nichts; der Mitfahrer übernimmt die Fahrzeugkosten seiner Strecke. Je km und Person in Cent:
-    ratePerKmCents: num('RATE_PER_KM_CENTS', 20),                 // je Buchung (1. Person) → Fahrer
+    ratePerKmCents: num('RATE_PER_KM_CENTS', 25),                  // je Buchung (1. Person) → Fahrer
     commissionPerKmCents: num('COMMISSION_PER_KM_CENTS', 5),       // je Buchung (1. Person) → Betreiber
-    donationPerKmCents: num('DONATION_PER_KM_CENTS', 5),           // je Buchung (1. Person) → Umweltschutz
-    extraRatePerKmCents: num('EXTRA_RATE_PER_KM_CENTS', 10),       // weitere Person derselben Buchung → Fahrer
+    extraRatePerKmCents: num('EXTRA_RATE_PER_KM_CENTS', 12),       // weitere Person derselben Buchung → Fahrer
     extraCommissionPerKmCents: num('EXTRA_COMMISSION_PER_KM_CENTS', 2),
-    extraDonationPerKmCents: num('EXTRA_DONATION_PER_KM_CENTS', 2),
     // Vergleich: Vollkosten des eigenen Autos je km (Richtwert, z. B. ADAC-Autokosten Kompaktklasse)
     ownCarCostPerKmCents: num('OWN_CAR_COST_PER_KM_CENTS', 50),
     // Vergleich mit dem Nahverkehr (nur Orientierung, keine Grenze):

@@ -23,7 +23,7 @@ const routing = {
 const config = {
   adminEmail: 'chef@example.org',
   pricing: {
-    ratePerKmCents: 20, commissionPerKmCents: 5, donationPerKmCents: 5, extraRatePerKmCents: 10, extraCommissionPerKmCents: 2, extraDonationPerKmCents: 2, co2GramsPerCarKm: 150,
+    ratePerKmCents: 25, commissionPerKmCents: 5, extraRatePerKmCents: 12, extraCommissionPerKmCents: 2, co2GramsPerCarKm: 150,
     transitFares: [{ maxKm: 3, cents: 260 }, { maxKm: 20, cents: 380 }, { maxKm: 45, cents: 500 }], transitPerKmBeyondCents: 18,
   },
   identity: { provider: 'demo', webhookSecret: 'geheim-webhook' },
@@ -144,8 +144,8 @@ test('Vorkasse in 3 Stufen mit Rabatt auf die Provision, sonst je Fahrt bezahlen
 
   const cfg = await d('GET', '/api/config');
   assert.deepEqual(cfg.prepaidPackages.map((p) => [p.amountCents, p.discountPercent]), [[1000, 6], [2000, 10], [5000, 20]]);
-  assert.equal(cfg.pricing.ratePerKmCents, 20);
-  assert.equal(cfg.pricing.extraRatePerKmCents, 10);
+  assert.equal(cfg.pricing.ratePerKmCents, 25);
+  assert.equal(cfg.pricing.extraRatePerKmCents, 12);
 
   // Ohne Guthaben und ohne Zahlungsmittel: 402
   const r = await user('Rita Ride', 'rita@example.org');
@@ -201,14 +201,14 @@ test('Ermäßigung nur für weitere Personen derselben Buchung; eine weitere una
     const { ride } = await r('POST', '/api/rides', { tripId: trip.id, pickup, dropoff, seats, confirmPlannedRoute: true });
     return { m, ride, r };
   };
-  // Gemeinsame Buchung für zwei Personen (gleicher Einstieg): 30 + 14 ct/km
+  // Gemeinsame Buchung für zwei Personen (gleicher Einstieg): (25+5) + (12+2) ct/km
   const group = await book('Anna', 2);
   assert.equal(group.m.matches[0].price.totalPerKmCents, 44);
-  assert.equal(group.ride.estimate.driverFareCents, Math.round(group.ride.plannedKm * 30));
+  assert.equal(group.ride.estimate.driverFareCents, Math.round(group.ride.plannedKm * 37));
   // Separater, unabhängiger Streckenabschnitt für eine weitere unabhängige Buchung: normaler Tarif
   const single = await book('Ben', 1);
   assert.equal(single.m.matches[0].price.totalPerKmCents, 30, 'keine Ermäßigung für eine weitere unabhängige Buchung');
-  assert.equal(single.ride.estimate.driverFareCents, Math.round(single.ride.plannedKm * 20));
+  assert.equal(single.ride.estimate.driverFareCents, Math.round(single.ride.plannedKm * 25));
   assert.equal(single.ride.estimate.commissionFullCents, Math.round(single.ride.plannedKm * 5));
   // Abrechnung der Gruppe mit den bei der Buchung festgehaltenen Sätzen
   await d('POST', `/api/rides/${group.ride.id}/accept`, { confirmPlannedRoute: true });
