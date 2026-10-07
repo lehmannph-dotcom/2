@@ -32,6 +32,7 @@ const config = {
   rides: { autoConfirmHours: 24 },
   points: { unratedFactor: 7 },
   funfacts: { minDrivers: 2, minRatings: 3 },
+  abortPolicy: { maxQuote: 20, minRides: 5 },
   matching: { maxDetourKm: 3, maxResults: 10 },
 };
 
@@ -485,4 +486,59 @@ test('Fahrtabbruch nur während der Fahrt möglich', async (t) => {
   const { driver, rider, ride } = await bookedRide(t, { kmDriven: 2 });
   await driver('POST', `/api/rides/${ride.id}/confirm`, {});
   assert.equal((await rider('POST', `/api/rides/${ride.id}/abort`, { category: 'other', reason: 'Zu spät für einen Abbruch.' })).status, 409);
+});
+
+test('Nutzungsbedingungen: Sperre bei zu hoher Fahrtabbruchsquote', async (t) => {
+  const { admin, driver, rider, ride, store, trip } = await bookedRide(t, { kmDriven: 2 });
+  await driver('POST', `/api/rides/${ride.id}/confirm`, {});
+  await rider('POST', `/api/rides/${ride.id}/confirm`, { nps: 8 });
+  const base = store.data.rides[ride.id];
+  // 6 Fahrten, davon 2 abgebrochen → 33 % > 20 % bei mind. 5 Fahrten
+  for (let i = 0; i < 5; i++) {
+    store.data.rides['x' + i] = { ...base, id: 'x' + i, abort: i < 2 ? { by: 'driver', category: 'other', reason: 'Testabbruch', at: base.completedAt } : undefined };
+  }
+  assert.equal((await rider('GET', '/api/admin/abort-review')).status, 403);
+  let review = await admin('GET', '/api/admin/abort-review');
+  assert.deepEqual(review.policy, { maxQuote: 20, minRides: 5 });
+  const flagged = review.flagged.find((m) => m.id === ride.driverId);
+  assert.ok(flagged, 'Fahrer steht auf der Prüfliste');
+  assert.equal(flagged.flags[0].role, 'driver');
+  assert.equal(flagged.flags[0].quote, 33);
+  assert.ok(review.flagged.find((m) => m.id === ride.riderId), 'Abbrüche zählen auch für den Mitfahrer');
+
+  // Verwarnung ist für den Betroffenen sichtbar
+  await admin('POST', `/api/admin/users/${ride.driverId}/warn`, { note: 'Bitte Abbrüche vermeiden.' });
+  assert.equal((await driver('GET', '/api/me')).user.warnings[0].note, 'Bitte Abbrüche vermeiden.');
+
+  // Sperre: Begründung Pflicht, nicht sich selbst
+  assert.equal((await admin('POST', `/api/admin/users/${ride.driverId}/suspend`, { days: 7 })).status, 400);
+  const me = (await admin('GET', '/api/me')).user;
+  assert.equal((await admin('POST', `/api/admin/users/${me.id}/suspend`, { days: 7, reason: 'Selbsttest' })).status, 400);
+  await driver('POST', `/api/trips/${trip.id}/end`, {});
+  const { trip: t2 } = await driver('POST', '/api/trips', { origin: 'Berlin', destination: 'Potsdam', seats: 1 });
+  const s = await admin('POST', `/api/admin/users/${ride.driverId}/suspend`, { days: 7, reason: 'Fahrtabbruchsquote 33 % trotz Verwarnung' });
+  assert.ok(s.member.suspension.until);
+  assert.equal(store.data.trips[t2.id].status, 'ended', 'aktive Fahrt ohne Mitfahrer beendet');
+
+  // Wirkung: kein Angebot, nicht in der Suche, Konto bleibt zugänglich
+  const dMe = (await driver('GET', '/api/me')).user;
+  assert.equal(dMe.suspension.reason, 'Fahrtabbruchsquote 33 % trotz Verwarnung');
+  const blocked = await driver('POST', '/api/trips', { origin: 'Berlin', destination: 'Potsdam', seats: 1 });
+  assert.equal(blocked.status, 403);
+  assert.match(blocked.error, /gesperrt/);
+  assert.equal((await driver('GET', '/api/me/export')).account.suspension.reason, 'Fahrtabbruchsquote 33 % trotz Verwarnung');
+  review = await admin('GET', '/api/admin/abort-review');
+  assert.ok(review.suspended.find((m) => m.id === ride.driverId));
+  assert.ok(!review.flagged.find((m) => m.id === ride.driverId));
+
+  // Entsperren
+  await admin('POST', `/api/admin/users/${ride.driverId}/unsuspend`, {});
+  assert.equal((await driver('GET', '/api/me')).user.suspension, null);
+  assert.ok((await driver('POST', '/api/trips', { origin: 'Berlin', destination: 'Potsdam', seats: 1 })).trip);
+
+  // Befristete Sperre läuft automatisch ab; gesperrte Mitfahrer können nicht suchen
+  await admin('POST', `/api/admin/users/${ride.riderId}/suspend`, { days: 1, reason: 'Fahrtabbruchsquote zu hoch' });
+  assert.equal((await rider('POST', '/api/match', { pickup: { lat: 52.5, lng: 13.3 }, dropoff: { lat: 52.4, lng: 13.1 } })).status, 403);
+  store.data.users[ride.riderId].suspension.until = new Date(Date.now() - 1000).toISOString();
+  assert.equal((await rider('GET', '/api/me')).user.suspension, null);
 });

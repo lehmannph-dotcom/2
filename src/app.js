@@ -20,6 +20,7 @@ const { REGIONS } = require('./plates');
 const { displayName, publicProfile, privacyOf, profileOf, sanitizeProfile, sanitizePrivacy } = require('./profile');
 
 const PRIVACY_POLICY_VERSION = '2026-10';
+const TERMS_VERSION = '2026-10';
 const ABORT_REASONS = [
   { id: 'safety', label: 'Sicherheitsbedenken' },
   { id: 'behavior', label: 'Verhalten des Fahrtpartners' },
@@ -90,6 +91,9 @@ function createApp({ store, config, routing }) {
     privacy: privacyOf(u),
     riderFilters: u.riderFilters || {},
     abortStats: { asDriver: abortStats(u.id, 'driver'), asRider: abortStats(u.id, 'rider') },
+    suspension: activeSuspension(u),
+    warnings: (u.warnings || []).slice(-3),
+    termsVersion: u.termsVersion || null,
     consentAt: u.consentAt || null,
     license: u.license
       ? {
@@ -118,6 +122,24 @@ function createApp({ store, config, routing }) {
       initiated: aborted.filter((r) => r.abort.by === role).length,
       quote: rides.length ? Math.round((aborted.length / rides.length) * 100) : null,
     };
+  };
+  /** Aktive Sperre oder null. Befristete Sperren laufen automatisch ab. */
+  const activeSuspension = (u) => {
+    const sp = u && u.suspension;
+    if (!sp) return null;
+    if (sp.until && new Date(sp.until) <= new Date()) return null;
+    return sp;
+  };
+  const needNotSuspended = (u) => {
+    const sp = activeSuspension(u);
+    if (sp) throw new HttpError(403, `Dein Konto ist ${sp.until ? 'bis ' + new Date(sp.until).toLocaleDateString('de-DE') : 'bis auf Weiteres'} gesperrt (${sp.reason}). Laufende Fahrten kannst du abschließen.`);
+  };
+  /** Liegt eine Rolle über dem Grenzwert der Nutzungsbedingungen? */
+  const abortFlags = (u) => {
+    const { maxQuote, minRides } = config.abortPolicy;
+    return ['driver', 'rider']
+      .map((role) => ({ role, ...abortStats(u.id, role) }))
+      .filter((st) => st.rides >= minRides && st.quote > maxQuote);
   };
   const book = (account, amountCents, type, rideId, note) => {
     db.ledger.push({ id: store.id('tx'), at: now(), account, amountCents, type, rideId, note });
@@ -221,6 +243,8 @@ function createApp({ store, config, routing }) {
     aspects: { driver: feedback.DRIVER_ASPECTS, rider: feedback.RIDER_ASPECTS, maxScore: feedback.MAX_ASPECT_SCORE },
     filterLabels: filters.LABELS,
     abortReasons: ABORT_REASONS,
+    abortPolicy: config.abortPolicy,
+    termsVersion: TERMS_VERSION,
   }), { public: true });
 
   // ---------- Funfacts (öffentlich, nur zusammengefasste Daten) ----------
@@ -290,6 +314,7 @@ function createApp({ store, config, routing }) {
       mfa: null,
       consentAt: now(),
       consentVersion: PRIVACY_POLICY_VERSION,
+      termsVersion: TERMS_VERSION,
       createdAt: now(),
     };
     db.users[user.id] = user;
@@ -689,6 +714,7 @@ function createApp({ store, config, routing }) {
   // ---------- Fahrer: Fahrt anbieten ----------
   on('POST', '/api/trips', async ({ user, body }) => {
     need(canDrive(user), 403, 'Bitte zuerst einen gültigen Führerschein verifizieren lassen.');
+    needNotSuspended(user);
     need(!Object.values(db.trips).some((t) => t.driverId === user.id && t.status === 'active'), 409, 'Du hast bereits eine aktive Fahrt.');
     let { origin, destination } = body;
     if (body.googleMapsUrl) ({ origin, destination } = await routing.parseGoogleMapsLink(body.googleMapsUrl));
@@ -783,7 +809,9 @@ function createApp({ store, config, routing }) {
     const pickup = point(body.pickup, 'Abholort');
     const dropoff = point(body.dropoff, 'Ziel');
     const seats = Math.max(1, Math.min(8, Math.round(Number(body.seats) || 1)));
-    const trips = Object.values(db.trips).filter((t) => t.status === 'active' && canDrive(db.users[t.driverId]));
+    needNotSuspended(user);
+    // Gesperrte Fahrer erscheinen nicht in der Suche
+    const trips = Object.values(db.trips).filter((t) => t.status === 'active' && canDrive(db.users[t.driverId]) && !activeSuspension(db.users[t.driverId]));
     trips.forEach(tripCum);
     const all = findMatches({
       trips,
@@ -836,6 +864,8 @@ function createApp({ store, config, routing }) {
     const trip = db.trips[body.tripId];
     need(trip && trip.status === 'active', 404, 'Diese Fahrt ist nicht mehr verfügbar.');
     need(trip.driverId !== user.id, 400, 'Du kannst nicht bei dir selbst mitfahren.');
+    needNotSuspended(user);
+    need(!activeSuspension(db.users[trip.driverId]), 404, 'Diese Fahrt ist nicht mehr verfügbar.');
     need(!Object.values(db.rides).some((r) => r.riderId === user.id && OPEN.includes(r.status)), 409, 'Du hast bereits eine offene Mitfahrt.');
     need(body.confirmPlannedRoute === true, 400, 'Bitte die geplante Route bestätigen.');
     const pickup = point(body.pickup, 'Abholort');
@@ -1103,6 +1133,80 @@ function createApp({ store, config, routing }) {
         return nps.summary(acc);
       })(),
     };
+  });
+
+  // ---------- Nutzungsbedingungen: Sperre bei zu hoher Fahrtabbruchsquote ----------
+  const memberView = (u) => ({
+    id: u.id,
+    name: u.name,
+    email: u.email,
+    flags: abortFlags(u),
+    abortStats: { asDriver: abortStats(u.id, 'driver'), asRider: abortStats(u.id, 'rider') },
+    suspension: activeSuspension(u),
+    warnings: u.warnings || [],
+  });
+
+  on('GET', '/api/admin/abort-review', ({ user }) => {
+    adminOnly(user);
+    const members = Object.values(db.users).filter((u) => !u.deleted);
+    return {
+      policy: config.abortPolicy,
+      flagged: members.filter((u) => abortFlags(u).length && !activeSuspension(u)).map(memberView),
+      suspended: members.filter((u) => activeSuspension(u)).map(memberView),
+    };
+  });
+
+  on('POST', '/api/admin/users/:id/warn', ({ user, params, body }) => {
+    adminOnly(user);
+    const target = db.users[params.id];
+    need(target && !target.deleted, 404, 'Nutzer nicht gefunden.');
+    const note = String(body.note || '').trim().slice(0, 300) || 'Hohe Fahrtabbruchsquote';
+    target.warnings = [...(target.warnings || []), { at: now(), by: user.id, note }];
+    return { member: memberView(target) };
+  });
+
+  on('POST', '/api/admin/users/:id/suspend', ({ user, params, body }) => {
+    adminOnly(user);
+    const target = db.users[params.id];
+    need(target && !target.deleted, 404, 'Nutzer nicht gefunden.');
+    need(target.id !== user.id, 400, 'Du kannst dich nicht selbst sperren.');
+    const days = body.days === null || body.days === 'unbefristet' ? null : Math.round(Number(body.days));
+    need(days === null || (days >= 1 && days <= 365), 400, 'Dauer: 1–365 Tage oder unbefristet.');
+    const reason = String(body.reason || '').trim().slice(0, 300);
+    need(reason.length >= 5, 400, 'Bitte einen Grund angeben.');
+    target.suspension = { since: now(), until: days === null ? null : new Date(Date.now() + days * 864e5).toISOString(), reason, by: user.id };
+    // Aktive Fahrt ohne Mitfahrer an Bord sofort beenden; offene Anfragen stornieren
+    for (const trip of Object.values(db.trips)) {
+      if (trip.driverId !== target.id || trip.status !== 'active') continue;
+      const onboard = Object.values(db.rides).some((r) => r.tripId === trip.id && ['picked_up', 'confirming'].includes(r.status));
+      for (const ride of Object.values(db.rides)) {
+        if (ride.tripId === trip.id && ['requested', 'accepted'].includes(ride.status)) {
+          freeSeats(ride);
+          releaseReservation(ride);
+          ride.status = 'cancelled';
+          ride.cancelReason = 'Fahrer gesperrt';
+        }
+      }
+      if (!onboard) { trip.status = 'ended'; trip.endedAt = now(); }
+    }
+    for (const ride of Object.values(db.rides)) {
+      if (ride.riderId === target.id && ['requested', 'accepted'].includes(ride.status)) {
+        freeSeats(ride);
+        releaseReservation(ride);
+        ride.status = 'cancelled';
+        ride.cancelReason = 'Mitfahrer gesperrt';
+      }
+    }
+    return { member: memberView(target) };
+  });
+
+  on('POST', '/api/admin/users/:id/unsuspend', ({ user, params }) => {
+    adminOnly(user);
+    const target = db.users[params.id];
+    need(target && target.suspension, 404, 'Keine Sperre gefunden.');
+    target.suspensionHistory = [...(target.suspensionHistory || []), { ...target.suspension, liftedAt: now(), liftedBy: user.id }];
+    target.suspension = null;
+    return { member: memberView(target) };
   });
 
   on('GET', '/api/admin/disputes', ({ user }) => {

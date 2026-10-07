@@ -37,7 +37,7 @@ Fahrer und Mitfahrer haben ein Profil (Seite **Profil**): Foto, „Über mich“
 * **Standardmäßig sparsam:** Nachname abgekürzt („Doris F.“), Telefonnummer verborgen. Freigabe der Telefonnummer nur für bestätigte Fahrtpartner und nur während der Buchung.
 * **Wohnadressen-Schutz:** Start und Ziel eines Fahrers sehen andere nur vergröbert (Ort statt Straße, Route ohne die ersten/letzten 500 m). Die Live-Position sehen nur bestätigte Mitfahrer.
 * **Führerscheinfotos** werden direkt nach der Prüfung durch den Betreiber gelöscht.
-* **Einwilligung** bei der Registrierung (mit Zeitstempel und Version), Datenschutzerklärung unter `#/datenschutz`, Impressum unter `#/impressum` (Vorlagen – bitte ausfüllen und prüfen lassen).
+* **Einwilligung** bei der Registrierung (mit Zeitstempel und Version), Datenschutzerklärung unter `#/datenschutz`, Impressum unter `#/impressum`, Nutzungsbedingungen unter `#/nutzungsbedingungen` (Vorlagen – bitte ausfüllen und prüfen lassen).
 * **Betroffenenrechte zum Selbermachen:** Datenexport als JSON (Art. 15/20 DSGVO), Konto löschen (Art. 17) – persönliche Daten und Fotos werden gelöscht, Abrechnungsbelege bleiben wegen der Aufbewahrungspflicht (§ 147 AO) anonymisiert erhalten.
 * Nur ein technisch notwendiges Cookie, kein Tracking. Sicherheits-Header (CSP, `X-Frame-Options: DENY`).
 
@@ -170,6 +170,13 @@ Eigenes Menü **Funfacts** (auch ohne Anmeldung): Wo und in welchen Autos sitzen
 * Dann wird **nur die bis dahin gefahrene Strecke** (GPS) berechnet, höchstens die geplante Route. Die Anfahrt zum Treffpunkt bleibt fällig. Die Fahrt wird sofort abgerechnet; bewerten lässt sie sich danach im Konto.
 * **Fahrtabbruchsquote** = abgebrochene Fahrten / alle abgeschlossenen Fahrten in der jeweiligen Rolle (Fahrer bzw. Mitfahrer). Ein Abbruch zählt für **beide** Beteiligten – sonst könnte man sich absprechen, wer abbricht. Wer selbst abgebrochen hat, steht im Info-Menü.
 * Sichtbar in der Trefferliste (Quote des Fahrers), bei Anfragen (Quote des Mitfahrers), im Profil und im eigenen Konto. Farbe: bis 5 % grün, bis 15 % gelb, darüber rot.
+
+## Nutzungsbedingungen und Sperren
+
+* Seite **Nutzungsbedingungen** (`#/nutzungsbedingungen`, Link im Footer; Vorlage – bitte rechtlich prüfen lassen). Bei der Registrierung muss man ihnen zustimmen (Version wird gespeichert).
+* **Ziffer 9 – Sperrung bei zu hoher Fahrtabbruchsquote:** Liegt die Quote in einer Rolle über `ABORT_QUOTE_LIMIT` (Standard 20 %) bei mindestens `ABORT_MIN_RIDES` (Standard 5) Fahrten, **kann** der Betreiber sperren – nach Einzelfallprüfung, in der Regel erst Verwarnung mit Gelegenheit zur Stellungnahme, dann befristete Sperre (7–30 Tage), bei Wiederholung oder Missbrauch unbefristet. Weitere Sperrgründe: falsche Angaben, Fahren ohne Fahrerlaubnis, Gefährdung/Belästigung, Manipulation.
+* **Betreiber-Bereich → „Fahrtabbruchsquote – Prüfung“:** Liste aller Teilnehmer über dem Grenzwert (je Rolle mit Quote) und der gesperrten Teilnehmer; Aktionen *Verwarnen*, *Sperren* (7 Tage / 30 Tage / unbefristet, mit Begründung) und *Entsperren*. Es wird **nie automatisch** gesperrt.
+* **Wirkung einer Sperre:** keine Angebote, keine Suche, keine Buchung; aktive Angebote ohne Mitfahrer an Bord werden beendet, offene Anfragen storniert; laufende Fahrten können abgeschlossen werden. Konto, Guthaben, Datenexport und Löschung bleiben zugänglich. Befristete Sperren enden automatisch. Gesperrte und verwarnte Teilnehmer sehen einen Hinweis über jeder Seite.
 
 ## Abrechnung
 

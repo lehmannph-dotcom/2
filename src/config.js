@@ -35,6 +35,11 @@ module.exports = {
     // Faktor, solange (noch) keine Bewertung vorliegt – entspricht einer passiven 7.
     unratedFactor: num('POINTS_FACTOR_UNRATED', 7),
   },
+  // Nutzungsbedingungen: Sperre bei zu hoher Fahrtabbruchsquote (Entscheidung durch den Betreiber)
+  abortPolicy: {
+    maxQuote: num('ABORT_QUOTE_LIMIT', 20),  // in Prozent
+    minRides: num('ABORT_MIN_RIDES', 5),     // erst ab so vielen Fahrten in der Rolle
+  },
   // Funfacts: Gruppe erst ab so vielen Fahrern/Bewertungen anzeigen (kein Rückschluss auf Einzelne)
   funfacts: {
     minDrivers: num('FUNFACTS_MIN_DRIVERS', 2),

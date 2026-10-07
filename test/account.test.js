@@ -26,6 +26,7 @@ const config = {
   rides: { autoConfirmHours: 24 },
   points: { unratedFactor: 7 },
   funfacts: { minDrivers: 2, minRatings: 3 },
+  abortPolicy: { maxQuote: 20, minRides: 5 },
   matching: { maxDetourKm: 3, maxResults: 10 },
 };
 

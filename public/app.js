@@ -332,7 +332,7 @@ function guardedPanel(seq) {
     },
     set(target, prop, value) {
       if (prop === 'innerHTML' && seq !== renderSeq) throw new StaleRender();
-      target[prop] = value;
+      target[prop] = prop === 'innerHTML' ? accountNotice() + value : value;
       return true;
     },
   });
@@ -347,14 +347,17 @@ function render() {
   const view = currentView();
   if (view === 'datenschutz') return renderPrivacyPolicy(panel);
   if (view === 'impressum') return renderImprint(panel);
+  if (view === 'nutzungsbedingungen') return renderTerms(panel);
   if (view === 'funfacts') return guard(() => renderFunfacts(panel));
   if (!state.me) return renderAuth(panel);
-  if (view === 'fahren') guard(() => renderDriver(panel));
-  else if (view === 'konto') guard(() => renderAccount(panel));
-  else if (view === 'profil') guard(() => renderProfile(panel));
-  else if (view === 'punkte') guard(() => renderPoints(panel));
-  else if (view === 'admin' && state.me.isAdmin) guard(() => renderAdmin(panel));
-  else guard(() => renderRider(panel));
+  // Kontodaten bei jedem Seitenwechsel auffrischen (Sperren, Verwarnungen, Guthaben, Punkte)
+  const show = (fn) => guard(async () => { await refreshMe(); return fn(panel); });
+  if (view === 'fahren') show(renderDriver);
+  else if (view === 'konto') show(renderAccount);
+  else if (view === 'profil') show(renderProfile);
+  else if (view === 'punkte') show(renderPoints);
+  else if (view === 'admin' && state.me.isAdmin) show(renderAdmin);
+  else show(renderRider);
 }
 
 async function refreshMe() {
@@ -388,7 +391,7 @@ function renderAuth(panel) {
         <input id="a-pass" type="password" autocomplete="current-password" minlength="8" required>
         <label class="check" id="consent-field" hidden>
           <input type="checkbox" id="a-consent">
-          <span>Ich habe die <a href="#/datenschutz" target="_blank">Datenschutzerklärung</a> gelesen und stimme der Verarbeitung meiner Daten zur Vermittlung und Abrechnung von Fahrten zu.</span>
+          <span>Ich akzeptiere die <a href="#/nutzungsbedingungen" target="_blank">Nutzungsbedingungen</a>, habe die <a href="#/datenschutz" target="_blank">Datenschutzerklärung</a> gelesen und stimme der Verarbeitung meiner Daten zur Vermittlung und Abrechnung von Fahrten zu.</span>
         </label>
         <button class="full" style="margin-top:14px" id="a-submit">Anmelden</button>
       </form>
@@ -423,7 +426,7 @@ function renderAuth(panel) {
     e.preventDefault();
     guard(async () => {
       const body = { email: $('#a-email').value, password: $('#a-pass').value, name: $('#a-name').value, acceptPrivacy: $('#a-consent').checked };
-      if (mode === 'register' && !body.acceptPrivacy) throw new Error('Bitte der Datenschutzerklärung zustimmen.');
+      if (mode === 'register' && !body.acceptPrivacy) throw new Error('Bitte den Nutzungsbedingungen und der Datenschutzerklärung zustimmen.');
       const res = await api(mode === 'login' ? '/api/login' : '/api/register', body);
       if (res.mfaRequired) {
         mfaToken = res.mfaToken;
@@ -1134,7 +1137,6 @@ function resizeImage(file, max = 1600) {
 // ---------- Konto ----------
 async function renderAccount(panel) {
   drawMap();
-  await refreshMe();
   const [{ transactions }] = await Promise.all([api('/api/wallet/transactions'), loadRides()]);
   const me = state.me;
   const done = state.rides.filter((r) => r.status === 'completed');
@@ -1181,7 +1183,7 @@ async function renderAccount(panel) {
 // ---------- Betreiber ----------
 async function renderAdmin(panel) {
   drawMap();
-  const [stats, { licenses }, { disputes }, { entries: gbEntries }] = await Promise.all([api('/api/admin/stats'), api('/api/admin/licenses'), api('/api/admin/disputes'), api('/api/admin/guestbook')]);
+  const [stats, { licenses }, { disputes }, { entries: gbEntries }, reviewCard] = await Promise.all([api('/api/admin/stats'), api('/api/admin/licenses'), api('/api/admin/disputes'), api('/api/admin/guestbook'), abortReviewCard()]);
   panel.innerHTML = `
     <div class="card">
       <h2>Betreiber-Übersicht</h2>
@@ -1197,6 +1199,7 @@ async function renderAdmin(panel) {
         <div class="stat"><b>${stats.activeTrips} / ${stats.verifiedDrivers}</b><span>Fahrer online / verifiziert</span></div>
       </div>
     </div>
+    ${reviewCard}
     <div class="card">
       <h2>Gästebuch-Einträge (${gbEntries.length}) ${info('Neueste Einträge zur Moderation. Verfasser sind auch für dich nicht sichtbar.')}</h2>
       ${gbEntries.length ? gbEntries.map((e) => `<blockquote class="gb-entry ${e.hidden ? 'is-hidden' : ''}"><p>„${esc(e.text)}“</p><footer>bei ${esc(e.driverName)} · ${esc(e.when)} · ${esc(e.kind)}${e.hidden ? ' · vom Fahrer ausgeblendet' : ''} · <button class="linkish" data-gb-delete="${e.id}">löschen</button></footer></blockquote>`).join('') : '<p class="muted">Keine Einträge.</p>'}
@@ -1232,6 +1235,7 @@ async function renderAdmin(panel) {
           </div>
         </div>`).join('') : '<p class="muted">Keine offenen Anträge.</p>'}
     </div>`;
+  bindAbortReview(panel);
   bindGuestbookButtons(panel);
   panel.querySelectorAll('[data-resolve]').forEach((b) =>
     (b.onclick = () => guard(async () => {
@@ -1350,7 +1354,6 @@ function mfaHint(text) {
 // ---------- Eigenes Profil, Privatsphäre, Sicherheit, Daten ----------
 async function renderProfile(panel) {
   drawMap();
-  await refreshMe();
   const me = state.me;
   state.filters = me.riderFilters || {};
   const p = me.profile;
@@ -1598,6 +1601,7 @@ function renderPrivacyPolicy(panel) {
         <li><b>Gästebuch (freiwillig):</b> Nach Fahrten über 1 Stunde oder 100 km können Mitfahrer ein positives Erlebnis teilen. Veröffentlicht werden nur Text, Monat und Art der Fahrt – ohne Namen. Intern speichern wir, wer den Eintrag verfasst hat, damit du ihn löschen kannst und Missbrauch verhindert wird (Art. 6 Abs. 1 lit. a DSGVO, Einwilligung; jederzeit widerrufbar durch Löschen). Fahrer können Einträge ausblenden oder das Gästebuch abschalten.</li>
         <li><b>Funfacts:</b> Aus den Bewertungen erstellen wir zusammengefasste Statistiken nach Ortskürzel des Kennzeichens und Automarke (freiwillige Profilangaben; das vollständige Kennzeichen speichern wir nicht). Eine Stadt oder Marke wird erst ab mehreren Fahrern und Bewertungen angezeigt, sodass kein Rückschluss auf Einzelne möglich ist (Art. 6 Abs. 1 lit. f DSGVO).</li>
         <li><b>Bewertungen und Punkte:</b> Bewertungen (0–10, optionale Gründe wie Sauberkeit oder Fahrweise und optionaler Kommentar). Gründe und Kommentare sieht der Bewertete nur gesammelt und anonym ab mindestens drei Rückmeldungen, ohne Datum oder Zuordnung zu einer Fahrt – sie dienen dazu, dass Fahrer und Mitfahrer dazulernen können. Daraus berechnen wir NPS, Punkte, Level und Abzeichen. Zweck: Vertrauen zwischen Fahrtpartnern, Qualität, Motivation zum Teilen von Fahrten (Art. 6 Abs. 1 lit. b und f DSGVO). Einzelbewertungen sieht nur, wer sie abgegeben hat; andere sehen nur Zusammenfassungen. In der <b>Bestenliste</b> erscheinst du nur mit deiner Einwilligung (Art. 6 Abs. 1 lit. a DSGVO), die du jederzeit widerrufen kannst.</li>
+        <li><b>Fahrtabbrüche, Verwarnungen und Sperren:</b> Abbruchgründe, Fahrtabbruchsquote sowie Verwarnungen und Sperren nach Ziffer 9 der <a href="#/nutzungsbedingungen">Nutzungsbedingungen</a> (Grund, Dauer, Entscheidung). Zweck: faire Abrechnung und Schutz der Teilnehmer vor Missbrauch (Art. 6 Abs. 1 lit. b und f DSGVO). Die Quote ist für Fahrtpartner sichtbar; Gründe und Sperren nur für dich und den Betreiber.</li>
         <li><b>Sicherheit:</b> Angemeldete Geräte (Browser-Kennung, Zeitpunkt), Daten der Zwei-Faktor-Anmeldung (Schlüssel verschlüsselt, Backup-Codes nur als Hash), Schutz vor Passwort-Ausprobieren. Zweck: Schutz deines Kontos (Art. 6 Abs. 1 lit. f, Art. 32 DSGVO).</li>
       </ul>
 
@@ -1967,6 +1971,158 @@ async function feedbackCard() {
     <h2>Feedback zum Lernen ${info('<p>Bei Bewertungen bis 8 können deine Fahrtpartner freiwillig Gründe nennen.</p><p>Du siehst sie hier gesammelt und anonym – ohne Namen, Datum oder Fahrt. Fahre mit der Maus über ⓘ für Tipps.</p>')}</h2>
     ${driver || rider ? driver + rider : '<p class="muted">Noch keine Bewertungen.</p>'}
   </div>`;
+}
+
+// ---------- Nutzungsbedingungen ----------
+function renderTerms(panel) {
+  drawMap();
+  const c = state.config || {};
+  const pr = c.pricing || { ratePerKmCents: 25, commissionPercent: 10, donationCentsPerRide: 1 };
+  const ap = c.abortPolicy || { maxQuote: 20, minRides: 5 };
+  const reasons = (c.abortReasons || []).map((r) => esc(r.label)).join(', ');
+  panel.innerHTML = `
+    <div class="card legal">
+      <h2>Nutzungsbedingungen</h2>
+      <p class="muted small">Stand: Oktober 2026 · Version ${esc(c.termsVersion || '2026-10')}</p>
+      <div class="card notice small">Vorlage – vor dem Livegang rechtlich prüfen lassen und die Angaben in eckigen Klammern ergänzen.</div>
+
+      <h3>1. Geltungsbereich und Anbieter</h3>
+      <p>Diese Bedingungen gelten für die Nutzung von joinmyride.com, betrieben von [Name / Firma, Anschrift] („Betreiber“). Mit der Registrierung erkennst du sie an.</p>
+
+      <h3>2. Leistungen</h3>
+      <p>Der Betreiber vermittelt Mitfahrgelegenheiten zwischen Fahrern, die eine Strecke ohnehin fahren, und Mitfahrern. Der Betreiber befördert selbst nicht; der Beförderungsvertrag kommt zwischen Fahrer und Mitfahrer zustande. Es handelt sich um Kostenteilung, nicht um gewerbliche Personenbeförderung: Das Entgelt darf die Betriebskosten der Fahrt nicht übersteigen.</p>
+
+      <h3>3. Registrierung und Konto</h3>
+      <ul>
+        <li>Teilnehmen dürfen volljährige Personen mit wahrheitsgemäßen Angaben. Jede Person darf nur ein Konto führen.</li>
+        <li>Zugangsdaten sind geheim zu halten. Wir empfehlen die Zwei-Faktor-Anmeldung, für Fahrer und den Betreiber dringend.</li>
+      </ul>
+
+      <h3>4. Pflichten der Fahrer</h3>
+      <ul>
+        <li>Gültige Fahrerlaubnis (mindestens Klasse B), die vor dem ersten Angebot geprüft wird; Änderungen (z. B. Entzug, Ablauf) sind unverzüglich mitzuteilen.</li>
+        <li>Verkehrssicheres, zugelassenes und haftpflichtversichertes Fahrzeug; Einhaltung der Verkehrsregeln.</li>
+        <li>Fahren nur auf der eigenen Route; keine gewerbliche Personenbeförderung über die Plattform.</li>
+      </ul>
+
+      <h3>5. Pflichten der Mitfahrer</h3>
+      <ul>
+        <li>Pünktliches Erscheinen am vereinbarten Treffpunkt, respektvolles Verhalten, Rücksicht auf Fahrzeug und Fahrer.</li>
+        <li>Ausreichendes Guthaben für den bestätigten Höchstbetrag.</li>
+      </ul>
+
+      <h3>6. Preise und Zahlung</h3>
+      <ul>
+        <li>Grundlage ist die vor der Fahrt von beiden bestätigte schnellste Route. Kilometersatz derzeit ${euro(pr.ratePerKmCents)}/km.</li>
+        <li>Mit dem Fahrtantritt (Einsteigen) ist der Preis der geplanten Route fällig – auch wenn die Fahrt früher endet. Umwege gehen nicht zulasten des Mitfahrers.</li>
+        <li>Die Anfahrt zum Treffpunkt wird zum gleichen Satz berechnet und vollständig an den Fahrer ausgezahlt; auf sie erhebt der Betreiber keine Provision.</li>
+        <li>Der Betreiber erhält eine Vermittlungsprovision von ${pr.commissionPercent} % auf die gemeinsame Strecke. Je Fahrt werden ${euro(pr.donationCentsPerRide)} an [Organisation] für den Umweltschutz gespendet.</li>
+        <li>Bezahlt wird, sobald der Fahrer den Mitfahrer abgesetzt und der Mitfahrer die Fahrt bewertet hat; ohne Rückmeldung nach 24 Stunden.</li>
+      </ul>
+
+      <h3>7. Bewertungen und Gästebuch</h3>
+      <p>Bewertungen müssen wahrheitsgemäß und sachlich sein. Beleidigende, falsche oder manipulierte Bewertungen und Gästebucheinträge können entfernt werden.</p>
+
+      <h3>8. Fahrtabbruch und Fahrtabbruchsquote</h3>
+      <ul>
+        <li>Eine begonnene Fahrt kann von Fahrer oder Mitfahrer abgebrochen werden. Der Abbruch ist zu begründen (${reasons || 'Grund und Freitext'}). Abgerechnet wird dann nur die bis dahin gefahrene Strecke.</li>
+        <li>Die <b>Fahrtabbruchsquote</b> ist der Anteil abgebrochener an allen abgeschlossenen Fahrten, getrennt nach der Rolle als Fahrer und als Mitfahrer. Ein Abbruch zählt für beide Beteiligten. Die Quote ist im Profil für Fahrtpartner sichtbar.</li>
+        <li>Abbrüche dürfen nicht dazu genutzt werden, Entgelt oder Provision zu umgehen, etwa durch Absprachen über ein vorzeitiges Fahrtende.</li>
+      </ul>
+
+      <h3>9. Sperrung von Teilnehmern</h3>
+      <p><b>9.1 Zu hohe Fahrtabbruchsquote.</b> Liegt die Fahrtabbruchsquote eines Teilnehmers in einer Rolle über <b>${ap.maxQuote} %</b> und hat er in dieser Rolle mindestens <b>${ap.minRides} Fahrten</b> abgeschlossen, kann der Betreiber den Teilnehmer sperren. Dabei gilt:</p>
+      <ul>
+        <li>Der Betreiber prüft jeden Fall einzeln, insbesondere die angegebenen Gründe; Abbrüche aus nachvollziehbaren Sicherheits- oder Gesundheitsgründen werden berücksichtigt. Eine Sperre erfolgt nicht automatisch.</li>
+        <li>In der Regel erhält der Teilnehmer zunächst eine <b>Verwarnung</b> mit Gelegenheit zur Stellungnahme an [kontakt@joinmyride.com].</li>
+        <li>Bleibt die Quote hoch oder gibt es Hinweise auf Missbrauch (z. B. abgesprochene Abbrüche), kann der Betreiber das Konto <b>befristet</b> (in der Regel 7 bis 30 Tage) sperren, im Wiederholungsfall oder bei schwerem Missbrauch <b>unbefristet</b>.</li>
+      </ul>
+      <p><b>9.2 Weitere Gründe.</b> Eine Sperrung ist außerdem möglich bei falschen Angaben, Fahren ohne gültige Fahrerlaubnis, Gefährdung oder Belästigung anderer, Manipulation von Bewertungen oder Zahlungen sowie sonstigen erheblichen Verstößen gegen diese Bedingungen.</p>
+      <p><b>9.3 Folgen.</b> Während einer Sperre kann der Teilnehmer keine Fahrten anbieten, suchen oder buchen; seine aktiven Angebote werden beendet und offene Anfragen storniert. Bereits begonnene Fahrten können abgeschlossen werden. Guthaben, Abrechnungen, Datenexport und Kontolöschung bleiben zugänglich. Befristete Sperren enden automatisch. Der Teilnehmer wird über Grund und Dauer informiert und kann widersprechen; der Betreiber entscheidet erneut.</p>
+
+      <h3>10. Haftung</h3>
+      <p>Der Betreiber haftet unbeschränkt bei Vorsatz, grober Fahrlässigkeit sowie für Schäden aus der Verletzung von Leben, Körper oder Gesundheit; im Übrigen nur bei Verletzung wesentlicher Pflichten und begrenzt auf den vorhersehbaren Schaden. Für die Durchführung der Fahrt sind Fahrer und Mitfahrer verantwortlich. [anpassen]</p>
+
+      <h3>11. Datenschutz</h3>
+      <p>Es gilt die <a href="#/datenschutz">Datenschutzerklärung</a>.</p>
+
+      <h3>12. Kündigung und Änderungen</h3>
+      <p>Du kannst dein Konto jederzeit im Profil löschen. Der Betreiber kann den Vertrag mit einer Frist von [zwei Wochen] kündigen, aus wichtigem Grund fristlos. Änderungen dieser Bedingungen werden rechtzeitig vorher angekündigt; widersprichst du nicht innerhalb von [sechs Wochen], gelten sie als angenommen – darauf weisen wir mit der Ankündigung hin.</p>
+
+      <h3>13. Schlussbestimmungen</h3>
+      <p>Es gilt deutsches Recht unter Ausschluss des UN-Kaufrechts; zwingende Verbraucherschutzvorschriften des Wohnsitzstaats bleiben unberührt. [Online-Streitbeilegung / Verbraucherschlichtung anpassen]</p>
+    </div>`;
+}
+
+/** Hinweis für gesperrte oder verwarnte Teilnehmer (oberhalb jeder Ansicht). */
+function accountNotice() {
+  const me = state.me;
+  if (!me) return '';
+  if (me.suspension) {
+    return `<div class="card notice bad-notice"><b>Dein Konto ist ${me.suspension.until ? 'bis ' + new Date(me.suspension.until).toLocaleDateString('de-DE') : 'bis auf Weiteres'} gesperrt.</b><p class="small" style="margin:4px 0 0">Grund: ${esc(me.suspension.reason)}. Du kannst keine Fahrten anbieten oder buchen; laufende Fahrten kannst du abschließen. Widerspruch an [kontakt@joinmyride.com] – siehe <a href="#/nutzungsbedingungen">Nutzungsbedingungen, Ziffer 9</a>.</p></div>`;
+  }
+  const w = (me.warnings || []).slice(-1)[0];
+  if (w && Date.now() - new Date(w.at).getTime() < 90 * 864e5) {
+    return `<div class="card notice"><b>Verwarnung vom ${new Date(w.at).toLocaleDateString('de-DE')}</b><p class="small" style="margin:4px 0 0">${esc(w.note)}. Bei weiterhin hoher Fahrtabbruchsquote kann dein Konto gesperrt werden (<a href="#/nutzungsbedingungen">Nutzungsbedingungen, Ziffer 9</a>).</p></div>`;
+  }
+  return '';
+}
+
+/** Betreiber: Prüfliste nach Ziffer 9 der Nutzungsbedingungen. */
+async function abortReviewCard() {
+  const r = await api('/api/admin/abort-review');
+  const roleName = { driver: 'Fahrer', rider: 'Mitfahrer' };
+  const row = (m, suspended) => `
+    <div class="match">
+      <div class="top"><span><b>${esc(m.name)}</b> <span class="muted small">${esc(m.email || '')}</span></span>${m.warnings.length ? `<span class="badge warn">${m.warnings.length} × verwarnt</span>` : ''}</div>
+      <div class="small">${m.flags.length ? m.flags.map((f) => `${roleName[f.role]}: <b>${f.quote} %</b> (${f.aborted} von ${f.rides})`).join(' · ') : `Fahrer ${m.abortStats.asDriver.quote ?? '–'} % · Mitfahrer ${m.abortStats.asRider.quote ?? '–'} %`}</div>
+      ${suspended ? `<div class="small">Gesperrt ${m.suspension.until ? 'bis ' + new Date(m.suspension.until).toLocaleDateString('de-DE') : 'unbefristet'}: ${esc(m.suspension.reason)}</div>` : ''}
+      <div class="btn-row">
+        ${suspended
+          ? `<button class="secondary" data-unsuspend="${m.id}">Entsperren</button>`
+          : `<button class="secondary" data-warn="${m.id}">Verwarnen</button><button class="danger" data-suspend="${m.id}" data-name="${esc(m.name)}">Sperren …</button>`}
+      </div>
+    </div>`;
+  return `<div class="card" id="abort-review">
+    <h2>Fahrtabbruchsquote – Prüfung ${info(`<p>Teilnehmer mit einer Quote über <b>${r.policy.maxQuote} %</b> bei mindestens <b>${r.policy.minRides} Fahrten</b> in einer Rolle (Nutzungsbedingungen, Ziffer 9).</p><p>Bitte jeden Fall einzeln prüfen – Abbrüche aus Sicherheits- oder Gesundheitsgründen sind nachvollziehbar. In der Regel erst verwarnen.</p>`)}</h2>
+    ${r.flagged.length ? r.flagged.map((m) => row(m, false)).join('') : '<p class="muted">Niemand über dem Grenzwert.</p>'}
+    ${r.suspended.length ? `<h3 style="margin-top:14px">Gesperrt (${r.suspended.length})</h3>${r.suspended.map((m) => row(m, true)).join('')}` : ''}
+  </div>`;
+}
+
+function bindAbortReview(root) {
+  root.querySelectorAll('[data-warn]').forEach((b) => (b.onclick = () => guard(async () => {
+    await api(`/api/admin/users/${b.dataset.warn}/warn`, { note: 'Hohe Fahrtabbruchsquote – bitte Abbrüche vermeiden' });
+    toast('Verwarnung gesendet.');
+    render();
+  }, b)));
+  root.querySelectorAll('[data-unsuspend]').forEach((b) => (b.onclick = () => guard(async () => {
+    await api(`/api/admin/users/${b.dataset.unsuspend}/unsuspend`, {});
+    toast('Sperre aufgehoben.');
+    render();
+  }, b)));
+  root.querySelectorAll('[data-suspend]').forEach((b) => (b.onclick = () => {
+    openModal(`<h2>${esc(b.dataset.name)} sperren</h2>
+      <p class="small">Nach Ziffer 9 der Nutzungsbedingungen. Aktive Angebote werden beendet, offene Anfragen storniert; laufende Fahrten können abgeschlossen werden.</p>
+      <form id="suspend-form">
+        <label for="sp-days">Dauer</label>
+        <select id="sp-days"><option value="7">7 Tage</option><option value="30">30 Tage</option><option value="unbefristet">unbefristet</option></select>
+        <label for="sp-reason">Grund (wird dem Teilnehmer angezeigt)</label>
+        <textarea id="sp-reason" required minlength="5">Fahrtabbruchsquote über dem Grenzwert trotz Verwarnung</textarea>
+        <div class="btn-row"><button class="danger" id="sp-submit">Sperren</button><button type="button" class="secondary" id="sp-cancel">Abbrechen</button></div>
+      </form>`);
+    $('#sp-cancel').onclick = closeModal;
+    $('#suspend-form').onsubmit = (e) => {
+      e.preventDefault();
+      guard(async () => {
+        const days = $('#sp-days').value;
+        await api(`/api/admin/users/${b.dataset.suspend}/suspend`, { days: days === 'unbefristet' ? null : Number(days), reason: $('#sp-reason').value });
+        closeModal();
+        toast('Teilnehmer gesperrt.');
+        render();
+      }, $('#sp-submit'));
+    };
+  }));
 }
 
 // ---------- Start ----------
